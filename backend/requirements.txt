@@ -1,0 +1,14 @@
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pydantic>=2.7.4
+pydantic-settings>=2.3.4
+cryptography>=42.0.8
+supabase>=2.5.0
+breeze-connect>=1.0.35
+yfinance>=0.2.40
+feedparser>=6.0.11
+google-generativeai>=0.7.0
+firebase-admin>=6.5.0
+httpx>=0.27.0
+python-telegram-bot>=21.3
+python-dotenv>=1.0.1

@@ -1,0 +1,58 @@
+# Environment Secrets (CRITICAL: NEVER COMMIT SECRETS)
+.env
+*.env
+backend/.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node.js / Next.js Web Portal
+web_portal/node_modules/
+web_portal/.next/
+web_portal/out/
+web_portal/build/
+.npm
+*.log
+
+# Flutter / Mobile App
+mobile_app/.dart_tool/
+mobile_app/.idea/
+mobile_app/.vscode/
+mobile_app/build/
+mobile_app/.packages
+mobile_app/.flutter-plugins
+mobile_app/.flutter-plugins-dependencies
+mobile_app/android/.gradle/
+mobile_app/android/app/build/
+mobile_app/ios/Flutter/App.framework
+mobile_app/ios/Flutter/Flutter.framework
+mobile_app/ios/Flutter/Flutter.podspec
+mobile_app/ios/Pods/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,18 @@
+name: 5-Minute Indian Market Hours Cron Scanner
+
+on:
+  schedule:
+    # Runs every 5 minutes from 03:45 UTC to 10:00 UTC (09:15 AM to 03:30 PM IST), Monday through Friday
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  run-market-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger StokVigil AI Multi-User Portfolio Scan
+        run: |
+          echo "🚀 Triggering 5-Minute Market Intelligence Scan..."
+          RESPONSE=$(curl -s -X POST "${{ secrets.STOKVIGIL_BACKEND_URL }}/api/cron/multi-user-scan" \
+            -H "Content-Type: application/json")
+          echo "Scan Response: $RESPONSE"
