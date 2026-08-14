@@ -34,6 +34,12 @@ android {
             shrinkResources false
         }
     }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "stockvigilai.apk"
+        }
+    }
 }
 
 flutter {
