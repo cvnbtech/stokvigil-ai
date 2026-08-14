@@ -172,7 +172,7 @@ function Badge({ label, color = "cyan" }: { label: string; color?: "cyan" | "eme
   );
 }
 
-function SignalBadge({ signal, type }: { signal: string; type: "strong_buy" | "buy" | "sell" | "hold" | "neutral" }) {
+function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | string }) {
   const isStrong = type === "strong_buy";
   const isBuy = type === "buy";
   const isSell = type === "sell";
@@ -1666,7 +1666,7 @@ export default function App() {
 
                   {/* Execution Mode Selector */}
                   <div>
-                    <div style={{ fontSize: 10, color: C.gray2, fontWeight: 700, uppercase: true, marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, color: C.gray2, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
                       ⚡ Default Execution Workflow
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1948,8 +1948,7 @@ export default function App() {
           <div style={{
             position: "fixed", inset: 0,
             background: "rgba(6,8,18,0.92)", backdropFilter: "blur(16px)",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            justifyContent: "center",
+            display: "flex", alignItems: "center", justifyContent: "center",
             padding: 20, zIndex: 50,
           }}>
             <div className="anim-fadeup" style={{
