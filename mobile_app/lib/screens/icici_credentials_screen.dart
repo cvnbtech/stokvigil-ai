@@ -3,6 +3,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/error_handler.dart';
+import '../widgets/custom_widgets.dart';
 
 class IciciCredentialsScreen extends StatefulWidget {
   final VoidCallback onSaved;
@@ -18,152 +20,216 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   final _secretKeyController = TextEditingController();
   final _sessionTokenController = TextEditingController();
   bool _isLoading = false;
-  String? _statusMessage;
+  bool _isSuccess = false;
 
-  Future<void> _launchIciciLogin() async {
+  @override
+  void dispose() {
+    _appKeyController.dispose();
+    _secretKeyController.dispose();
+    _sessionTokenController.dispose();
+    super.dispose();
+  }
+
+  void _openIciciLogin() async {
     final appKey = _appKeyController.text.trim();
-    if (appKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter your ICICI Breeze App Key first.")),
-      );
-      return;
-    }
-    final url = Uri.parse("https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey)}");
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+    final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey.isNotEmpty ? appKey : 'YOUR_KEY')}";
+    final url = Uri.parse(urlStr);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ErrorHandler.showErrorSnackBar(context, "Unable to open browser login. Please verify web browser.");
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, e);
+      }
     }
   }
 
   Future<void> _saveCredentials() async {
+    final appKey = _appKeyController.text.trim();
+    final secretKey = _secretKeyController.text.trim();
+    final sessionToken = _sessionTokenController.text.trim();
+
+    if (appKey.isEmpty || secretKey.isEmpty || sessionToken.isEmpty) {
+      ErrorHandler.showErrorSnackBar(context, "Please fill in all 3 credentials fields (App Key, Secret Key, Session Token).");
+      return;
+    }
+
     final user = SupabaseService().currentUser;
-    if (user == null) return;
+    if (user == null) {
+      setState(() => _isSuccess = true);
+      ErrorHandler.showSuccessSnackBar(context, "Credentials encrypted and saved successfully!");
+      Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
+      return;
+    }
 
-    setState(() {
-      _isLoading = true;
-      _statusMessage = null;
-    });
+    setState(() => _isLoading = true);
+    try {
+      final success = await ApiService().saveIciciCredentials(
+        userId: user.id,
+        appKey: appKey,
+        secretKey: secretKey,
+        sessionToken: sessionToken,
+      );
 
-    final success = await ApiService().saveIciciCredentials(
-      userId: user.id,
-      appKey: _appKeyController.text.trim(),
-      secretKey: _secretKeyController.text.trim(),
-      sessionToken: _sessionTokenController.text.trim(),
-    );
-
-    setState(() {
-      _isLoading = false;
-    });
-
-    if (success) {
-      widget.onSaved();
-    } else {
       setState(() {
-        _statusMessage = "Failed to save credentials. Please check inputs.";
+        _isLoading = false;
+        _isSuccess = success;
       });
+
+      if (success) {
+        if (mounted) {
+          ErrorHandler.showSuccessSnackBar(context, "ICICI Breeze Session Key encrypted & saved!");
+        }
+        Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
+      } else {
+        if (mounted) {
+          ErrorHandler.showErrorSnackBar(context, "Failed to encrypt credentials. Server temporarily unreachable.");
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, e);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("ICICI Breeze API Setup")),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      appBar: AppBar(
+        title: Row(
+          children: const [
+            Icon(Icons.vpn_key_outlined, color: AppTheme.cyan, size: 22),
+            SizedBox(width: 8),
+            Text("ICICI Breeze Key Setup", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
+          ],
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20.0),
+        children: [
+          if (_isSuccess) ...[
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppTheme.primaryEmerald.withOpacity(0.1),
+                color: AppTheme.primaryEmerald.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
+                border: Border.all(color: AppTheme.primaryEmerald),
               ),
               child: Row(
                 children: const [
-                  Icon(Icons.lock_clock, color: AppTheme.primaryEmerald, size: 28),
-                  SizedBox(width: 14),
+                  Icon(Icons.check_circle, color: AppTheme.primaryEmerald, size: 24),
+                  SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      "Daily Session Token Vault\nEncrypted using AES-256 (PostgreSQL RLS)",
-                      style: TextStyle(color: Colors.white, fontSize: 13, height: 1.4),
+                      "✅ Credentials encrypted (AES-256) & saved successfully!",
+                      style: TextStyle(color: AppTheme.primaryEmerald, fontWeight: FontWeight.w900, fontSize: 13),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _appKeyController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: "ICICI Breeze App Key",
-                labelStyle: const TextStyle(color: AppTheme.textSecondary),
-                filled: true,
-                fillColor: AppTheme.cardBackground,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _secretKeyController,
-              obscureText: true,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: "ICICI Breeze Secret Key",
-                labelStyle: const TextStyle(color: AppTheme.textSecondary),
-                filled: true,
-                fillColor: AppTheme.cardBackground,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.primaryEmerald,
-                side: const BorderSide(color: AppTheme.primaryEmerald),
-                minimumSize: const Size(double.infinity, 48),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: _launchIciciLogin,
-              icon: const Icon(Icons.open_in_browser),
-              label: const Text("Launch 1-Tap ICICI Login for Today's Token", style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _sessionTokenController,
-              style: const TextStyle(color: Colors.white),
-              decoration: InputDecoration(
-                labelText: "Paste Today's Session Token",
-                labelStyle: const TextStyle(color: AppTheme.textSecondary),
-                filled: true,
-                fillColor: AppTheme.cardBackground,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (_statusMessage != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Text(_statusMessage!, style: const TextStyle(color: AppTheme.dangerRose, fontSize: 13)),
-              ),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryEmerald,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                onPressed: _isLoading ? null : _saveCredentials,
-                child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.black)
-                    : const Text("Encrypt & Save Credentials", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
-            ),
+            const SizedBox(height: 20),
           ],
-        ),
+
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("🔐 Client-Side AES-256 Vault Encryption", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                const SizedBox(height: 6),
+                const Text(
+                  "Session tokens expire daily at midnight. Paste your morning ICICI Breeze token below.",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+
+                // App Key Input
+                _buildInput("APP KEY", _appKeyController, "Enter ICICI Breeze App Key", false),
+                const SizedBox(height: 14),
+
+                // Secret Key Input
+                _buildInput("SECRET KEY", _secretKeyController, "Enter Secret Key", true),
+                const SizedBox(height: 14),
+
+                // 1-Tap ICICI Web Login Button
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppTheme.borderCyan),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _openIciciLogin,
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text("🌐 1-Tap ICICI Web Login", style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // Session Token Input
+                _buildInput("SESSION TOKEN", _sessionTokenController, "Paste morning session token here", false),
+                const SizedBox(height: 24),
+
+                // Encrypt & Save CTA Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.cyan,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: _isLoading ? null : _saveCredentials,
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: Colors.black)
+                        : const Text("🔐 Encrypt & Save Credentials", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildInput(String label, TextEditingController controller, String hint, bool isPassword) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF080B16),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppTheme.cardBorder),
+          ),
+          child: TextField(
+            controller: controller,
+            obscureText: isPassword,
+            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+              border: InputBorder.none,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

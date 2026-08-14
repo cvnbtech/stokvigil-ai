@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../services/supabase_service.dart';
+import '../utils/error_handler.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -29,7 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final password = _passwordController.text.trim();
 
       if (email.isEmpty || password.isEmpty) {
-        throw "Please fill in all fields.";
+        throw "Please enter both your email address and password.";
       }
 
       if (_isSignUp) {
@@ -40,7 +41,7 @@ class _AuthScreenState extends State<AuthScreen> {
       widget.onLoginSuccess();
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString().replaceAll("Exception: ", "");
+        _errorMessage = ErrorHandler.parseError(e);
       });
     } finally {
       setState(() {
@@ -64,16 +65,17 @@ class _AuthScreenState extends State<AuthScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: AppTheme.primaryEmerald.withOpacity(0.2),
+                      color: AppTheme.cyan.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.borderCyan),
                     ),
-                    child: const Icon(Icons.bolt, color: AppTheme.primaryEmerald, size: 32),
+                    child: const Icon(Icons.bolt, color: AppTheme.cyan, size: 32),
                   ),
                   const SizedBox(width: 14),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: const [
-                      Text("StokVigil AI", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                      Text("StokVigil AI", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
                       Text("5-Min Market Intelligence Watchtower", style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                     ],
                   ),
@@ -81,8 +83,8 @@ class _AuthScreenState extends State<AuthScreen> {
               ),
               const SizedBox(height: 36),
               Text(
-                _isSignUp ? "Create Free Account" : "Sign In to StokVigil",
-                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                _isSignUp ? "Create Free Account" : "Sign In to StokVigil AI",
+                style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 16),
               if (_errorMessage != null)
@@ -91,9 +93,18 @@ class _AuthScreenState extends State<AuthScreen> {
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
                     color: AppTheme.dangerRose.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.dangerRose),
                   ),
-                  child: Text(_errorMessage!, style: const TextStyle(color: AppTheme.dangerRose, fontSize: 13)),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: AppTheme.dangerRose, size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(_errorMessage!, style: const TextStyle(color: AppTheme.dangerRose, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
                 ),
               TextField(
                 controller: _emailController,
@@ -103,8 +114,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   labelStyle: const TextStyle(color: AppTheme.textSecondary),
                   filled: true,
                   fillColor: AppTheme.cardBackground,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.cardBorder)),
+                  prefixIcon: const Icon(Icons.email_outlined, color: AppTheme.cyan),
                 ),
               ),
               const SizedBox(height: 16),
@@ -117,8 +128,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   labelStyle: const TextStyle(color: AppTheme.textSecondary),
                   filled: true,
                   fillColor: AppTheme.cardBackground,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.textSecondary),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.cardBorder)),
+                  prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.cyan),
                 ),
               ),
               const SizedBox(height: 24),
@@ -127,13 +138,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primaryEmerald,
+                    backgroundColor: AppTheme.cyan,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: _isLoading ? null : _handleAuth,
                   child: _isLoading
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                      : Text(_isSignUp ? "Sign Up Free" : "Sign In", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16)),
+                      : Text(_isSignUp ? "Sign Up Free" : "Sign In", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 16)),
                 ),
               ),
               const SizedBox(height: 16),
@@ -146,7 +157,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   },
                   child: Text(
                     _isSignUp ? "Already have an account? Sign In" : "Don't have an account? Sign Up Free",
-                    style: const TextStyle(color: AppTheme.primaryEmerald),
+                    style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
