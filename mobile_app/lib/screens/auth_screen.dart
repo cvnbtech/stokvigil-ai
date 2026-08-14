@@ -69,7 +69,7 @@ class _AuthScreenState extends State<AuthScreen> {
             Positioned.fill(
               child: Container(
                 decoration: const BoxDecoration(
-                  radialGradient: RadialGradient(
+                  gradient: RadialGradient(
                     center: Alignment(0, 0.8),
                     radius: 0.9,
                     colors: [
