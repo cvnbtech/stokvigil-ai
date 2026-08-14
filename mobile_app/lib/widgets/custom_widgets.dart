@@ -2,6 +2,65 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 
 // ─────────────────────────────────────────────
+// OFFICIAL 4-COLOR GOOGLE 'G' LOGO WIDGET
+// ─────────────────────────────────────────────
+class OfficialGoogleLogo extends StatelessWidget {
+  final double size;
+  const OfficialGoogleLogo({super.key, this.size = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _GoogleLogoPainter(),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final double cx = w / 2;
+    final double cy = h / 2;
+    final double r = w / 2;
+
+    final Paint paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.22
+      ..strokeCap = StrokeCap.butt;
+
+    final Rect rect = Rect.fromCircle(center: Offset(cx, cy), radius: r * 0.78);
+
+    // 1. Red Top Arc (#EA4335)
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(rect, -0.75, 1.7, false, paint);
+
+    // 2. Yellow Left Arc (#FBBC05)
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(rect, 0.95, 1.25, false, paint);
+
+    // 3. Green Bottom Arc (#34A853)
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(rect, 2.2, 1.3, false, paint);
+
+    // 4. Blue Right Arc & Bar (#4285F4)
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(rect, 3.5, 1.2, false, paint);
+
+    final Paint barPaint = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRect(Rect.fromLTWH(cx - 2, cy - (w * 0.11), r * 0.85, w * 0.22), barPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ─────────────────────────────────────────────
 // OFFICIAL TRADING AI LOGO EMBLEM (MATCHES WEB PORTAL)
 // ─────────────────────────────────────────────
 class TradingAILogo extends StatelessWidget {

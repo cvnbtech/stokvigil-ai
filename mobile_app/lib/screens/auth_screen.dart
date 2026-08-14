@@ -3,6 +3,7 @@ import '../config/theme.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
+import 'terms_conditions_modal.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -19,6 +20,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isSignUp = false;
   bool _isLoading = false;
+  bool _tncAccepted = true;
   String? _errorMessage;
 
   @override
@@ -406,8 +408,8 @@ class _AuthScreenState extends State<AuthScreen> {
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: const [
-                                  Icon(Icons.g_mobiledata, color: Color(0xFF4285F4), size: 30),
-                                  SizedBox(width: 6),
+                                  OfficialGoogleLogo(size: 22),
+                                  SizedBox(width: 10),
                                   Text(
                                     "Continue with Google",
                                     style: TextStyle(
@@ -513,22 +515,106 @@ class _AuthScreenState extends State<AuthScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 18),
+
+                          // Web Portal Twin Terms Checkbox Row
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _tncAccepted = !_tncAccepted;
+                              });
+                            },
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: _tncAccepted ? AppTheme.primaryEmerald.withOpacity(0.2) : const Color(0xFF080B16),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: _tncAccepted ? AppTheme.primaryEmerald : AppTheme.cardBorder,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: _tncAccepted
+                                      ? const Icon(Icons.check, size: 14, color: AppTheme.primaryEmerald)
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      showDialog(
+                                        context: context,
+                                        builder: (context) => TermsConditionsModal(
+                                          onAccept: () {
+                                            setState(() {
+                                              _tncAccepted = true;
+                                            });
+                                          },
+                                        ),
+                                      );
+                                    },
+                                    child: RichText(
+                                      text: TextSpan(
+                                        style: const TextStyle(fontSize: 11, height: 1.3),
+                                        children: _tncAccepted
+                                            ? [
+                                                const TextSpan(
+                                                  text: "I have read and accepted the ",
+                                                  style: TextStyle(color: AppTheme.primaryEmerald, fontWeight: FontWeight.w700),
+                                                ),
+                                                const TextSpan(
+                                                  text: "Terms & Conditions",
+                                                  style: TextStyle(
+                                                    color: AppTheme.primaryEmerald,
+                                                    fontWeight: FontWeight.w900,
+                                                    decoration: TextDecoration.underline,
+                                                  ),
+                                                ),
+                                              ]
+                                            : [
+                                                const TextSpan(
+                                                  text: "I agree to the ",
+                                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                                                ),
+                                                const TextSpan(
+                                                  text: "Terms & Conditions",
+                                                  style: TextStyle(
+                                                    color: AppTheme.cyan,
+                                                    fontWeight: FontWeight.w900,
+                                                    decoration: TextDecoration.underline,
+                                                  ),
+                                                ),
+                                              ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 20),
 
                           // Primary Gradient CTA Button
                           Container(
                             width: double.infinity,
                             height: 50,
                             decoration: BoxDecoration(
-                              gradient: AppTheme.logoGradient,
+                              gradient: _tncAccepted ? AppTheme.logoGradient : null,
+                              color: _tncAccepted ? null : AppTheme.cardBorder,
                               borderRadius: BorderRadius.circular(14),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x4D06B6D4),
-                                  blurRadius: 16,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
+                              boxShadow: _tncAccepted
+                                  ? const [
+                                      BoxShadow(
+                                        color: Color(0x4D06B6D4),
+                                        blurRadius: 16,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ]
+                                  : null,
                             ),
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
@@ -536,7 +622,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                 shadowColor: Colors.transparent,
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                               ),
-                              onPressed: _isLoading ? null : _handleAuth,
+                              onPressed: (_isLoading || !_tncAccepted) ? null : _handleAuth,
                               child: _isLoading
                                   ? const SizedBox(
                                       height: 22,
@@ -574,6 +660,42 @@ class _AuthScreenState extends State<AuthScreen> {
                                   fontSize: 13,
                                 ),
                               ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Web Portal Matching Terms & Conditions Link
+                    GestureDetector(
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => TermsConditionsModal(
+                            onAccept: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Terms & Conditions accepted."),
+                                  backgroundColor: AppTheme.primaryEmerald,
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Icon(Icons.description_outlined, color: AppTheme.textMuted, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            "View Terms & Conditions",
+                            style: TextStyle(
+                              color: AppTheme.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              decoration: TextDecoration.underline,
                             ),
                           ),
                         ],
