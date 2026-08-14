@@ -130,26 +130,18 @@ class SignalBadge extends StatelessWidget {
     Color border;
     Color text;
 
-    if (type == 'strong_buy' || type == 'buy') {
-      bg = AppTheme.primaryEmerald.withOpacity(0.12);
-      border = AppTheme.primaryEmerald.withOpacity(0.4);
-      text = AppTheme.primaryEmerald;
-    } else if (type == 'sell') {
-      bg = AppTheme.secondaryAmber.withOpacity(0.12);
-      border = AppTheme.secondaryAmber.withOpacity(0.4);
-      text = AppTheme.secondaryAmber;
-    } else if (type == 'high') {
+    if (type == 'strong_buy' || type == 'buy' || type == 'high' || type == 'bullish') {
       bg = AppTheme.primaryEmerald.withOpacity(0.15);
       border = AppTheme.primaryEmerald;
       text = AppTheme.primaryEmerald;
-    } else if (type == 'med') {
+    } else if (type == 'med' || type == 'moderate') {
       bg = AppTheme.secondaryAmber.withOpacity(0.15);
       border = AppTheme.secondaryAmber;
       text = AppTheme.secondaryAmber;
     } else {
-      bg = AppTheme.cyan.withOpacity(0.12);
-      border = AppTheme.borderCyan;
-      text = AppTheme.cyan;
+      bg = AppTheme.dangerRose.withOpacity(0.15);
+      border = AppTheme.dangerRose;
+      text = AppTheme.dangerRose;
     }
 
     if (colorOverride != null) {

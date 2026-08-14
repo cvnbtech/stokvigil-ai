@@ -108,7 +108,7 @@ def format_telegram_alert(symbol: str, alert_title: str, catalyst_type: str, imp
     """
     Formats factual market alert as clean HTML for Telegram Bot API.
     """
-    badge_emoji = "🔴" if impact_score >= 80 else ("🟡" if impact_score >= 60 else "🟢")
+    badge_emoji = "🟢" if impact_score >= 80 else ("🟡" if impact_score >= 60 else "🔴")
     
     html = f"⚡ <b>StokVigil AI Market Alert</b> ⚡\n\n"
     html += f"<b>Ticker:</b> #{symbol}\n"

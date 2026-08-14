@@ -105,8 +105,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           const SizedBox(height: 2),
                           const Text(
-                            "5-Min Unsleeping Market Watchtower",
-                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                            "Track Your Stocks. Spot the Signals.",
+                            style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w800),
                           ),
                         ],
                       ),

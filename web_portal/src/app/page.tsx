@@ -784,8 +784,8 @@ export default function App() {
                   StokVigil <span style={{ background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI</span>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: C.gray1, fontWeight: 600, letterSpacing: "0.04em" }}>
-                5-Min Unsleeping Market Watchtower
+              <div style={{ fontSize: 12, color: C.cyan, fontWeight: 800, letterSpacing: "0.04em" }}>
+                Track Your Stocks. Spot the Signals.
               </div>
             </div>
 
@@ -947,13 +947,6 @@ export default function App() {
               </Btn>
             </div>
 
-            {/* Disclosure Footer */}
-            <div style={{ textAlign: "center", fontSize: 11, color: C.gray2 }}>
-              By continuing, you agree to our{" "}
-              <button onClick={() => setShowTnc(true)} style={{ background: "none", border: "none", color: C.cyan, fontWeight: 700, cursor: "pointer", fontSize: 11 }}>
-                Terms & Conditions
-              </button>
-            </div>
           </div>
         </div>
 
