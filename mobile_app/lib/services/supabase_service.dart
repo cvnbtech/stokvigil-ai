@@ -7,8 +7,14 @@ class SupabaseService {
   factory SupabaseService() => _instance;
   SupabaseService._internal();
 
-  static const String supabaseUrl = "https://your-supabase-project.supabase.co";
-  static const String supabaseAnonKey = "your-anon-key";
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: "https://your-supabase-project.supabase.co",
+  );
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue: "your-anon-key",
+  );
 
   SupabaseClient get client => Supabase.instance.client;
   User? get currentUser => client.auth.currentUser;
