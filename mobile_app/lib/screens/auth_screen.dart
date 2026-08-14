@@ -16,6 +16,7 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _isSignUp = false;
   bool _isLoading = false;
   String? _errorMessage;
@@ -55,6 +56,48 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please enter your email address first."),
+          backgroundColor: AppTheme.dangerRose,
+        ),
+      );
+      return;
+    }
+
+    try {
+      await SupabaseService().resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Password reset email sent to $email! Please check your inbox."),
+            backgroundColor: AppTheme.primaryEmerald,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, e);
+      }
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    try {
+      final success = await SupabaseService().signInWithGoogle();
+      if (success) {
+        widget.onLoginSuccess();
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, e);
+      }
     }
   }
 
@@ -129,7 +172,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     const SizedBox(height: 32),
 
-                    // Glassmorphic Auth Card Matching Web Portal
+                    // User-First Google-Top Auth Card
                     GlassCard(
                       borderColor: AppTheme.borderCyan,
                       padding: const EdgeInsets.all(24),
@@ -184,6 +227,59 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                           ],
 
+                          // 1-TAP GOOGLE SSO BUTTON (PLACED AT THE TOP)
+                          Container(
+                            width: double.infinity,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: const [
+                                BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: _handleGoogleSignIn,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.g_mobiledata, color: Color(0xFF4285F4), size: 30),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    "Continue with Google",
+                                    style: TextStyle(
+                                      color: Color(0xFF1A1A1A),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // Divider Line
+                          Row(
+                            children: const [
+                              Expanded(child: Divider(color: AppTheme.cardBorder)),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 10.0),
+                                child: Text(
+                                  "or continue with email",
+                                  style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              Expanded(child: Divider(color: AppTheme.cardBorder)),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+
                           // Email Address Field
                           const Text(
                             "EMAIL ADDRESS",
@@ -206,8 +302,6 @@ class _AuthScreenState extends State<AuthScreen> {
                               keyboardType: TextInputType.emailAddress,
                               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                               decoration: const InputDecoration(
-                                hintText: "investor@example.com",
-                                hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                 prefixIcon: Icon(Icons.email_outlined, color: AppTheme.cyan, size: 20),
@@ -216,15 +310,32 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Password Field
-                          const Text(
-                            "PASSWORD",
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.8,
-                            ),
+                          // Password Field with Forgot Password Link
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "PASSWORD",
+                                style: TextStyle(
+                                  color: AppTheme.textMuted,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                              if (!_isSignUp)
+                                GestureDetector(
+                                  onTap: _handleForgotPassword,
+                                  child: const Text(
+                                    "Forgot Password?",
+                                    style: TextStyle(
+                                      color: AppTheme.cyan,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 6),
                           Container(
@@ -238,8 +349,6 @@ class _AuthScreenState extends State<AuthScreen> {
                               obscureText: true,
                               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
                               decoration: const InputDecoration(
-                                hintText: "••••••••",
-                                hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                 prefixIcon: Icon(Icons.lock_outline, color: AppTheme.cyan, size: 20),

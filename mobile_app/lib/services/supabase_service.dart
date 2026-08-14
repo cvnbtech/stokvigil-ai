@@ -38,6 +38,14 @@ class SupabaseService {
     return await client.auth.signInWithPassword(email: email, password: password);
   }
 
+  Future<void> resetPasswordForEmail(String email) async {
+    await client.auth.resetPasswordForEmail(email);
+  }
+
+  Future<bool> signInWithGoogle() async {
+    return await client.auth.signInWithOAuth(OAuthProvider.google);
+  }
+
   Future<void> signOut() async {
     await client.auth.signOut();
   }
