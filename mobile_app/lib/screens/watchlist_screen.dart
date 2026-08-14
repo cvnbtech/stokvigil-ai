@@ -124,7 +124,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            const Text("Watchlist", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20)),
+            const TradingAILogo(size: 30),
+            const SizedBox(width: 10),
+            const Text("StokVigil Watchlist", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

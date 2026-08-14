@@ -102,8 +102,8 @@ class _AlertRadarScreenState extends State<AlertRadarScreen> {
       appBar: AppBar(
         title: Row(
           children: const [
-            Icon(Icons.radar_outlined, color: AppTheme.cyan, size: 24),
-            SizedBox(width: 8),
+            TradingAILogo(size: 30),
+            SizedBox(width: 10),
             Text(
               "StokVigil Alert Radar",
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),

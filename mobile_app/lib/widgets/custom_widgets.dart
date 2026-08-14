@@ -2,6 +2,60 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 
 // ─────────────────────────────────────────────
+// OFFICIAL TRADING AI LOGO EMBLEM (MATCHES WEB PORTAL)
+// ─────────────────────────────────────────────
+class TradingAILogo extends StatelessWidget {
+  final double size;
+
+  const TradingAILogo({super.key, this.size = 36});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D111E),
+        borderRadius: BorderRadius.circular(size * 0.28),
+        border: Border.all(color: AppTheme.borderCyan, width: 1.2),
+        boxShadow: const [
+          BoxShadow(color: Color(0x3D06B6D4), blurRadius: 10, offset: Offset(0, 4)),
+        ],
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Candlesticks
+          Positioned(
+            left: size * 0.22,
+            top: size * 0.2,
+            bottom: size * 0.2,
+            child: Container(width: 2, color: AppTheme.primaryEmerald.withOpacity(0.6)),
+          ),
+          Positioned(
+            left: size * 0.5,
+            top: size * 0.3,
+            bottom: size * 0.2,
+            child: Container(width: 2, color: AppTheme.dangerRose.withOpacity(0.6)),
+          ),
+          Positioned(
+            left: size * 0.78,
+            top: size * 0.15,
+            bottom: size * 0.3,
+            child: Container(width: 2, color: AppTheme.cyan.withOpacity(0.6)),
+          ),
+          // Breakout Trend Icon
+          ShaderMask(
+            shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
+            child: Icon(Icons.show_chart, color: Colors.white, size: size * 0.7),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // REUSABLE GLASS CARD WIDGET
 // ─────────────────────────────────────────────
 class GlassCard extends StatelessWidget {
@@ -276,7 +330,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Handlebar
               Center(
                 child: Container(
                   width: 40,
@@ -289,7 +342,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
               ),
               const SizedBox(height: 16),
 
-              // Title Row
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -354,9 +406,9 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                     children: [
                       const Icon(Icons.check_circle, color: AppTheme.primaryEmerald, size: 48),
                       const SizedBox(height: 10),
-                      Text(
+                      const Text(
                         "Order Placed Successfully!",
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -368,7 +420,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 20),
               ] else ...[
-                // Order Type Selector
                 Row(
                   children: ['BUY', 'SELL'].map((type) {
                     final selected = _tradeType == type;
@@ -401,7 +452,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 16),
 
-                // Order Mode Toggle (MARKET / LIMIT)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -435,7 +485,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 16),
 
-                // Quantity Counter
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -465,7 +514,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 16),
 
-                // Target & Stop Loss Info Strip
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -483,7 +531,6 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 20),
 
-                // Estimated Total & Submit CTA
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [

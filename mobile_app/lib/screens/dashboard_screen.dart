@@ -77,25 +77,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
             children: [
-              // Header Row
+              // Header Row Matching Web Portal
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
                     children: [
-                      Row(
-                        children: const [
-                          Text(
-                            "Portfolio Intelligence",
-                            style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                      const TradingAILogo(size: 38),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                "StokVigil ",
+                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.3),
+                              ),
+                              ShaderMask(
+                                shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
+                                child: const Text(
+                                  "AI",
+                                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            "5-Min Unsleeping Market Watchtower",
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        "Live Demat Holdings Radar • 5-Min Auto Scan",
-                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),

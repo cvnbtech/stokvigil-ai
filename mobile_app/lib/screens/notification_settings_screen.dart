@@ -124,8 +124,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       appBar: AppBar(
         title: Row(
           children: const [
-            Icon(Icons.settings_outlined, color: AppTheme.cyan, size: 24),
-            SizedBox(width: 8),
+            TradingAILogo(size: 30),
+            SizedBox(width: 10),
             Text("Settings & Dispatch Hub", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
           ],
         ),
