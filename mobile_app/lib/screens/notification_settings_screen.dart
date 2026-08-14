@@ -106,7 +106,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                           children: [
                             Row(
                               children: const [
-                                Icon(Icons.send_rounded, color: Color(0F29B6F6), size: 24),
+                                Icon(Icons.send_rounded, color: Color(0xFF29B6F6), size: 24),
                                 SizedBox(width: 10),
                                 Text("Telegram Bot Alerts", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
                               ],
@@ -130,8 +130,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                           width: double.infinity,
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0F29B6F6),
-                              side: const BorderSide(color: Color(0F29B6F6)),
+                              foregroundColor: const Color(0xFF29B6F6),
+                              side: const BorderSide(color: Color(0xFF29B6F6)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                             ),
                             onPressed: _connectTelegramBot,

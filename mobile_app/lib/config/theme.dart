@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const Color darkBackground = Color(0F0A0F1D);
-  static const Color cardBackground = Color(0F111827);
-  static const Color cardBorder = Color(0F1F2937);
+  static const Color darkBackground = Color(0xFF0A0F1D);
+  static const Color cardBackground = Color(0xFF111827);
+  static const Color cardBorder = Color(0xFF1F2937);
   
-  static const Color primaryEmerald = Color(0F10B981); // High Impact Emerald
-  static const Color secondaryAmber = Color(0F59E0B);  // Med Impact Amber
-  static const Color dangerRose = Color(0FEF4444);     // High Alert Rose
-  static const Color textPrimary = Color(0FF9CA3AF);
-  static const Color textSecondary = Color(0F6B7280);
+  static const Color primaryEmerald = Color(0xFF10B981); // High Impact Emerald
+  static const Color secondaryAmber = Color(0xFFF59E0B);  // Med Impact Amber
+  static const Color dangerRose = Color(0xFFEF4444);     // High Alert Rose
+  static const Color textPrimary = Color(0xFF9CA3AF);
+  static const Color textSecondary = Color(0xFF6B7280);
 
   static ThemeData get darkTheme {
     return ThemeData(
