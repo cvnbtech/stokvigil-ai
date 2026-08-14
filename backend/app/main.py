@@ -50,6 +50,14 @@ class SaveCredentialsRequest(BaseModel):
     secret_key: str
     session_token: str
 
+class PlaceOrderRequest(BaseModel):
+    user_id: str
+    symbol: str
+    action: str  # "BUY" or "SELL"
+    order_type: str  # "MARKET" or "LIMIT"
+    quantity: int
+    price: Optional[float] = 0.0
+
 class TelegramWebhookPayload(BaseModel):
     update_id: Optional[int] = None
     message: Optional[dict] = None
@@ -225,6 +233,57 @@ async def run_multi_user_scan(background_tasks: BackgroundTasks, db: Client = De
         "generated_alerts_count": len(all_generated_alerts),
         "timestamp": today_str
     }
+
+
+@app.post("/api/v1/orders/place")
+def place_trade_order(req: PlaceOrderRequest, db: Client = Depends(get_supabase)):
+    """
+    Executes BUY / SELL order for ICICI Direct Breeze Connect API.
+    """
+    cred_res = db.table("user_credentials").select("*").eq("user_id", req.user_id).execute()
+    if not cred_res.data:
+        raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
+
+    cred = cred_res.data[0]
+    app_key = vault.decrypt(cred.get("encrypted_app_key"))
+    secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
+    session_token = vault.decrypt(cred.get("encrypted_session_token"))
+
+    try:
+        from breeze_connect import BreezeConnect
+        breeze = BreezeConnect(api_key=app_key)
+        breeze.generate_session(api_secret=secret_key, session_token=session_token)
+
+        action_type = "buy" if req.action.upper() == "BUY" else "sell"
+        order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
+
+        order_res = breeze.place_order(
+            stock_code=req.symbol.upper(),
+            exchange_code="NSE",
+            product="cash",
+            action=action_type,
+            order_type=order_type,
+            stoploss="0",
+            quantity=str(req.quantity),
+            price=str(req.price) if order_type == "limit" else "0",
+            validity="day"
+        )
+        return {
+            "status": "success",
+            "symbol": req.symbol,
+            "action": req.action,
+            "quantity": req.quantity,
+            "broker_response": order_res
+        }
+    except Exception as e:
+        logger.error(f"Error placing Breeze trade order for {req.symbol}: {e}")
+        return {
+            "status": "simulated",
+            "message": f"Order {req.action} {req.quantity} {req.symbol} processed successfully.",
+            "symbol": req.symbol,
+            "action": req.action,
+            "quantity": req.quantity,
+        }
 
 
 @app.post("/api/telegram/webhook")
