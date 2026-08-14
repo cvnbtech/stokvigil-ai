@@ -35,17 +35,23 @@ class PortfolioHolding {
   final double? peRatio;
   final double? debtToEquity;
 
+  double get currentVal => currentValue;
+  double get pnlPct => pnlPercent;
+
   PortfolioHolding({
     required this.symbol,
     required this.quantity,
     required this.avgPrice,
     required this.currentPrice,
-    required this.currentValue,
+    double? currentValue,
+    double? currentVal,
     required this.pnl,
-    required this.pnlPercent,
+    double? pnlPercent,
+    double? pnlPct,
     this.peRatio,
     this.debtToEquity,
-  });
+  })  : currentValue = currentValue ?? currentVal ?? 0.0,
+        pnlPercent = pnlPercent ?? pnlPct ?? 0.0;
 
   factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
     return PortfolioHolding(
@@ -53,9 +59,9 @@ class PortfolioHolding {
       quantity: (json['quantity'] ?? 0).toDouble(),
       avgPrice: (json['avg_price'] ?? 0).toDouble(),
       currentPrice: (json['current_price'] ?? 0).toDouble(),
-      currentValue: (json['current_value'] ?? 0).toDouble(),
+      currentValue: (json['current_value'] ?? json['current_val'] ?? 0).toDouble(),
       pnl: (json['pnl'] ?? 0).toDouble(),
-      pnlPercent: (json['pnl_percent'] ?? 0).toDouble(),
+      pnlPercent: (json['pnl_percent'] ?? json['pnl_pct'] ?? 0).toDouble(),
       peRatio: json['pe_ratio'] != null ? (json['pe_ratio']).toDouble() : null,
       debtToEquity: json['debt_to_equity'] != null ? (json['debt_to_equity']).toDouble() : null,
     );
@@ -64,6 +70,7 @@ class PortfolioHolding {
 
 class StokAlert {
   final String id;
+  final String? userId;
   final String symbol;
   final String alertTitle;
   final String catalystType;
@@ -76,20 +83,25 @@ class StokAlert {
 
   StokAlert({
     required this.id,
+    this.userId,
     required this.symbol,
     required this.alertTitle,
-    required this.catalystType,
+    String? catalystType,
     required this.impactScore,
     required this.factualReasons,
     required this.metricsSnapshot,
-    required this.sentViaFcm,
-    required this.sentViaTelegram,
-    required this.createdAt,
-  });
+    bool? sentViaFcm,
+    bool? sentViaTelegram,
+    DateTime? createdAt,
+  })  : catalystType = catalystType ?? 'NEWS_CATALYST',
+        sentViaFcm = sentViaFcm ?? false,
+        sentViaTelegram = sentViaTelegram ?? false,
+        createdAt = createdAt ?? DateTime.now();
 
   factory StokAlert.fromJson(Map<String, dynamic> json) {
     return StokAlert(
       id: json['id'] ?? '',
+      userId: json['user_id'],
       symbol: json['symbol'] ?? '',
       alertTitle: json['alert_title'] ?? '',
       catalystType: json['catalyst_type'] ?? 'NEWS_CATALYST',

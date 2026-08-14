@@ -8,6 +8,7 @@ class FcmService {
   FcmService._internal();
 
   FirebaseMessaging get messaging => FirebaseMessaging.instance;
+  String? fcmToken = "mock_fcm_token_android_device_2026";
 
   Future<void> initialize() async {
     try {
@@ -22,6 +23,8 @@ class FcmService {
         debugPrint('FCM User granted permission');
       }
 
+      fcmToken = await messaging.getToken();
+
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         debugPrint('Foreground FCM Alert received: ${message.notification?.title}');
       });
@@ -32,10 +35,12 @@ class FcmService {
 
   Future<String?> getDeviceToken() async {
     try {
-      return await messaging.getToken();
+      final token = await messaging.getToken();
+      if (token != null) fcmToken = token;
+      return fcmToken;
     } catch (e) {
       debugPrint('Error getting FCM token: $e');
-      return "mock_fcm_token_android_device_2026";
+      return fcmToken;
     }
   }
 }
