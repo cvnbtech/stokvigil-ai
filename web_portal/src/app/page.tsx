@@ -773,17 +773,6 @@ export default function App() {
             background: "radial-gradient(ellipse 80% 50% at 50% 100%, rgba(139,92,246,0.18) 0%, transparent 70%), radial-gradient(ellipse 60% 40% at 80% 10%, rgba(6,182,212,0.12) 0%, transparent 60%)",
           }} />
 
-          {/* Top Mobile Status Bar Simulation */}
-          <div style={{
-            height: 34, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
-            fontSize: 11, fontWeight: 700, color: C.gray1, zIndex: 10
-          }}>
-            <span>9:41</span>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span>5G</span>
-              <span>🔋</span>
-            </div>
-          </div>
 
           <div className="anim-fadeup" style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "16px 24px 32px", gap: 20, position: "relative" }}>
 
@@ -1062,17 +1051,6 @@ export default function App() {
           background: "radial-gradient(ellipse 90% 40% at 50% 100%, rgba(139,92,246,0.14) 0%, transparent 70%)",
         }} />
 
-        {/* Top Status Bar */}
-        <div style={{
-          height: 28, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between",
-          fontSize: 10, fontWeight: 700, color: C.gray1, zIndex: 40, background: "#060812"
-        }}>
-          <span>9:41</span>
-          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
-            <span>5G</span>
-            <span>🔋</span>
-          </div>
-        </div>
 
         {/* Main Sticky Header */}
         <div style={{
