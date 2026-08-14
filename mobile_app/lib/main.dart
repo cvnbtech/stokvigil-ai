@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'config/theme.dart';
-import 'screens/onboarding_modal.dart';
 import 'screens/auth_screen.dart';
 import 'screens/icici_credentials_screen.dart';
 import 'screens/dashboard_screen.dart';
@@ -40,30 +39,6 @@ class MainNavigationWrapper extends StatefulWidget {
 
 class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
   int _currentIndex = 0;
-  bool _hasAgreedDisclaimer = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkDisclaimer();
-    });
-  }
-
-  void _checkDisclaimer() {
-    if (!_hasAgreedDisclaimer) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => OnboardingDisclaimerModal(
-          onAccept: () {
-            setState(() => _hasAgreedDisclaimer = true);
-            Navigator.of(context).pop();
-          },
-        ),
-      );
-    }
-  }
 
   void _onTabTapped(int index) {
     setState(() => _currentIndex = index);

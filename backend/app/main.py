@@ -43,6 +43,7 @@ class RegisterDeviceRequest(BaseModel):
     fcm_device_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     telegram_enabled: Optional[bool] = None
+    tnc_accepted: Optional[bool] = True
 
 class SaveCredentialsRequest(BaseModel):
     user_id: str
@@ -89,6 +90,9 @@ def register_device(req: RegisterDeviceRequest, db: Client = Depends(get_supabas
         update_data["telegram_chat_id"] = req.telegram_chat_id
     if req.telegram_enabled is not None:
         update_data["telegram_enabled"] = req.telegram_enabled
+    if req.tnc_accepted is not None:
+        update_data["tnc_accepted"] = req.tnc_accepted
+        update_data["tnc_accepted_at"] = "now()"
         
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided for update.")

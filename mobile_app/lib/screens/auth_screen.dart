@@ -59,33 +59,191 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  // 100% Web Portal Matching Reset Password Modal
   Future<void> _handleForgotPassword() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Please enter your email address first."),
-          backgroundColor: AppTheme.dangerRose,
-        ),
-      );
-      return;
-    }
+    final resetEmailController = TextEditingController(text: _emailController.text);
+    bool isSent = false;
+    bool isResetting = false;
 
-    try {
-      await SupabaseService().resetPasswordForEmail(email);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Password reset email sent to $email! Please check your inbox."),
-            backgroundColor: AppTheme.primaryEmerald,
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Dialog(
+          backgroundColor: AppTheme.cardBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: AppTheme.borderCyan, width: 1.5),
           ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, e);
-      }
-    }
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Row with Title and Close X Button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        Text("🔑 ", style: TextStyle(fontSize: 16)),
+                        Text(
+                          "Reset Password",
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                        ),
+                      ],
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                if (isSent) ...[
+                  // Web Portal Success Confirmation Card
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryEmerald.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.check_circle_outline, color: AppTheme.primaryEmerald, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            "Password reset link sent to your email! Please check your inbox.",
+                            style: TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.bold, height: 1.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Done Button
+                  Container(
+                    width: double.infinity,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.logoGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text("Done", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                    ),
+                  ),
+                ] else ...[
+                  // Instruction Text
+                  const Text(
+                    "Enter your registered email address and we'll send you an instant link to reset your password.",
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Email Address Input Label & Box
+                  const Text(
+                    "EMAIL ADDRESS",
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF080B16),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.cardBorder),
+                    ),
+                    child: TextField(
+                      controller: resetEmailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        prefixIcon: Icon(Icons.email_outlined, color: AppTheme.cyan, size: 18),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Send Reset Link Button
+                  Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.logoGradient,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x4D06B6D4), blurRadius: 14, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: isResetting
+                          ? null
+                          : () async {
+                              final email = resetEmailController.text.trim();
+                              if (email.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Please enter your email address."),
+                                    backgroundColor: AppTheme.dangerRose,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() => isResetting = true);
+                              try {
+                                await SupabaseService().resetPasswordForEmail(email);
+                              } catch (e) {
+                                debugPrint("Reset password attempt: $e");
+                              } finally {
+                                setModalState(() {
+                                  isResetting = false;
+                                  isSent = true;
+                                });
+                              }
+                            },
+                      child: isResetting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Text("Send Reset Link", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                                SizedBox(width: 6),
+                                Icon(Icons.arrow_forward, color: Colors.white, size: 16),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _handleGoogleSignIn() async {
