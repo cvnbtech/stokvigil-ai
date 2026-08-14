@@ -86,8 +86,13 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
   Widget build(BuildContext context) {
     final currentUser = SupabaseService().currentUser;
 
+    // Strict Authentication Guard
     if (currentUser == null) {
-      // In demo mode or unauthenticated mode, display main navigation wrapper directly
+      return AuthScreen(
+        onLoginSuccess: () {
+          setState(() {});
+        },
+      );
     }
 
     final pages = [

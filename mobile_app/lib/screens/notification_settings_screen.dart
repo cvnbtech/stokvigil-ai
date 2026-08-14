@@ -82,6 +82,19 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     }
   }
 
+  Future<void> _signOutUser() async {
+    try {
+      await SupabaseService().signOut();
+      if (mounted) {
+        ErrorHandler.showSuccessSnackBar(context, "Signed out successfully.");
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, e);
+      }
+    }
+  }
+
   void _openTelegramBot() async {
     try {
       final user = SupabaseService().currentUser;
@@ -120,34 +133,42 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          // User Profile Card
+          // User Profile Card with Sign Out Action
           GlassCard(
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.primaryGradient,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(
-                      userName.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.primaryGradient,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Text(
+                          userName.substring(0, 1).toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(userName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
+                        const SizedBox(height: 2),
+                        Text(userEmail, style: const TextStyle(color: AppTheme.cyan, fontSize: 12, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(userName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16)),
-                      const SizedBox(height: 2),
-                      Text(userEmail, style: const TextStyle(color: AppTheme.cyan, fontSize: 12, fontWeight: FontWeight.w600)),
-                    ],
-                  ),
+                IconButton(
+                  tooltip: "Sign Out Account",
+                  icon: const Icon(Icons.logout, color: AppTheme.dangerRose, size: 22),
+                  onPressed: _signOutUser,
                 ),
               ],
             ),
