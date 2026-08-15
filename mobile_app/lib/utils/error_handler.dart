@@ -39,6 +39,16 @@ class ErrorHandler {
       return "⚙️ Server data error. Please try refreshing again shortly.";
     }
 
+    // Supabase Configuration / Placeholder / API Key Errors
+    if (errStr.contains('your-supabase-project') ||
+        errStr.contains('your-anon-key') ||
+        errStr.contains('invalid api key') ||
+        errStr.contains('apikey') ||
+        errStr.contains('jwt') ||
+        errStr.contains('unauthorized')) {
+      return "🔑 Supabase API Keys not configured yet. Tap 'Continue with Google' or sign in to enter Demo Investor Mode.";
+    }
+
     // Custom String Errors
     if (error is String) {
       return error;
@@ -46,9 +56,6 @@ class ErrorHandler {
 
     // Fallback cleaned error message
     final cleanMsg = error.toString().replaceAll(RegExp(r'^(Exception|AuthException|PostgrestException):\s*'), '');
-    if (cleanMsg.length > 80) {
-      return "Unable to complete request. Please verify your connection and try again.";
-    }
     return cleanMsg;
   }
 

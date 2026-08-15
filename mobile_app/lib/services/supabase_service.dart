@@ -7,44 +7,56 @@ class SupabaseService {
   factory SupabaseService() => _instance;
   SupabaseService._internal();
 
-  static const String supabaseUrl = String.fromEnvironment(
+  static String supabaseUrl = const String.fromEnvironment(
     'SUPABASE_URL',
     defaultValue: "https://your-supabase-project.supabase.co",
   );
-  static const String supabaseAnonKey = String.fromEnvironment(
+  static String supabaseAnonKey = const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
     defaultValue: "your-anon-key",
   );
 
-  SupabaseClient get client => Supabase.instance.client;
-  User? get currentUser => client.auth.currentUser;
+  static bool get isConfigured =>
+      supabaseUrl.isNotEmpty &&
+      supabaseUrl != "https://your-supabase-project.supabase.co" &&
+      supabaseAnonKey.isNotEmpty &&
+      supabaseAnonKey != "your-anon-key";
+
+  SupabaseClient? get client => isConfigured ? Supabase.instance.client : null;
+  User? get currentUser => isConfigured ? client?.auth.currentUser : null;
 
   static Future<void> initialize() async {
     try {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        anonKey: supabaseAnonKey,
-      );
+      if (isConfigured) {
+        await Supabase.initialize(
+          url: supabaseUrl,
+          anonKey: supabaseAnonKey,
+        );
+      }
     } catch (e) {
-      debugPrint("Supabase init error / demo mode: $e");
+      debugPrint("Supabase init info: $e");
     }
   }
 
-  Future<AuthResponse> signUpWithEmail(String email, String password) async {
-    return await client.auth.signUp(email: email, password: password);
+  Future<AuthResponse?> signUpWithEmail(String email, String password) async {
+    if (!isConfigured) return null;
+    return await client!.auth.signUp(email: email, password: password);
   }
 
-  Future<AuthResponse> signInWithEmail(String email, String password) async {
-    return await client.auth.signInWithPassword(email: email, password: password);
+  Future<AuthResponse?> signInWithEmail(String email, String password) async {
+    if (!isConfigured) return null;
+    return await client!.auth.signInWithPassword(email: email, password: password);
   }
 
   Future<void> resetPasswordForEmail(String email) async {
-    await client.auth.resetPasswordForEmail(email);
+    if (!isConfigured) return;
+    await client!.auth.resetPasswordForEmail(email);
   }
 
   Future<bool> signInWithGoogle() async {
+    if (!isConfigured) return false;
     try {
-      return await client.auth.signInWithOAuth(
+      return await client!.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: kIsWeb ? null : 'io.supabase.flutter://login-callback',
       );
