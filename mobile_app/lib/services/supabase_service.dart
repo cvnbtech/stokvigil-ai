@@ -22,17 +22,15 @@ class SupabaseService {
       supabaseAnonKey.isNotEmpty &&
       supabaseAnonKey != "your-anon-key";
 
-  SupabaseClient? get client => isConfigured ? Supabase.instance.client : null;
-  User? get currentUser => isConfigured ? client?.auth.currentUser : null;
+  SupabaseClient get client => Supabase.instance.client;
+  User? get currentUser => isConfigured ? Supabase.instance.client.auth.currentUser : null;
 
   static Future<void> initialize() async {
     try {
-      if (isConfigured) {
-        await Supabase.initialize(
-          url: supabaseUrl,
-          anonKey: supabaseAnonKey,
-        );
-      }
+      await Supabase.initialize(
+        url: isConfigured ? supabaseUrl : "https://your-supabase-project.supabase.co",
+        anonKey: isConfigured ? supabaseAnonKey : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy",
+      );
     } catch (e) {
       debugPrint("Supabase init info: $e");
     }
@@ -40,23 +38,23 @@ class SupabaseService {
 
   Future<AuthResponse?> signUpWithEmail(String email, String password) async {
     if (!isConfigured) return null;
-    return await client!.auth.signUp(email: email, password: password);
+    return await client.auth.signUp(email: email, password: password);
   }
 
   Future<AuthResponse?> signInWithEmail(String email, String password) async {
     if (!isConfigured) return null;
-    return await client!.auth.signInWithPassword(email: email, password: password);
+    return await client.auth.signInWithPassword(email: email, password: password);
   }
 
   Future<void> resetPasswordForEmail(String email) async {
     if (!isConfigured) return;
-    await client!.auth.resetPasswordForEmail(email);
+    await client.auth.resetPasswordForEmail(email);
   }
 
   Future<bool> signInWithGoogle() async {
     if (!isConfigured) return false;
     try {
-      return await client!.auth.signInWithOAuth(
+      return await client.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: kIsWeb ? null : 'io.supabase.flutter://login-callback',
       );
@@ -67,6 +65,7 @@ class SupabaseService {
   }
 
   Future<void> signOut() async {
+    if (!isConfigured) return;
     await client.auth.signOut();
   }
 
