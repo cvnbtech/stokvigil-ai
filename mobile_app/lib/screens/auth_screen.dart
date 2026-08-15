@@ -313,18 +313,17 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Official Web Portal Emblem & Brand Header
-                    const TradingAILogo(size: 56),
-                    const SizedBox(height: 14),
-
+                    // Official Web Portal Emblem & Brand Header (Matches User Screenshot)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
+                        const TradingAILogo(size: 44),
+                        const SizedBox(width: 12),
                         const Text(
                           "StokVigil ",
                           style: TextStyle(
                             color: Colors.white,
-                            fontSize: 28,
+                            fontSize: 26,
                             fontWeight: FontWeight.w900,
                             letterSpacing: -0.5,
                           ),
@@ -335,7 +334,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             "AI",
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 28,
+                              fontSize: 26,
                               fontWeight: FontWeight.w900,
                             ),
                           ),
@@ -710,47 +709,62 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                           const SizedBox(height: 20),
 
-                          // Primary Submit Button
+                          // Primary Submit Button (Matches Web Portal Gradient & Glow)
                           Container(
                             width: double.infinity,
-                            height: 50,
+                            height: 52,
                             decoration: BoxDecoration(
-                              gradient: _tncAccepted ? AppTheme.logoGradient : null,
-                              color: _tncAccepted ? null : AppTheme.cardBorder,
+                              gradient: AppTheme.logoGradient,
                               borderRadius: BorderRadius.circular(14),
-                              boxShadow: _tncAccepted
-                                  ? const [
-                                      BoxShadow(
-                                        color: Color(0x4D06B6D4),
-                                        blurRadius: 16,
-                                        offset: Offset(0, 4),
-                                      ),
-                                    ]
-                                  : null,
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x4D06B6D4),
+                                  blurRadius: 16,
+                                  offset: Offset(0, 4),
+                                ),
+                              ],
                             ),
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.transparent,
-                                shadowColor: Colors.transparent,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(14),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: _isLoading
+                                    ? null
+                                    : () {
+                                        if (!_tncAccepted) {
+                                          showDialog(
+                                            context: context,
+                                            builder: (context) => TermsConditionsModal(
+                                              onAccept: () {
+                                                setState(() {
+                                                  _tncAccepted = true;
+                                                });
+                                              },
+                                            ),
+                                          );
+                                        } else {
+                                          _handleAuth();
+                                        }
+                                      },
+                                child: Center(
+                                  child: _isLoading
+                                      ? const SizedBox(
+                                          height: 22,
+                                          width: 22,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                                        )
+                                      : Text(
+                                          _isSignUp ? "Create Account →" : "Sign In to StokVigil →",
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 16,
+                                            letterSpacing: 0.3,
+                                          ),
+                                        ),
+                                ),
                               ),
-                              onPressed: (_isLoading || !_tncAccepted) ? null : _handleAuth,
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
-                                    )
-                                  : Text(
-                                      !_tncAccepted
-                                          ? (_isSignUp ? "🔒 Create Account" : "🔒 Sign In to StokVigil")
-                                          : (_isSignUp ? "Create Account →" : "Sign In to StokVigil →"),
-                                      style: TextStyle(
-                                        color: _tncAccepted ? Colors.white : AppTheme.textMuted,
-                                        fontWeight: FontWeight.w900,
-                                        fontSize: 15,
-                                      ),
-                                    ),
                             ),
                           ),
                           const SizedBox(height: 16),

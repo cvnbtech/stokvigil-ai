@@ -105,7 +105,12 @@ G:\stokvigil-ai\
 │   └── render.yaml
 ├── mobile_app/
 │   ├── pubspec.yaml
-│   ├── android/app/build.gradle
+│   ├── assets/
+│   │   ├── app_icon.png
+│   │   └── app_icon.svg
+│   ├── android/app/src/main/res/mipmap-*/
+│   │   ├── ic_launcher.png
+│   │   └── ic_launcher_round.png
 │   └── lib/
 │       ├── main.dart
 │       ├── config/theme.dart
@@ -126,7 +131,14 @@ G:\stokvigil-ai\
 │   ├── package.json
 │   ├── next.config.js
 │   ├── tailwind.config.js
-│   ├── public/manifest.json
+│   ├── public/
+│   │   ├── manifest.json
+│   │   ├── app_icon.png
+│   │   ├── app_icon.svg
+│   │   ├── apple-touch-icon.png
+│   │   ├── favicon.ico
+│   │   ├── icon-192.png
+│   │   └── icon-512.png
 │   └── src/
 │       ├── app/
 │       │   ├── layout.tsx

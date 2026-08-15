@@ -22,6 +22,14 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 
 ---
 
+## 🎨 App Icon & Visual Design System
+- **Master App Launcher Icon**: Full-bleed squircle icon (`#0D111E` background, ambient cyan backlight, glowing white **S** + cyan-emerald growth arrow **V**).
+- **Mobile Assets**: Located at `mobile_app/assets/app_icon.png` & `app_icon.svg`, automatically configured for Android density targets (`mipmap-mdpi` through `mipmap-xxxhdpi` standard and round launcher icons).
+- **Web Portal PWA Icons**: Located at `web_portal/public/icon-192.png`, `icon-512.png`, `apple-touch-icon.png`, and `favicon.ico`.
+- **100% Matched Auth Screens**: Android App Sign-In and Web Portal Sign-In feature identical dark radial ambient backdrops, brand typography, 1-tap Google SSO, and shared master `app_icon.png` emblem.
+
+---
+
 ## 🚀 Step-by-Step Setup & Deployment Guide
 
 ### 1. Database Setup (Supabase PostgreSQL)

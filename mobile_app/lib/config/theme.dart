@@ -30,7 +30,7 @@ class AppTheme {
   );
 
   static const LinearGradient logoGradient = LinearGradient(
-    colors: [cyan, violet],
+    colors: [cyan, Color(0xFF38BDF8), violet],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

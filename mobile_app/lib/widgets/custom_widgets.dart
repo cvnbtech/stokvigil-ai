@@ -95,44 +95,129 @@ class TradingAILogo extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: const Color(0xFF0D111E),
         borderRadius: BorderRadius.circular(size * 0.28),
-        border: Border.all(color: AppTheme.borderCyan, width: 1.2),
         boxShadow: const [
-          BoxShadow(color: Color(0x3D06B6D4), blurRadius: 10, offset: Offset(0, 4)),
+          BoxShadow(color: Color(0x4D06B6D4), blurRadius: 12, offset: Offset(0, 4)),
         ],
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Candlesticks
-          Positioned(
-            left: size * 0.22,
-            top: size * 0.2,
-            bottom: size * 0.2,
-            child: Container(width: 2, color: AppTheme.primaryEmerald.withOpacity(0.6)),
-          ),
-          Positioned(
-            left: size * 0.5,
-            top: size * 0.3,
-            bottom: size * 0.2,
-            child: Container(width: 2, color: AppTheme.dangerRose.withOpacity(0.6)),
-          ),
-          Positioned(
-            left: size * 0.78,
-            top: size * 0.15,
-            bottom: size * 0.3,
-            child: Container(width: 2, color: AppTheme.cyan.withOpacity(0.6)),
-          ),
-          // Breakout Trend Icon
-          ShaderMask(
-            shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
-            child: Icon(Icons.show_chart, color: Colors.white, size: size * 0.7),
-          ),
-        ],
+      child: CustomPaint(
+        size: Size(size, size),
+        painter: CandlestickBreakoutLogoPainter(),
       ),
     );
   }
+}
+
+class CandlestickBreakoutLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width / 52.0;
+
+    // 1. Background Squircle (#0D111E -> #080B16)
+    final bgPaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF0D111E), Color(0xFF080B16)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Radius.circular(14.0 * s),
+    );
+    canvas.drawRRect(rrect, bgPaint);
+
+    // Cyan Border
+    final borderPaint = Paint()
+      ..color = const Color(0x4006B6D4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5 * s;
+    canvas.drawRRect(rrect, borderPaint);
+
+    // 2. Candlesticks Underneath
+    // Green Candlestick
+    final greenLine = Paint()
+      ..color = const Color(0x9910B981)
+      ..strokeWidth = 1.2 * s;
+    canvas.drawLine(Offset(14 * s, 18 * s), Offset(14 * s, 38 * s), greenLine);
+
+    final greenBody = Paint()..color = const Color(0xD910B981);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(12 * s, 22 * s, 4 * s, 12 * s), Radius.circular(1 * s)),
+      greenBody,
+    );
+
+    // Red Candlestick
+    final redLine = Paint()
+      ..color = const Color(0x99EF4444)
+      ..strokeWidth = 1.2 * s;
+    canvas.drawLine(Offset(24 * s, 24 * s), Offset(24 * s, 40 * s), redLine);
+
+    final redBody = Paint()..color = const Color(0xD9EF4444);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(22 * s, 27 * s, 4 * s, 8 * s), Radius.circular(1 * s)),
+      redBody,
+    );
+
+    // Cyan Candlestick
+    final cyanLine = Paint()
+      ..color = const Color(0x9906B6D4)
+      ..strokeWidth = 1.2 * s;
+    canvas.drawLine(Offset(34 * s, 10 * s), Offset(34 * s, 36 * s), cyanLine);
+
+    final cyanBody = Paint()..color = const Color(0xE606B6D4);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(32 * s, 14 * s, 4 * s, 18 * s), Radius.circular(1 * s)),
+      cyanBody,
+    );
+
+    // 3. Overlaid Up-Down-Up Breakout Arrow Path
+    final arrowShader = const LinearGradient(
+      begin: Alignment.bottomLeft,
+      end: Alignment.topRight,
+      colors: [Color(0xFF06B6D4), Color(0xFF38BDF8), Color(0xFF8B5CF6)],
+    ).createShader(Rect.fromLTWH(4 * s, 6 * s, 44 * s, 38 * s));
+
+    final arrowPath = Path()
+      ..moveTo(6 * s, 38 * s)
+      ..lineTo(14 * s, 22 * s)
+      ..lineTo(24 * s, 31 * s)
+      ..lineTo(38 * s, 11 * s);
+
+    // Glow Layer
+    final glowPaint = Paint()
+      ..shader = arrowShader
+      ..strokeWidth = 5.5 * s
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
+    canvas.drawPath(arrowPath, glowPaint);
+
+    // Core Arrow Line
+    final linePaint = Paint()
+      ..shader = arrowShader
+      ..strokeWidth = 3.5 * s
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(arrowPath, linePaint);
+
+    // Arrowhead Triangle
+    final headPath = Path()
+      ..moveTo(44 * s, 6 * s)
+      ..lineTo(32 * s, 11 * s)
+      ..lineTo(38 * s, 19 * s)
+      ..close();
+
+    final headPaint = Paint()
+      ..shader = arrowShader
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(headPath, headPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────────
