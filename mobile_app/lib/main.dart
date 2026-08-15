@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/theme.dart';
 import 'screens/auth_screen.dart';
 import 'screens/icici_credentials_screen.dart';
@@ -39,6 +41,27 @@ class MainNavigationWrapper extends StatefulWidget {
 
 class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
   int _currentIndex = 0;
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    if (SupabaseService.isConfigured) {
+      _authSubscription = SupabaseService().client.auth.onAuthStateChange.listen((data) {
+        if (mounted) {
+          setState(() {
+            _currentIndex = 0;
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   void _onTabTapped(int index) {
     setState(() => _currentIndex = index);
@@ -106,27 +129,52 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
           unselectedItemColor: AppTheme.textSecondary,
           selectedFontSize: 11,
           unselectedFontSize: 11,
+          type: BottomNavigationBarType.fixed,
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w900),
           unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
           items: const [
             BottomNavigationBarItem(
-              icon: Icon(Icons.dashboard_outlined),
-              activeIcon: Icon(Icons.dashboard, color: AppTheme.cyan),
-              label: 'Dashboard',
+              icon: Icon(Icons.bar_chart_rounded),
+              activeIcon: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bar_chart_rounded, color: AppTheme.cyan),
+                  SizedBox(height: 2),
+                ],
+              ),
+              label: 'Home',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.radar_outlined),
-              activeIcon: Icon(Icons.radar, color: AppTheme.cyan),
-              label: 'Radar',
+              icon: Icon(Icons.notifications_none_rounded),
+              activeIcon: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.notifications_rounded, color: AppTheme.cyan),
+                  SizedBox(height: 2),
+                ],
+              ),
+              label: 'Alerts',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.format_list_bulleted_outlined),
-              activeIcon: Icon(Icons.format_list_bulleted, color: AppTheme.cyan),
+              icon: Icon(Icons.format_list_bulleted_rounded),
+              activeIcon: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.format_list_bulleted_rounded, color: AppTheme.cyan),
+                  SizedBox(height: 2),
+                ],
+              ),
               label: 'Watchlist',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings, color: AppTheme.cyan),
+              activeIcon: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.settings_rounded, color: AppTheme.cyan),
+                  SizedBox(height: 2),
+                ],
+              ),
               label: 'Settings',
             ),
           ],

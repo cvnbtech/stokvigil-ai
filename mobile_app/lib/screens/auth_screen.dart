@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/theme.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
@@ -290,7 +291,7 @@ class _AuthScreenState extends State<AuthScreen> {
           child: Container(
             padding: const EdgeInsets.all(22),
             child: Column(
-              mainAxisSize: MinAxisSize.min,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
