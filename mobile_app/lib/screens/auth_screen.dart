@@ -20,7 +20,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isSignUp = false;
   bool _isLoading = false;
-  bool _tncAccepted = true;
+  bool _tncAccepted = false;
   String? _errorMessage;
 
   @override
@@ -660,42 +660,6 @@ class _AuthScreenState extends State<AuthScreen> {
                                   fontSize: 13,
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Web Portal Matching Terms & Conditions Link
-                    GestureDetector(
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (context) => TermsConditionsModal(
-                            onAccept: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text("Terms & Conditions accepted."),
-                                  backgroundColor: AppTheme.primaryEmerald,
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      },
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.description_outlined, color: AppTheme.textMuted, size: 14),
-                          SizedBox(width: 4),
-                          Text(
-                            "View Terms & Conditions",
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              decoration: TextDecoration.underline,
                             ),
                           ),
                         ],

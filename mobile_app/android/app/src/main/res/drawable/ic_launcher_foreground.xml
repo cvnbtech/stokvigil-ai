@@ -4,7 +4,29 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+    <!-- Dark Obsidian Background (#0D111E) -->
     <path
-        android:fillColor="#10B981"
-        android:pathData="M30,30h48v48H30z"/>
+        android:fillColor="#0D111E"
+        android:pathData="M18,18h72v72H18z"/>
+
+    <!-- Outer Cyan Border Accent (#06B6D4) -->
+    <path
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="1.5"
+        android:pathData="M22,22h64v64H22z"/>
+
+    <!-- White 'S' Vector Curve -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:pathData="M46,38 C30,38 30,54 46,54 C62,54 62,70 46,70 L32,70"/>
+
+    <!-- Cyan Breakout 'V' Arrow -->
+    <path
+        android:strokeColor="#06B6D4"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:pathData="M58,46 L70,70 L86,28"/>
 </vector>

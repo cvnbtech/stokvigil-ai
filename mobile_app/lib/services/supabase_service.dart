@@ -43,7 +43,15 @@ class SupabaseService {
   }
 
   Future<bool> signInWithGoogle() async {
-    return await client.auth.signInWithOAuth(OAuthProvider.google);
+    try {
+      return await client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: kIsWeb ? null : 'io.supabase.flutter://login-callback',
+      );
+    } catch (e) {
+      debugPrint("Error signing in with Google OAuth: $e");
+      return false;
+    }
   }
 
   Future<void> signOut() async {
