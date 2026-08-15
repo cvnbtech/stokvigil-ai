@@ -1,7 +1,7 @@
 name: stokvigil_mobile
 description: "StokVigil AI — 100% Free AI-Powered Stock Alert & Market Intelligence Application (Package com.app.stokvigil)"
 publish_to: 'none'
-version: 1.0.6+7
+version: 1.0.7+8
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -31,3 +31,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/app_icon.svg
+    - assets/app_icon.png
