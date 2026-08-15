@@ -38,7 +38,11 @@ class SupabaseService {
 
   Future<AuthResponse?> signUpWithEmail(String email, String password) async {
     if (!isConfigured) return null;
-    return await client.auth.signUp(email: email, password: password);
+    return await client.auth.signUp(
+      email: email,
+      password: password,
+      emailRedirectTo: kIsWeb ? null : 'io.supabase.flutter://login-callback',
+    );
   }
 
   Future<AuthResponse?> signInWithEmail(String email, String password) async {

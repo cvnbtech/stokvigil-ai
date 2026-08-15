@@ -23,6 +23,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
   bool _tncAccepted = false;
   String? _errorMessage;
+  String? _successMessage;
 
   @override
   void dispose() {
@@ -36,6 +37,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _successMessage = null;
     });
 
     try {
@@ -47,7 +49,14 @@ class _AuthScreenState extends State<AuthScreen> {
       }
 
       if (_isSignUp) {
-        await SupabaseService().signUpWithEmail(email, password);
+        final res = await SupabaseService().signUpWithEmail(email, password);
+        if (res?.session == null && res?.user != null) {
+          setState(() {
+            _successMessage = "✉️ Registration successful! A verification link has been sent to $email. Please check your inbox and confirm your email to sign in.";
+            _isSignUp = false;
+          });
+          return;
+        }
       } else {
         await SupabaseService().signInWithEmail(email, password);
       }
@@ -262,6 +271,166 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  // Set New Password Modal for Password Recovery Flow
+  Future<void> _showUpdatePasswordModal() async {
+    final newPasswordController = TextEditingController();
+    bool isUpdating = false;
+    bool isDone = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Dialog(
+          backgroundColor: AppTheme.cardBackground,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+            side: const BorderSide(color: AppTheme.borderCyan, width: 1.5),
+          ),
+          child: Container(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MinAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      "🔑 Set New Password",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (isDone) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryEmerald.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.primaryEmerald),
+                    ),
+                    child: const Text(
+                      "✅ Password updated successfully! You can now sign in with your new password.",
+                      style: TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.bold, height: 1.3),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.logoGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text("Done", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                    ),
+                  ),
+                ] else ...[
+                  const Text(
+                    "Please enter your new password below (at least 6 characters):",
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "NEW PASSWORD",
+                    style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF080B16),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.cardBorder),
+                    ),
+                    child: TextField(
+                      controller: newPasswordController,
+                      obscureText: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        prefixIcon: Icon(Icons.lock_outline, color: AppTheme.cyan, size: 18),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.logoGradient,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x4D06B6D4), blurRadius: 14, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: isUpdating
+                          ? null
+                          : () async {
+                              final newPass = newPasswordController.text.trim();
+                              if (newPass.length < 6) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text("Password must be at least 6 characters."),
+                                    backgroundColor: AppTheme.dangerRose,
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setModalState(() => isUpdating = true);
+                              try {
+                                if (SupabaseService.isConfigured) {
+                                  await SupabaseService().client.auth.updateUser(
+                                    UserAttributes(password: newPass),
+                                  );
+                                }
+                                setModalState(() {
+                                  isUpdating = false;
+                                  isDone = true;
+                                });
+                              } catch (e) {
+                                debugPrint("Update password exception: $e");
+                                setModalState(() => isUpdating = false);
+                              }
+                            },
+                      child: isUpdating
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Text("Save New Password →", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleGoogleSignIn() async {
     if (!_tncAccepted) {
       showDialog(
@@ -428,6 +597,35 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
+
+                          if (_successMessage != null) ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 16),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryEmerald.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppTheme.primaryEmerald),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.mark_email_read_outlined, color: AppTheme.primaryEmerald, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      _successMessage!,
+                                      style: const TextStyle(
+                                        color: AppTheme.primaryEmerald,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
 
                           if (_errorMessage != null) ...[
                             Container(

@@ -967,8 +967,8 @@ export default function App() {
 
               {forgotSent ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.3)`, borderRadius: 12, padding: "12px 14px", fontSize: 12, color: C.emerald, fontWeight: 800 }}>
-                    ✅ Password reset link sent to your email! Please check your inbox.
+                  <div style={{ background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.3)`, borderRadius: 12, padding: "12px 14px", fontSize: 12, color: C.emerald, fontWeight: 800, lineHeight: 1.4 }}>
+                    ✅ Password reset link sent to {forgotEmail}! Please check your email inbox and click the link to set your new password.
                   </div>
                   <Btn variant="primary" onClick={() => { setShowForgotModal(false); setForgotSent(false); }}>
                     Done
@@ -980,8 +980,26 @@ export default function App() {
                     Enter your registered email address and we'll send you an instant link to reset your password.
                   </div>
                   <Input label="Email Address" type="email" value={forgotEmail} onChange={setForgotEmail} placeholder="" />
-                  <Btn variant="primary" onClick={() => setForgotSent(true)} disabled={!forgotEmail.trim()}>
-                    Send Reset Link →
+                  <Btn
+                    variant="primary"
+                    disabled={!forgotEmail.trim() || forgotLoading}
+                    onClick={async () => {
+                      setForgotLoading(true);
+                      try {
+                        if (supabase) {
+                          await supabase.auth.resetPasswordForEmail(forgotEmail, {
+                            redirectTo: `${window.location.origin}`,
+                          });
+                        }
+                      } catch (e) {
+                        console.error(e);
+                      } finally {
+                        setForgotLoading(false);
+                        setForgotSent(true);
+                      }
+                    }}
+                  >
+                    {forgotLoading ? "Sending..." : "Send Reset Link →"}
                   </Btn>
                 </div>
               )}

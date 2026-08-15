@@ -34,6 +34,16 @@ class ErrorHandler {
       return "🔑 ICICI Breeze Session token has expired. Please update your morning session key.";
     }
 
+    // Supabase Rate Limit Exceptions (e.g. over_email_send_rate_limit / 429)
+    if (errStr.contains('over_email_send_rate_limit') || errStr.contains('rate_limit') || errStr.contains('429')) {
+      final match = RegExp(r'after\s+(\d+\s*(?:seconds?|minutes?))', caseSensitive: false).firstMatch(error.toString());
+      if (match != null) {
+        final timeStr = match.group(1);
+        return "⏳ Please wait $timeStr before trying again.";
+      }
+      return "⏳ Please wait a minute before requesting another email or verification code.";
+    }
+
     // Format / Syntax Errors
     if (error is FormatException || errStr.contains('formatexception')) {
       return "⚙️ Server data error. Please try refreshing again shortly.";
@@ -54,9 +64,21 @@ class ErrorHandler {
       return error;
     }
 
+    // Clean raw AuthApiException(message: ..., statusCode: ...) wrappers
+    final msgMatch = RegExp(r'message:\s*([^,)]+)', caseSensitive: false).firstMatch(error.toString());
+    if (msgMatch != null) {
+      final extractedMsg = msgMatch.group(1)?.trim();
+      if (extractedMsg != null && extractedMsg.isNotEmpty) {
+        return "⚠️ $extractedMsg";
+      }
+    }
+
     // Fallback cleaned error message
-    final cleanMsg = error.toString().replaceAll(RegExp(r'^(Exception|AuthException|PostgrestException):\s*'), '');
-    return cleanMsg;
+    final cleanMsg = error.toString()
+        .replaceAll(RegExp(r'^(AuthApiException|Exception|AuthException|PostgrestException):\s*'), '')
+        .trim();
+
+    return "⚠️ $cleanMsg";
   }
 
   /// Displays a clean styled SnackBar with user-friendly error messages.
