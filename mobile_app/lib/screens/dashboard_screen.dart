@@ -95,8 +95,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
             children: [
-              // Top Brand Header
-              const StokVigilBrandHeader(logoSize: 38),
+              // Top Brand Header with Key Active Badge
+              StokVigilBrandHeader(
+                logoSize: 38,
+                trailing: GestureDetector(
+                  onTap: widget.onOpenCredentials,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: (_hasCredentials ? AppTheme.cyan : AppTheme.dangerRose).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _hasCredentials ? AppTheme.cyan : AppTheme.dangerRose,
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_hasCredentials ? AppTheme.cyan : AppTheme.dangerRose).withOpacity(0.15),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text("🔑", style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Text(
+                          _hasCredentials ? "Key Active" : "Needs Key",
+                          style: TextStyle(
+                            color: _hasCredentials ? AppTheme.cyan : AppTheme.dangerRose,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 18),
 
               // Dynamic Greeting & User Name
@@ -173,7 +211,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    Row(
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 10,
+                      runSpacing: 6,
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -186,6 +227,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
@@ -203,7 +245,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 10),
                         const Text(
                           "Overall Profit / Loss",
                           style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
@@ -283,47 +324,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: BoxDecoration(
-                                      color: pnlPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: pnlPos ? AppTheme.primaryEmerald.withOpacity(0.3) : AppTheme.dangerRose.withOpacity(0.3),
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: pnlPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: pnlPos ? AppTheme.primaryEmerald.withOpacity(0.3) : AppTheme.dangerRose.withOpacity(0.3),
+                                        ),
                                       ),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        item.symbol.substring(0, item.symbol.length > 2 ? 2 : item.symbol.length),
-                                        style: TextStyle(
-                                          color: pnlPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                                          fontWeight: FontWeight.w900,
-                                          fontSize: 12,
+                                      child: Center(
+                                        child: Text(
+                                          item.symbol.substring(0, item.symbol.length > 2 ? 2 : item.symbol.length),
+                                          style: TextStyle(
+                                            color: pnlPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.symbol,
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+                                    const SizedBox(width: 10),
+                                    Flexible(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.symbol,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            "Qty: ${item.quantity.toInt()} • Avg: ₹${item.avgPrice}",
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                                          ),
+                                        ],
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        "Qty: ${item.quantity.toInt()} • Avg: ₹${item.avgPrice}",
-                                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                    ),
+                                  ],
+                                ),
                               ),
+                              const SizedBox(width: 8),
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [

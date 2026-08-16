@@ -98,70 +98,86 @@ class StokVigilBrandHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TradingAILogo(size: logoSize),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TradingAILogo(size: logoSize),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      "StokVigil ",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.3,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            "StokVigil ",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          ShaderMask(
+                            shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
+                            child: const Text(
+                              "AI",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    ShaderMask(
-                      shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
-                      child: const Text(
-                        "AI",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    const SizedBox(height: 2),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.primaryEmerald,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            "NSE LIVE 09:15–15:30",
+                            style: TextStyle(
+                              color: AppTheme.primaryEmerald,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: const BoxDecoration(
-                        color: AppTheme.primaryEmerald,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      "NSE LIVE 09:15–15:30",
-                      style: TextStyle(
-                        color: AppTheme.primaryEmerald,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
-        if (trailing != null) trailing!,
+        if (trailing != null) ...[
+          const SizedBox(width: 8),
+          trailing!,
+        ],
       ],
     );
   }
@@ -365,7 +381,7 @@ class GlassCard extends StatelessWidget {
 // ─────────────────────────────────────────────
 class SignalBadge extends StatelessWidget {
   final String label;
-  final String type; // 'strong_buy', 'buy', 'sell', 'high', 'med'
+  final String type; // 'strong_buy', 'buy', 'volume', 'breakout', 'hold', 'neutral', 'med', 'sell'
   final Color? colorOverride;
 
   const SignalBadge({
@@ -385,10 +401,18 @@ class SignalBadge extends StatelessWidget {
       bg = AppTheme.primaryEmerald.withOpacity(0.15);
       border = AppTheme.primaryEmerald;
       text = AppTheme.primaryEmerald;
+    } else if (type == 'volume' || type == 'breakout') {
+      bg = AppTheme.cyan.withOpacity(0.15);
+      border = AppTheme.cyan;
+      text = AppTheme.cyan;
     } else if (type == 'med' || type == 'moderate') {
       bg = AppTheme.secondaryAmber.withOpacity(0.15);
       border = AppTheme.secondaryAmber;
       text = AppTheme.secondaryAmber;
+    } else if (type == 'hold' || type == 'neutral') {
+      bg = AppTheme.textSecondary.withOpacity(0.15);
+      border = AppTheme.textSecondary;
+      text = AppTheme.textSecondary;
     } else {
       bg = AppTheme.dangerRose.withOpacity(0.15);
       border = AppTheme.dangerRose;

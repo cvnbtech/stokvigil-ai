@@ -325,56 +325,64 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               return GlassCard(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 46,
-                          height: 46,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF38BDF8), Color(0xFF8B5CF6)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF38BDF8), Color(0xFF8B5CF6)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: Center(
-                            child: Text(
-                              initial,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 20,
+                            child: Center(
+                              child: Text(
+                                initial,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 20,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 14),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              username,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                              ),
+                          const SizedBox(width: 12),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  username,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  email,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: AppTheme.cyan,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              email,
-                              style: const TextStyle(
-                                color: AppTheme.cyan,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     IconButton(
                       tooltip: "Sign Out",
                       icon: const Icon(Icons.logout_rounded, color: AppTheme.dangerRose, size: 22),
@@ -400,29 +408,43 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 // ICICI Breeze Key Card
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.cyan.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppTheme.borderCyan),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cyan.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppTheme.borderCyan),
+                            ),
+                            child: const Text("🔑", style: TextStyle(fontSize: 18)),
                           ),
-                          child: const Text("🔑", style: TextStyle(fontSize: 18)),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text("ICICI Breeze Session Key", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                            SizedBox(height: 2),
-                            Text("Required daily — expires at midnight IST", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                          ],
-                        ),
-                      ],
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "ICICI Breeze Session Key",
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "Required daily — expires at midnight IST",
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.cyan.withOpacity(0.15),
@@ -432,7 +454,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
                       onPressed: _navigateToIciciConfig,
-                      child: const Text("Configure Key →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                      child: const Text("Configure →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
                     ),
                   ],
                 ),
@@ -529,29 +551,43 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 // Telegram Card
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.cyan.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: AppTheme.borderCyan),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cyan.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppTheme.borderCyan),
+                            ),
+                            child: const Text("✈️", style: TextStyle(fontSize: 18)),
                           ),
-                          child: const Text("✈️", style: TextStyle(fontSize: 18)),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            Text("Telegram Bot Channel", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                            SizedBox(height: 2),
-                            Text("Instant catalyst & order alerts", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                          ],
-                        ),
-                      ],
+                          const SizedBox(width: 10),
+                          Flexible(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Telegram Bot Channel",
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "Instant catalyst & order alerts",
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(width: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.cyan.withOpacity(0.15),
@@ -561,7 +597,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       ),
                       onPressed: _openTelegramBot,
-                      child: const Text("Connect @StokVigilBot", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                      child: const Text("Connect →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
                     ),
                   ],
                 ),

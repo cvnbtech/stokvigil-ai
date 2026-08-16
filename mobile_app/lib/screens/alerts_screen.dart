@@ -64,6 +64,28 @@ class _AlertsScreenState extends State<AlertsScreen> {
     }
   }
 
+  String _getSignalLabel(StokAlert alert) {
+    final cat = alert.catalystType.toUpperCase();
+    final title = alert.alertTitle.toUpperCase();
+    if (cat.contains('VOLUME') || title.contains('VOLUME')) return 'VOLUME SURGE';
+    if (cat.contains('HOLD') || cat.contains('NEUTRAL') || title.contains('HOLD') || title.contains('NEUTRAL') || alert.impactScore < 70) return 'HOLD / NEUTRAL';
+    if (cat.contains('BREAKOUT') || title.contains('BREAKOUT')) return 'BREAKOUT SIGNAL';
+    if (cat.contains('EARNING') || title.contains('EARNING')) return 'EARNINGS BEAT';
+    if (alert.impactScore >= 80) return 'STRONG BUY';
+    return 'BUY SIGNAL';
+  }
+
+  String _getSignalType(StokAlert alert) {
+    final cat = alert.catalystType.toUpperCase();
+    final title = alert.alertTitle.toUpperCase();
+    if (cat.contains('VOLUME') || title.contains('VOLUME')) return 'volume';
+    if (cat.contains('HOLD') || cat.contains('NEUTRAL') || title.contains('HOLD') || title.contains('NEUTRAL') || alert.impactScore < 70) return 'hold';
+    if (cat.contains('BREAKOUT') || title.contains('BREAKOUT')) return 'breakout';
+    if (cat.contains('EARNING') || title.contains('EARNING')) return 'buy';
+    if (alert.impactScore >= 80) return 'strong_buy';
+    return 'buy';
+  }
+
   @override
   Widget build(BuildContext context) {
     final filteredList = _alerts.where((a) {
@@ -78,11 +100,24 @@ class _AlertsScreenState extends State<AlertsScreen> {
             a.alertTitle.toUpperCase().contains('BREAKOUT') ||
             a.alertTitle.toUpperCase().contains('HIGH');
       }
+      if (_selectedFilter == 'volume') {
+        return a.catalystType == 'VOLUME_SURGE' ||
+            a.alertTitle.toUpperCase().contains('VOLUME') ||
+            a.factualReasons.any((r) => r.toUpperCase().contains('VOLUME'));
+      }
       if (_selectedFilter == 'fii') {
         return a.catalystType == 'BLOCK_DEAL' ||
             a.catalystType == 'DEBT_CHANGE' ||
             a.alertTitle.toUpperCase().contains('FII') ||
-            a.alertTitle.toUpperCase().contains('DEAL');
+            a.alertTitle.toUpperCase().contains('DEAL') ||
+            a.alertTitle.toUpperCase().contains('BLOCK');
+      }
+      if (_selectedFilter == 'hold') {
+        return a.catalystType == 'HOLD' ||
+            a.catalystType == 'NEUTRAL' ||
+            a.impactScore < 75 ||
+            a.alertTitle.toUpperCase().contains('HOLD') ||
+            a.alertTitle.toUpperCase().contains('NEUTRAL');
       }
       return true;
     }).toList();
@@ -102,17 +137,19 @@ class _AlertsScreenState extends State<AlertsScreen> {
         color: AppTheme.cyan,
         child: Column(
           children: [
-            // Filter Chip Bar
+            // Filter Chip Bar (Matches Web Portal)
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  _buildFilterChip('all', '⚡ All Signals'),
+                  _buildFilterChip('all', '⚡ All Alerts'),
                   _buildFilterChip('high', '🔥 High Impact'),
-                  _buildFilterChip('earnings', '📈 Earnings Beat'),
-                  _buildFilterChip('breakout', '🚀 Breakouts'),
+                  _buildFilterChip('earnings', '📈 Earnings'),
+                  _buildFilterChip('breakout', '🚀 Breakout'),
+                  _buildFilterChip('volume', '⚡ Volume Surge'),
                   _buildFilterChip('fii', '📊 FII Buying'),
+                  _buildFilterChip('hold', '⚪ Hold / Neutral'),
                 ],
               ),
             ),
@@ -148,6 +185,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
                             final isHigh = alert.impactScore >= 80;
                             final dateStr = DateFormat('dd MMM, hh:mm a').format(alert.createdAt);
                             final priceVal = alert.metricsSnapshot['price'] ?? 1250.0;
+                            final signalLabel = _getSignalLabel(alert);
+                            final signalType = _getSignalType(alert);
 
                             return GlassCard(
                               margin: const EdgeInsets.only(bottom: 16),
@@ -158,20 +197,25 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                   // Top Badge Row
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
                                     children: [
-                                      Row(
-                                        children: [
-                                          SignalBadge(
-                                            label: isHigh ? "STRONG BUY" : "BUY SIGNAL",
-                                            type: isHigh ? 'strong_buy' : 'buy',
-                                          ),
-                                          const SizedBox(width: 8),
-                                          SignalBadge(
-                                            label: "${alert.impactScore}% CONFIDENCE",
-                                            type: isHigh ? 'high' : 'med',
-                                          ),
-                                        ],
+                                      Flexible(
+                                        child: Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
+                                          children: [
+                                            SignalBadge(
+                                              label: signalLabel,
+                                              type: signalType,
+                                            ),
+                                            SignalBadge(
+                                              label: "${alert.impactScore}% CONFIDENCE",
+                                              type: isHigh ? 'high' : 'med',
+                                            ),
+                                          ],
+                                        ),
                                       ),
+                                      const SizedBox(width: 8),
                                       Text(
                                         dateStr,
                                         style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold),
@@ -223,8 +267,10 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(color: AppTheme.cyan.withOpacity(0.2)),
                                     ),
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    child: Wrap(
+                                      alignment: WrapAlignment.spaceBetween,
+                                      runSpacing: 4,
+                                      spacing: 12,
                                       children: [
                                         Text("🎯 Target: ₹${(priceVal * 1.12).toStringAsFixed(0)}", style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 11, fontWeight: FontWeight.w900)),
                                         Text("🛡️ Stop Loss: ₹${(priceVal * 0.94).toStringAsFixed(0)}", style: const TextStyle(color: AppTheme.dangerRose, fontSize: 11, fontWeight: FontWeight.w900)),

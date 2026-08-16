@@ -304,70 +304,80 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                 // TOP ROW: Stock symbol, badge, price, change
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Row(
-                                      children: [
-                                        // Avatar Symbol Initial Box
-                                        Container(
-                                          width: 38,
-                                          height: 38,
-                                          decoration: BoxDecoration(
-                                            color: isPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
-                                              color: isPos ? AppTheme.primaryEmerald.withOpacity(0.35) : AppTheme.dangerRose.withOpacity(0.35),
+                                    Expanded(
+                                      child: Row(
+                                        children: [
+                                          // Avatar Symbol Initial Box
+                                          Container(
+                                            width: 38,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              color: isPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(10),
+                                              border: Border.all(
+                                                color: isPos ? AppTheme.primaryEmerald.withOpacity(0.35) : AppTheme.dangerRose.withOpacity(0.35),
+                                              ),
                                             ),
-                                          ),
-                                          child: Center(
-                                            child: Text(
-                                              initial,
-                                              style: TextStyle(
-                                                color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                                                fontWeight: FontWeight.w900,
-                                                fontSize: 12,
+                                            child: Center(
+                                              child: Text(
+                                                initial,
+                                                style: TextStyle(
+                                                  color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 12,
+                                                ),
                                               ),
                                             ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                          const SizedBox(width: 10),
+                                          Flexible(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                Text(
-                                                  symbol,
-                                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                                  decoration: BoxDecoration(
-                                                    color: isAuto ? AppTheme.cyan.withOpacity(0.1) : Colors.white.withOpacity(0.05),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                    border: Border.all(color: isAuto ? AppTheme.cyan.withOpacity(0.3) : AppTheme.cardBorder),
-                                                  ),
-                                                  child: Text(
-                                                    isAuto ? "📊 Demat Auto-Sync" : "📌 Custom",
-                                                    style: TextStyle(
-                                                      color: isAuto ? AppTheme.cyan : AppTheme.textMuted,
-                                                      fontSize: 9,
-                                                      fontWeight: FontWeight.w800,
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    Flexible(
+                                                      child: Text(
+                                                        symbol,
+                                                        overflow: TextOverflow.ellipsis,
+                                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+                                                      ),
                                                     ),
-                                                  ),
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: isAuto ? AppTheme.cyan.withOpacity(0.1) : Colors.white.withOpacity(0.05),
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        border: Border.all(color: isAuto ? AppTheme.cyan.withOpacity(0.3) : AppTheme.cardBorder),
+                                                      ),
+                                                      child: Text(
+                                                        isAuto ? "📊 Demat Auto-Sync" : "📌 Custom",
+                                                        style: TextStyle(
+                                                          color: isAuto ? AppTheme.cyan : AppTheme.textMuted,
+                                                          fontSize: 9,
+                                                          fontWeight: FontWeight.w800,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  item['name'] ?? symbol,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              item['name'] ?? symbol,
-                                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
-
+                                    const SizedBox(width: 8),
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
@@ -395,38 +405,45 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                 // BOTTOM ACTION ROW: AI Signal Badge, Target, Trade Order Button, Delete Button
                                 Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: signalColor.withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(20),
-                                            border: Border.all(color: signalColor.withOpacity(0.4)),
+                                    Flexible(
+                                      child: Wrap(
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: signalColor.withOpacity(0.12),
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(color: signalColor.withOpacity(0.4)),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Container(
+                                                  width: 6,
+                                                  height: 6,
+                                                  decoration: BoxDecoration(color: signalColor, shape: BoxShape.circle),
+                                                ),
+                                                const SizedBox(width: 5),
+                                                Text(
+                                                  signal,
+                                                  style: TextStyle(color: signalColor, fontSize: 10, fontWeight: FontWeight.w900),
+                                                ),
+                                              ],
+                                            ),
                                           ),
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                width: 6,
-                                                height: 6,
-                                                decoration: BoxDecoration(color: signalColor, shape: BoxShape.circle),
-                                              ),
-                                              const SizedBox(width: 5),
-                                              Text(
-                                                signal,
-                                                style: TextStyle(color: signalColor, fontSize: 10, fontWeight: FontWeight.w900),
-                                              ),
-                                            ],
+                                          Text(
+                                            "Target: ₹$target",
+                                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          "Target: ₹$target",
-                                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
+                                    const SizedBox(width: 8),
 
                                     Row(
                                       children: [

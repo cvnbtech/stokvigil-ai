@@ -97,21 +97,27 @@ class _TermsConditionsModalState extends State<TermsConditionsModal> {
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        "📄 Terms & Conditions",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        "StokVigil AI • Updated August 2026",
-                        style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w700),
-                      ),
-                    ],
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "📄 Terms & Conditions",
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          "StokVigil AI • Updated August 2026",
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
