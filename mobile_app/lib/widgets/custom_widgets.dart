@@ -510,8 +510,8 @@ class TradeOrderModal extends StatefulWidget {
     required this.symbol,
     required this.currentPrice,
     this.initialType = 'BUY',
-    this.targetPrice = '₹3,250',
-    this.stopLoss = '₹2,820',
+    this.targetPrice = '3250',
+    this.stopLoss = '2820',
   });
 
   static void show(
@@ -519,8 +519,8 @@ class TradeOrderModal extends StatefulWidget {
     required String symbol,
     required double currentPrice,
     String initialType = 'BUY',
-    String targetPrice = '₹3,250',
-    String stopLoss = '₹2,820',
+    String targetPrice = '3250',
+    String stopLoss = '2820',
   }) {
     showModalBottomSheet(
       context: context,
@@ -545,6 +545,9 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
   late String _orderType;
   int _qty = 10;
   late TextEditingController _limitPriceController;
+  late TextEditingController _targetController;
+  late TextEditingController _stopLossController;
+  late TextEditingController _qtyController;
   bool _isSuccess = false;
 
   @override
@@ -553,26 +556,49 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
     _tradeType = widget.initialType;
     _orderType = 'MARKET';
     _limitPriceController = TextEditingController(text: widget.currentPrice.toStringAsFixed(2));
+    _targetController = TextEditingController(text: widget.targetPrice.replaceAll(RegExp(r'[^0-9.]'), ''));
+    _stopLossController = TextEditingController(text: widget.stopLoss.replaceAll(RegExp(r'[^0-9.]'), ''));
+    _qtyController = TextEditingController(text: '$_qty');
   }
 
   @override
   void dispose() {
     _limitPriceController.dispose();
+    _targetController.dispose();
+    _stopLossController.dispose();
+    _qtyController.dispose();
     super.dispose();
+  }
+
+  double get _effectivePrice {
+    if (_orderType == 'LIMIT') {
+      return double.tryParse(_limitPriceController.text.trim()) ?? widget.currentPrice;
+    }
+    return widget.currentPrice;
   }
 
   void _executeOrder() {
     setState(() => _isSuccess = true);
-    Future.delayed(const Duration(milliseconds: 1600), () {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-    });
+  }
+
+  String _formatIndian(double val) {
+    final intPart = val.truncate().abs();
+    final str = intPart.toString();
+    if (str.length <= 3) return "${str}.${(val.abs() - intPart).toStringAsFixed(2).split('.').last}";
+    final last3 = str.substring(str.length - 3);
+    final rest = str.substring(0, str.length - 3);
+    final formattedRest = rest.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{2})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
+    final dec = ((val.abs() - intPart) * 100).round().toString().padLeft(2, '0');
+    return '$formattedRest,$last3.$dec';
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalAmount = _qty * widget.currentPrice;
+    final isBuy = _tradeType == 'BUY';
+    final totalAmount = _qty * _effectivePrice;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -580,15 +606,15 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
       ),
       child: Container(
         padding: const EdgeInsets.all(22),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppTheme.cardBackground,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
           border: Border(
-            top: BorderSide(color: AppTheme.borderCyan, width: 1.5),
-            left: BorderSide(color: AppTheme.cardBorder, width: 1),
-            right: BorderSide(color: AppTheme.cardBorder, width: 1),
+            top: BorderSide(color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose, width: 1.8),
+            left: const BorderSide(color: AppTheme.cardBorder, width: 1),
+            right: const BorderSide(color: AppTheme.cardBorder, width: 1),
           ),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
           ],
         ),
@@ -609,104 +635,120 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
               ),
               const SizedBox(height: 16),
 
+              // Header: Badge + Symbol + Close Button
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
                       Container(
-                        width: 36,
-                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _tradeType == 'BUY'
-                              ? AppTheme.primaryEmerald.withOpacity(0.15)
-                              : AppTheme.dangerRose.withOpacity(0.15),
+                          color: (isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.18),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: _tradeType == 'BUY' ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            width: 1.2,
                           ),
                         ),
-                        child: Icon(
-                          _tradeType == 'BUY' ? Icons.arrow_upward : Icons.arrow_downward,
-                          color: _tradeType == 'BUY' ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                          size: 20,
+                        child: Text(
+                          "$_tradeType ORDER",
+                          style: TextStyle(
+                            color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "${_tradeType == 'BUY' ? 'BUY' : 'SELL'} ${widget.symbol}",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const Text(
-                            "ICICI Demat 1-Tap Execution",
-                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                          ),
-                        ],
+                      const SizedBox(width: 10),
+                      Text(
+                        widget.symbol,
+                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
                       ),
                     ],
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: AppTheme.textSecondary),
+                    icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   )
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
               if (_isSuccess) ...[
+                // Order Success Receipt (Matches Web Portal)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: AppTheme.primaryEmerald.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppTheme.primaryEmerald),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.4), width: 1.2),
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.check_circle, color: AppTheme.primaryEmerald, size: 48),
-                      const SizedBox(height: 10),
+                      const Text("🎉", style: TextStyle(fontSize: 32)),
+                      const SizedBox(height: 8),
                       const Text(
-                        "Order Placed Successfully!",
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        "Order Executed via ICICI Breeze!",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppTheme.primaryEmerald, fontWeight: FontWeight.w900, fontSize: 15),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 8),
                       Text(
-                        "$_tradeType $_qty shares of ${widget.symbol} @ ₹${widget.currentPrice}",
-                        style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.w600),
+                        "Placed $_tradeType order for $_qty shares of ${widget.symbol} at ₹${_effectivePrice.toStringAsFixed(2)} (Total: ₹${_formatIndian(totalAmount)}).",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.5),
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        "📱 Execution Receipt sent to @StokVigilBot on Telegram",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w800),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.cyan,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text("Done", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14)),
+                  ),
+                ),
               ] else ...[
-                Row(
-                  children: ['BUY', 'SELL'].map((type) {
-                    final selected = _tradeType == type;
-                    return Expanded(
-                      child: GestureDetector(
-                        onTap: () => setState(() => _tradeType = type),
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? (type == 'BUY' ? AppTheme.primaryEmerald : AppTheme.dangerRose)
-                                : AppTheme.cardBackground2,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Center(
+                // BUY / SELL Segmented Switcher
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF080B16),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  padding: const EdgeInsets.all(3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _tradeType = 'BUY'),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            decoration: BoxDecoration(
+                              color: isBuy ? AppTheme.primaryEmerald : Colors.transparent,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            alignment: Alignment.center,
                             child: Text(
-                              type,
+                              "BUY",
                               style: TextStyle(
-                                color: selected ? Colors.black : AppTheme.textSecondary,
+                                color: isBuy ? Colors.black : AppTheme.textSecondary,
                                 fontWeight: FontWeight.w900,
                                 fontSize: 13,
                               ),
@@ -714,44 +756,164 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                           ),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 16),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text("Execution Type", style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
-                    Row(
-                      children: ['MARKET', 'LIMIT'].map((mode) {
-                        final active = _orderType == mode;
-                        return GestureDetector(
-                          onTap: () => setState(() => _orderType = mode),
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _tradeType = 'SELL'),
                           child: Container(
-                            margin: const EdgeInsets.only(left: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
                             decoration: BoxDecoration(
-                              color: active ? AppTheme.cyan.withOpacity(0.15) : AppTheme.cardBackground2,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: active ? AppTheme.cyan : AppTheme.cardBorder),
+                              color: !isBuy ? AppTheme.dangerRose : Colors.transparent,
+                              borderRadius: BorderRadius.circular(9),
                             ),
+                            alignment: Alignment.center,
                             child: Text(
-                              mode,
+                              "SELL",
                               style: TextStyle(
-                                color: active ? AppTheme.cyan : AppTheme.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
+                                color: !isBuy ? Colors.white : AppTheme.textSecondary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
                               ),
                             ),
                           ),
-                        );
-                      }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // MARKET / LIMIT Order Type Selector
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _orderType = 'MARKET'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          decoration: BoxDecoration(
+                            color: _orderType == 'MARKET' ? AppTheme.cyan.withOpacity(0.16) : const Color(0xFF080B16),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _orderType == 'MARKET' ? AppTheme.cyan : AppTheme.cardBorder, width: 1.4),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            "MARKET ORDER",
+                            style: TextStyle(
+                              color: _orderType == 'MARKET' ? AppTheme.cyan : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setState(() => _orderType = 'LIMIT'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 9),
+                          decoration: BoxDecoration(
+                            color: _orderType == 'LIMIT' ? AppTheme.cyan.withOpacity(0.16) : const Color(0xFF080B16),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _orderType == 'LIMIT' ? AppTheme.cyan : AppTheme.cardBorder, width: 1.4),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            "LIMIT ORDER",
+                            style: TextStyle(
+                              color: _orderType == 'LIMIT' ? AppTheme.cyan : AppTheme.textSecondary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
 
+                // Dynamic Explanation Card & Custom Limit Input
+                if (_orderType == 'LIMIT') ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF080B16),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.borderCyan),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              "CUSTOM LIMIT PRICE (₹)",
+                              style: TextStyle(color: AppTheme.cyan, fontSize: 10, fontWeight: FontWeight.w900),
+                            ),
+                            Text(
+                              "LTP: ₹${widget.currentPrice.toStringAsFixed(2)}",
+                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF04060E),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppTheme.borderCyan),
+                          ),
+                          child: TextField(
+                            controller: _limitPriceController,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            style: const TextStyle(color: AppTheme.cyan, fontSize: 16, fontWeight: FontWeight.w900),
+                            decoration: const InputDecoration(border: InputBorder.none),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cyan.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            "💡 What is a Limit Order? Sets the maximum price (₹${_limitPriceController.text.isEmpty ? widget.currentPrice.toStringAsFixed(2) : _limitPriceController.text}) you are willing to pay. Triggers only if market price reaches or drops below your limit.",
+                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10.5, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cyan.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.borderCyan.withOpacity(0.6), style: BorderStyle.solid),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("⚡ What is a Market Order?", style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900)),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Executes immediately at the best available current market price (LTP: ₹${widget.currentPrice.toStringAsFixed(2)}). Guarantees instant execution.",
+                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10.5, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+
+                // Quantity Stepper Control
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -759,73 +921,216 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppTheme.cardBorder),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text("Quantity (Shares)", style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.bold)),
+                      const Text(
+                        "QUANTITY (SHARES)",
+                        style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                      ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
-                          IconButton(
-                            onPressed: _qty > 1 ? () => setState(() => _qty--) : null,
-                            icon: const Icon(Icons.remove_circle_outline, color: AppTheme.cyan),
+                          GestureDetector(
+                            onTap: _qty > 1 ? () {
+                              setState(() {
+                                _qty--;
+                                _qtyController.text = '$_qty';
+                              });
+                            } : null,
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppTheme.cyan.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.borderCyan),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text("-", style: TextStyle(color: AppTheme.cyan, fontSize: 22, fontWeight: FontWeight.w900)),
+                            ),
                           ),
-                          Text("$_qty", style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
-                          IconButton(
-                            onPressed: () => setState(() => _qty++),
-                            icon: const Icon(Icons.add_circle_outline, color: AppTheme.cyan),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF04060E),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.borderCyan),
+                              ),
+                              child: TextField(
+                                controller: _qtyController,
+                                textAlign: TextAlign.center,
+                                keyboardType: TextInputType.number,
+                                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+                                decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.only(bottom: 8)),
+                                onChanged: (val) {
+                                  final parsed = int.tryParse(val.trim());
+                                  if (parsed != null && parsed > 0) {
+                                    setState(() => _qty = parsed);
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _qty++;
+                                _qtyController.text = '$_qty';
+                              });
+                            },
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppTheme.cyan.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.borderCyan),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text("+", style: TextStyle(color: AppTheme.cyan, fontSize: 22, fontWeight: FontWeight.w900)),
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 14),
 
+                // Financial Breakdown & Auto Risk Bracket Order
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppTheme.cyan.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.cyan.withOpacity(0.2)),
+                    color: const Color(0xFF080B16),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppTheme.cardBorder),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text("🎯 Target: ${widget.targetPrice}", style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.bold)),
-                      Text("🛡️ Stop Loss: ${widget.stopLoss}", style: const TextStyle(color: AppTheme.dangerRose, fontSize: 12, fontWeight: FontWeight.bold)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Execution Price:", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                          Text("₹${_effectivePrice.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("Total Order Value:", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                          Text("₹${_formatIndian(totalAmount)}", style: const TextStyle(color: AppTheme.cyan, fontSize: 13, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Divider(color: AppTheme.cardBorder, height: 1),
+                      const SizedBox(height: 10),
+
+                      const Text(
+                        "🛡️ AUTO RISK MANAGEMENT (BRACKET ORDER)",
+                        style: TextStyle(color: AppTheme.textMuted, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                      ),
+                      const SizedBox(height: 8),
+
+                      Row(
+                        children: [
+                          // Target Input
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primaryEmerald.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("🎯 TARGET (₹)", style: TextStyle(color: AppTheme.primaryEmerald, fontSize: 9.5, fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF04060E),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.4)),
+                                    ),
+                                    child: TextField(
+                                      controller: _targetController,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.w900),
+                                      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          // Stop Loss Input
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.dangerRose.withOpacity(0.06),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: AppTheme.dangerRose.withOpacity(0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text("🛡️ STOP LOSS (₹)", style: TextStyle(color: AppTheme.dangerRose, fontSize: 9.5, fontWeight: FontWeight.w900)),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF04060E),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.4)),
+                                    ),
+                                    child: TextField(
+                                      controller: _stopLossController,
+                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                      style: const TextStyle(color: AppTheme.dangerRose, fontSize: 12, fontWeight: FontWeight.w900),
+                                      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text("TOTAL VALUE", style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
-                        Text("₹${totalAmount.toStringAsFixed(2)}", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-                      ],
+                // Confirm CTA Button
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
-                    Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 16),
-                        height: 48,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _tradeType == 'BUY' ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          ),
-                          onPressed: _executeOrder,
-                          child: Text(
-                            "Confirm $_tradeType Order",
-                            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14),
-                          ),
-                        ),
+                    onPressed: _executeOrder,
+                    child: Text(
+                      "⚡ Confirm $_tradeType Order",
+                      style: TextStyle(
+                        color: isBuy ? Colors.black : Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
                       ),
-                    )
-                  ],
+                    ),
+                  ),
                 ),
               ],
             ],

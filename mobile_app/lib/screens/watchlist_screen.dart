@@ -19,6 +19,54 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   bool _autoSync = true;
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
 
+  static final Map<String, Map<String, dynamic>> _stockMeta = {
+    'RELIANCE': {
+      'name': 'Reliance Industries',
+      'price': 2980.50,
+      'chg': '+1.85%',
+      'is_positive': true,
+      'is_auto_synced': true,
+      'signal': 'STRONG BUY',
+      'target': '3,250',
+    },
+    'TCS': {
+      'name': 'Tata Consultancy Serv',
+      'price': 4120.00,
+      'chg': '+0.92%',
+      'is_positive': true,
+      'is_auto_synced': true,
+      'signal': 'BUY',
+      'target': '4,450',
+    },
+    'INFY': {
+      'name': 'Infosys Limited',
+      'price': 1780.25,
+      'chg': '-0.65%',
+      'is_positive': false,
+      'is_auto_synced': true,
+      'signal': 'TAKE PROFIT',
+      'target': '1,820',
+    },
+    'HDFCBANK': {
+      'name': 'HDFC Bank Ltd',
+      'price': 1650.00,
+      'chg': '+1.15%',
+      'is_positive': true,
+      'is_auto_synced': false,
+      'signal': 'ACCUMULATE',
+      'target': '1,820',
+    },
+    'TATAMOTORS': {
+      'name': 'Tata Motors Ltd',
+      'price': 1015.30,
+      'chg': '+3.40%',
+      'is_positive': true,
+      'is_auto_synced': false,
+      'signal': 'STRONG BUY',
+      'target': '1,150',
+    },
+  };
+
   @override
   void initState() {
     super.initState();
@@ -45,11 +93,19 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   }
 
   Future<void> _loadWatchlist() async {
+    final defaultList = [
+      {'symbol': 'RELIANCE', 'is_auto_synced': true},
+      {'symbol': 'TCS', 'is_auto_synced': true},
+      {'symbol': 'INFY', 'is_auto_synced': true},
+      {'symbol': 'HDFCBANK', 'is_auto_synced': false},
+      {'symbol': 'TATAMOTORS', 'is_auto_synced': false},
+    ];
+
     final user = SupabaseService().currentUser;
     if (user == null) {
       setState(() {
         _isLoading = false;
-        _watchlist = [];
+        _watchlist = defaultList;
       });
       return;
     }
@@ -58,7 +114,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     final data = await SupabaseService().fetchWatchlist();
     if (mounted) {
       setState(() {
-        _watchlist = data;
+        _watchlist = data.isNotEmpty ? data : defaultList;
         _isLoading = false;
       });
     }
@@ -285,17 +341,32 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                         itemCount: _watchlist.length,
                         itemBuilder: (context, index) {
                           final item = _watchlist[index];
-                          final isAuto = item['is_auto_synced'] ?? false;
-                          final isPos = item['is_positive'] ?? true;
-                          final priceNum = (item['price'] as num? ?? 1250.0).toDouble();
-                          final signal = item['signal'] ?? 'BUY';
-                          final target = item['target'] ?? '1,500';
-                          final symbol = item['symbol'] as String;
-                          final initial = symbol.length >= 2 ? symbol.substring(0, 2) : symbol;
+                          final symbol = (item['symbol'] as String? ?? '').toUpperCase();
+                          final meta = _stockMeta[symbol] ?? {};
 
-                          Color signalColor = AppTheme.cyan;
-                          if (signal == 'STRONG BUY') signalColor = AppTheme.primaryEmerald;
-                          if (signal == 'TAKE PROFIT') signalColor = AppTheme.warningAmber;
+                          final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
+                          final isPos = item['is_positive'] ?? meta['is_positive'] ?? true;
+                          final priceNum = (item['price'] as num? ?? meta['price'] ?? 1250.0).toDouble();
+                          final chg = item['chg'] ?? meta['chg'] ?? (isPos ? "+1.20%" : "-0.65%");
+                          final signal = item['signal'] ?? meta['signal'] ?? 'BUY';
+                          final target = item['target'] ?? meta['target'] ?? (priceNum * 1.12).toStringAsFixed(0);
+                          final name = item['name'] ?? meta['name'] ?? "$symbol India";
+                          final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
+
+                          Color signalColor = const Color(0xFF06B6D4);
+                          if (signal == 'STRONG BUY') {
+                            signalColor = AppTheme.primaryEmerald;
+                          } else if (signal == 'BUY') {
+                            signalColor = const Color(0xFF06B6D4);
+                          } else if (signal == 'ACCUMULATE') {
+                            signalColor = const Color(0xFF0EA5E9);
+                          } else if (signal == 'TAKE PROFIT') {
+                            signalColor = const Color(0xFFF59E0B);
+                          } else if (signal == 'SELL' || signal == 'EXIT') {
+                            signalColor = AppTheme.dangerRose;
+                          } else if (signal == 'HOLD' || signal == 'NEUTRAL') {
+                            signalColor = const Color(0xFF94A3B8);
+                          }
 
                           return GlassCard(
                             margin: const EdgeInsets.only(bottom: 12),
@@ -367,7 +438,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                 ),
                                                 const SizedBox(height: 2),
                                                 Text(
-                                                  item['name'] ?? symbol,
+                                                  name,
                                                   overflow: TextOverflow.ellipsis,
                                                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                                                 ),
@@ -387,7 +458,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          "${isPos ? '▲' : '▼'} ${item['chg'] ?? '+1.2%'}",
+                                          "${isPos ? '▲' : '▼'} $chg",
                                           style: TextStyle(
                                             color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                                             fontSize: 11,
@@ -436,9 +507,20 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               ],
                                             ),
                                           ),
-                                          Text(
-                                            "Target: ₹$target",
-                                            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                                          RichText(
+                                            text: TextSpan(
+                                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                                              children: [
+                                                const TextSpan(text: "Target: "),
+                                                TextSpan(
+                                                  text: "₹$target",
+                                                  style: const TextStyle(
+                                                    color: AppTheme.primaryEmerald,
+                                                    fontWeight: FontWeight.w900,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ],
                                       ),
@@ -455,6 +537,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               symbol: symbol,
                                               currentPrice: priceNum,
                                               initialType: 'BUY',
+                                              targetPrice: target,
+                                              stopLoss: (priceNum * 0.94).toStringAsFixed(0),
                                             );
                                           },
                                           child: Container(
