@@ -57,6 +57,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="stokvigil" android:host="breeze-callback" />
             </intent-filter>
+            <!-- ICICI Breeze HTTPS Web Callback Filter (/api/auth/icici-callback) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="stokvigil-ai.vercel.app" android:pathPrefix="/api/auth/icici-callback" />
+            </intent-filter>
         </activity>
         <meta-data
             android:name="flutterEmbedding"

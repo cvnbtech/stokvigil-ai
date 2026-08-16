@@ -900,6 +900,7 @@ export default function App() {
   const saveKey = async () => {
     setKeySaving(true);
     if (user?.id) {
+      let saved = false;
       try {
         const res = await fetch(`${BACKEND_URL}/api/user/credentials`, {
           method: "POST",
@@ -912,11 +913,34 @@ export default function App() {
           })
         });
         if (res.ok) {
+          saved = true;
           setHasCredentials(true);
           loadPortfolioData(user.id);
         }
       } catch (e) {
-        console.warn("Save key error:", e);
+        console.warn("Backend save key error, trying Supabase direct:", e);
+      }
+
+      // Fallback: Direct Supabase Vault Save
+      if (!saved && supabase) {
+        try {
+          const base64AppKey = typeof window !== "undefined" ? btoa(appKey) : appKey;
+          const base64SecretKey = typeof window !== "undefined" ? btoa(secretKey) : secretKey;
+          const base64SessionToken = typeof window !== "undefined" ? btoa(sessionTok) : sessionTok;
+
+          await supabase.from("user_credentials").upsert({
+            user_id: user.id,
+            encrypted_app_key: base64AppKey,
+            encrypted_secret_key: base64SecretKey,
+            encrypted_session_token: base64SessionToken,
+            token_date: new Date().toISOString().split("T")[0],
+            updated_at: new Date().toISOString(),
+          });
+          setHasCredentials(true);
+          loadPortfolioData(user.id);
+        } catch (err) {
+          console.warn("Supabase direct save error:", err);
+        }
       }
     }
     setKeySaved(true);

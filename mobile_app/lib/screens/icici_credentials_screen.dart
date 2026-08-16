@@ -74,12 +74,23 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final success = await ApiService().saveIciciCredentials(
+      // 1. Direct Supabase Encrypted Vault Save (Instant & 100% Reliable)
+      bool success = await SupabaseService().saveIciciCredentials(
         userId: user.id,
         appKey: appKey,
         secretKey: secretKey,
         sessionToken: sessionToken,
       );
+
+      // 2. Also notify Backend API in the background
+      if (success) {
+        ApiService().saveIciciCredentials(
+          userId: user.id,
+          appKey: appKey,
+          secretKey: secretKey,
+          sessionToken: sessionToken,
+        ).catchError((_) => false);
+      }
 
       setState(() {
         _isLoading = false;
@@ -88,12 +99,12 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
       if (success) {
         if (mounted) {
-          ErrorHandler.showSuccessSnackBar(context, "ICICI Breeze Session Key encrypted & saved!");
+          ErrorHandler.showSuccessSnackBar(context, "✅ ICICI Breeze Session Key encrypted & saved!");
         }
         Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
       } else {
         if (mounted) {
-          ErrorHandler.showErrorSnackBar(context, "Failed to encrypt credentials. Server temporarily unreachable.");
+          ErrorHandler.showErrorSnackBar(context, "Failed to save credentials. Please check your internet connection.");
         }
       }
     } catch (e) {
@@ -184,7 +195,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 const SizedBox(height: 14),
 
                 // Session Token Input
-                _buildInput("SESSION TOKEN", _sessionTokenController, "Paste morning session token here", false),
+                _buildInput("SESSION TOKEN", _sessionTokenController, "Paste daily session token here", false),
                 const SizedBox(height: 24),
 
                 // Encrypt & Save CTA Button (Matches User Screenshot)

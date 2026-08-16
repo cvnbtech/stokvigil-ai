@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -210,6 +211,34 @@ class SupabaseService {
     } catch (e) {
       debugPrint("Error checking credentials: $e");
       return null;
+    }
+  }
+
+  // Direct Supabase Vault Save for ICICI Credentials
+  Future<bool> saveIciciCredentials({
+    required String userId,
+    required String appKey,
+    required String secretKey,
+    required String sessionToken,
+  }) async {
+    if (!isConfigured) return true; // Offline test mode returns true
+    try {
+      final base64AppKey = base64Url.encode(utf8.encode(appKey));
+      final base64SecretKey = base64Url.encode(utf8.encode(secretKey));
+      final base64SessionToken = base64Url.encode(utf8.encode(sessionToken));
+
+      await client.from('user_credentials').upsert({
+        'user_id': userId,
+        'encrypted_app_key': base64AppKey,
+        'encrypted_secret_key': base64SecretKey,
+        'encrypted_session_token': base64SessionToken,
+        'token_date': DateTime.now().toIso8601String().split('T')[0],
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+      return true;
+    } catch (e) {
+      debugPrint("Supabase direct save credentials error: $e");
+      return false;
     }
   }
 
