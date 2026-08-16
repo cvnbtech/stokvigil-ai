@@ -3,6 +3,7 @@ import '../config/theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
+import '../services/fcm_service.dart';
 import '../widgets/custom_widgets.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -38,6 +39,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       });
       return;
     }
+
+    // Auto-sync FCM device token in background
+    FcmService().syncDeviceToken(user.id);
 
     setState(() => _isLoading = true);
     final data = await ApiService().fetchPortfolioSummary(user.id);

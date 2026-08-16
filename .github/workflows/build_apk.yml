@@ -26,6 +26,24 @@ jobs:
           flutter-version: '3.22.x'
           channel: 'stable'
 
+      - name: Inject google-services.json from GitHub Secrets
+        env:
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          mkdir -p mobile_app/android/app
+          CONTENT="${FIREBASE_CREDENTIALS:-$GOOGLE_SERVICES}"
+          if [ -n "$CONTENT" ]; then
+            if echo "$CONTENT" | grep -q '^{' ; then
+              echo "$CONTENT" > mobile_app/android/app/google-services.json
+            else
+              echo "$CONTENT" | base64 --decode > mobile_app/android/app/google-services.json || echo "$CONTENT" > mobile_app/android/app/google-services.json
+            fi
+            echo "✅ Successfully wrote mobile_app/android/app/google-services.json (size: $(wc -c < mobile_app/android/app/google-services.json) bytes)"
+          else
+            echo "⚠️ WARNING: Neither FIREBASE_CREDENTIALS_JSON nor GOOGLE_SERVICES_JSON found in secrets!"
+          fi
+
       - name: Clean & Install dependencies
         run: |
           cd mobile_app

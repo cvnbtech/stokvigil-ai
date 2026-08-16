@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/theme.dart';
 import '../services/supabase_service.dart';
+import '../services/fcm_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
 import 'terms_conditions_modal.dart';
@@ -60,6 +61,10 @@ class _AuthScreenState extends State<AuthScreen> {
         }
       } else {
         await SupabaseService().signInWithEmail(email, password);
+        final user = SupabaseService().currentUser;
+        if (user != null) {
+          FcmService().syncDeviceToken(user.id);
+        }
       }
       widget.onLoginSuccess();
     } catch (e) {
