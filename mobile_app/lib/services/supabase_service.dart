@@ -91,8 +91,10 @@ class SupabaseService {
     final user = currentUser;
     if (user == null || !isConfigured) return false;
     try {
+      updates['id'] = user.id;
+      if (user.email != null) updates['email'] = user.email;
       updates['updated_at'] = DateTime.now().toIso8601String();
-      await client.from('profiles').update(updates).eq('id', user.id);
+      await client.from('profiles').upsert(updates);
       return true;
     } catch (e) {
       debugPrint("Error updating profile: $e");

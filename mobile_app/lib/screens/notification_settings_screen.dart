@@ -39,15 +39,17 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           .from('profiles')
           .select()
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-      setState(() {
-        _telegramChatIdController.text = data['telegram_chat_id'] ?? '';
-        _telegramEnabled = data['telegram_enabled'] ?? true;
-        _fcmEnabled = data['fcm_enabled'] ?? true;
-        _alertSensitivity = (data['alert_sensitivity'] ?? 'HIGH').toString().toUpperCase();
-        _executionWorkflow = (data['execution_mode'] ?? 'INSTANT').toString().toUpperCase();
-      });
+      if (data != null && mounted) {
+        setState(() {
+          _telegramChatIdController.text = data['telegram_chat_id'] ?? '';
+          _telegramEnabled = data['telegram_enabled'] ?? true;
+          _fcmEnabled = data['fcm_enabled'] ?? true;
+          _alertSensitivity = (data['alert_sensitivity'] ?? 'HIGH').toString().toUpperCase();
+          _executionWorkflow = (data['execution_mode'] ?? 'INSTANT').toString().toUpperCase();
+        });
+      }
     } catch (e) {
       debugPrint("Error loading profile settings: $e");
     }
@@ -57,7 +59,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final user = SupabaseService().currentUser;
     if (user == null) return;
     try {
-      final fcmToken = FcmService().fcmToken;
+      final fcmToken = FcmService().fcmToken ?? await FcmService().getDeviceToken();
       await ApiService().registerDeviceToken(
         userId: user.id,
         fcmToken: fcmToken,
@@ -890,7 +892,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   contentPadding: EdgeInsets.zero,
                   activeColor: AppTheme.cyan,
                   title: const Text("Push Notification Alerts (FCM)", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                  subtitle: const Text("Receive 5-min market hours push alerts on phone", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                  subtitle: Text(
+                    _fcmEnabled ? "Receive 5-min market hours push alerts on phone" : "Push notifications paused",
+                    style: TextStyle(color: _fcmEnabled ? AppTheme.textSecondary : AppTheme.textMuted, fontSize: 11),
+                  ),
                   value: _fcmEnabled,
                   onChanged: (val) {
                     setState(() => _fcmEnabled = val);
