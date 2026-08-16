@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
     fcm_device_token TEXT DEFAULT NULL,
-    fcm_enabled BOOLEAN DEFAULT TRUE,
+    fcm_enabled BOOLEAN DEFAULT FALSE,
     telegram_chat_id TEXT DEFAULT NULL,
     telegram_enabled BOOLEAN DEFAULT FALSE,
     alert_sensitivity TEXT DEFAULT 'HIGH' CHECK (alert_sensitivity IN ('HIGH', 'ALL', 'FII')),
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 -- Ensure columns exist for existing tables
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fcm_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fcm_enabled BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS alert_sensitivity TEXT DEFAULT 'HIGH';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'INSTANT';
 

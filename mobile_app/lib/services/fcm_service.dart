@@ -28,7 +28,7 @@ class FcmService {
       fcmToken = await messaging.getToken();
       debugPrint('FCM Device Token retrieved: $fcmToken');
 
-      // Auto-sync token if user is already signed in
+      // Auto-sync token if user is already signed in (without overwriting user's fcm_enabled preference)
       final currentUser = SupabaseService().currentUser;
       if (currentUser != null && fcmToken != null) {
         await syncDeviceToken(currentUser.id);
@@ -63,7 +63,7 @@ class FcmService {
     }
   }
 
-  Future<void> syncDeviceToken(String userId) async {
+  Future<void> syncDeviceToken(String userId, {bool? fcmEnabled}) async {
     try {
       final token = fcmToken ?? await getDeviceToken();
       if (token == null || token.isEmpty) {
@@ -73,17 +73,21 @@ class FcmService {
 
       debugPrint('Syncing FCM token to Supabase & Backend for user: $userId');
       
-      // 1. Direct Supabase update for immediate database persistence
-      await SupabaseService().updateProfile({
+      final updates = <String, dynamic>{
         'fcm_device_token': token,
-        'fcm_enabled': true,
-      });
+      };
+      if (fcmEnabled != null) {
+        updates['fcm_enabled'] = fcmEnabled;
+      }
+
+      // 1. Direct Supabase update for immediate database persistence
+      await SupabaseService().updateProfile(updates);
 
       // 2. Notify Backend API
       await ApiService().registerDeviceToken(
         userId: userId,
         fcmToken: token,
-        fcmEnabled: true,
+        fcmEnabled: fcmEnabled,
       );
       
       debugPrint('✅ FCM device token successfully synced to database!');

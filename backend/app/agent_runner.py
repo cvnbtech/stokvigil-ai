@@ -241,9 +241,9 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         
     profile = profile_res.data[0]
     fcm_token = profile.get("fcm_device_token")
-    fcm_enabled = profile.get("fcm_enabled", True)
+    fcm_enabled = profile.get("fcm_enabled", False)
     if fcm_enabled is None:
-        fcm_enabled = True
+        fcm_enabled = False
     telegram_chat_id = profile.get("telegram_chat_id")
     telegram_enabled = profile.get("telegram_enabled", False)
     alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()

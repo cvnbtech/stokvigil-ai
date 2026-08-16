@@ -19,7 +19,7 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   final _telegramChatIdController = TextEditingController();
   bool _telegramEnabled = true;
-  bool _fcmEnabled = true;
+  bool _fcmEnabled = false;
   String _alertSensitivity = 'HIGH';
   String _executionWorkflow = 'CONFIRM'; // 'INSTANT' vs 'CONFIRM'
   bool _isSaving = false;
@@ -45,13 +45,40 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         setState(() {
           _telegramChatIdController.text = data['telegram_chat_id'] ?? '';
           _telegramEnabled = data['telegram_enabled'] ?? true;
-          _fcmEnabled = data['fcm_enabled'] ?? true;
+          _fcmEnabled = data['fcm_enabled'] ?? false;
           _alertSensitivity = (data['alert_sensitivity'] ?? 'HIGH').toString().toUpperCase();
           _executionWorkflow = (data['execution_mode'] ?? 'INSTANT').toString().toUpperCase();
         });
       }
     } catch (e) {
       debugPrint("Error loading profile settings: $e");
+    }
+  }
+
+  Future<void> _toggleFcm(bool val) async {
+    setState(() => _fcmEnabled = val);
+    final user = SupabaseService().currentUser;
+    if (user == null) return;
+
+    try {
+      // 1. Direct instant Supabase update
+      await SupabaseService().updateProfile({
+        'fcm_enabled': val,
+      });
+
+      // 2. Notify backend API
+      final fcmToken = FcmService().fcmToken ?? await FcmService().getDeviceToken();
+      await ApiService().registerDeviceToken(
+        userId: user.id,
+        fcmToken: fcmToken,
+        fcmEnabled: val,
+        telegramChatId: _telegramChatIdController.text.trim(),
+        telegramEnabled: _telegramEnabled,
+        alertSensitivity: _alertSensitivity,
+        executionMode: _executionWorkflow,
+      );
+    } catch (e) {
+      debugPrint("Toggle FCM error: $e");
     }
   }
 
@@ -897,10 +924,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     style: TextStyle(color: _fcmEnabled ? AppTheme.textSecondary : AppTheme.textMuted, fontSize: 11),
                   ),
                   value: _fcmEnabled,
-                  onChanged: (val) {
-                    setState(() => _fcmEnabled = val);
-                    _saveSettingsSilently();
-                  },
+                  onChanged: (val) => _toggleFcm(val),
                 ),
               ],
             ),
