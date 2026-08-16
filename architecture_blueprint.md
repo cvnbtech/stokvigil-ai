@@ -20,7 +20,7 @@ flowchart TD
     subgraph Clients["User Interaction Layer"]
         A1["Flutter Mobile App (com.app.stokvigil)"]
         A2["Next.js 14 Web PWA"]
-        A3["Telegram Messenger (@StokVigilBot)"]
+        A3["Telegram Messenger (@StokVigilAi_bot)"]
     end
 
     subgraph AuthVault["Authentication & Security Layer"]
@@ -94,7 +94,7 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 
 ## 4. Telegram Integration Flow
 
-1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilBot` or clicks the link in the StokVigil app (`t.me/StokVigilBot?start=USER_ID`).
+1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=USER_ID`).
 2. **Account Linking**: The bot receives the `/start <USER_ID>` deep link payload via Webhook (`/api/telegram/webhook`).
 3. **Registration**: The FastAPI backend maps `chat_id` to the user's `profiles` record in Supabase and sets `telegram_enabled = true`.
 4. **Instant Alerts**: During 5-minute scans, high-impact alerts formatted in Telegram MarkdownV2 (with green/yellow/red impact emojis) are pushed to the user's chat.

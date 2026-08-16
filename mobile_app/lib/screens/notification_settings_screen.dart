@@ -126,8 +126,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   void _openTelegramBot() async {
     try {
       final user = SupabaseService().currentUser;
-      final email = user?.email ?? 'investor@gmail.com';
-      final url = Uri.parse("https://t.me/StokVigilBot?start=$email");
+      final startParam = user?.id ?? (user?.email?.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_') ?? 'user');
+      final url = Uri.parse("https://t.me/StokVigilAi_bot?start=$startParam");
       if (await canLaunchUrl(url)) {
         await launchUrl(url, mode: LaunchMode.externalApplication);
       } else {
@@ -799,13 +799,36 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            width: 38,
+                            height: 38,
                             decoration: BoxDecoration(
-                              color: AppTheme.cyan.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppTheme.borderCyan),
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF2AABEE), Color(0xFF229ED9)],
+                                begin: Alignment.topRight,
+                                end: Alignment.bottomLeft,
+                              ),
+                              borderRadius: BorderRadius.circular(11),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF229ED9).withOpacity(0.35),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
                             ),
-                            child: const Text("✈️", style: TextStyle(fontSize: 18)),
+                            child: Center(
+                              child: Transform.translate(
+                                offset: const Offset(-1.5, 1.5),
+                                child: Transform.rotate(
+                                  angle: -0.42,
+                                  child: const Icon(
+                                    Icons.send_rounded,
+                                    color: Colors.white,
+                                    size: 19,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Flexible(
@@ -964,29 +987,51 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           const SizedBox(height: 20),
 
           // ─────────────────────────────────────────────
-          // BOTTOM ACTION: NEUTRAL SIGN OUT
+          // BOTTOM ACTION: SIGN OUT (GRADIENT PILL CTA)
           // ─────────────────────────────────────────────
-          GestureDetector(
-            onTap: _signOutUser,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 13),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D111E),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+          Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [
+                  Color(0xFF00B4D8), // Vibrant Cyan
+                  Color(0xFF0284C7), // Sky Blue
+                  Color(0xFF6366F1), // Indigo
+                  Color(0xFF8B5CF6), // Violet Purple
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
               ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x6606B6D4),
+                  blurRadius: 16,
+                  offset: Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.transparent,
+                shadowColor: Colors.transparent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                padding: EdgeInsets.zero,
+              ),
+              onPressed: _signOutUser,
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.logout_rounded, color: AppTheme.textSecondary, size: 18),
+                  Icon(Icons.logout_rounded, color: Colors.white, size: 19),
                   SizedBox(width: 8),
                   Text(
                     "Sign Out",
                     style: TextStyle(
-                      color: AppTheme.textSecondary,
+                      color: Colors.white,
                       fontWeight: FontWeight.w900,
-                      fontSize: 13.5,
+                      fontSize: 15,
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ],

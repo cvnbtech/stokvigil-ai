@@ -704,7 +704,7 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        "📱 Execution Receipt sent to @StokVigilBot on Telegram",
+                        "📱 Execution Receipt sent to @StokVigilAi_bot on Telegram",
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w800),
                       ),

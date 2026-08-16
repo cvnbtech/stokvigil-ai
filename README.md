@@ -78,7 +78,7 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 
 ### 3. Telegram Bot Setup (@BotFather)
 1. Open Telegram and search for `@BotFather`.
-2. Send `/newbot`, name it `StokVigil AI Bot`, and choose a username (e.g., `StokVigilBot`).
+2. Send `/newbot`, name it `StokVigil AI Bot`, and choose a username (e.g., `StokVigilAi_bot`).
 3. Copy the HTTP API token and set it in your `.env` as `TELEGRAM_BOT_TOKEN`.
 4. Set the Telegram Webhook pointing to your deployed Cloud Run URL:
    ```bash

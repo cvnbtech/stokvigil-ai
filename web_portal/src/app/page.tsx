@@ -2146,9 +2146,14 @@ export default function App() {
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{
                         width: 36, height: 36, borderRadius: 10,
-                        background: "rgba(56,189,248,0.12)", border: `1px solid rgba(56,189,248,0.3)`,
-                        display: "center", alignItems: "center", justifyContent: "center", fontSize: 16
-                      }}>✈️</div>
+                        background: "linear-gradient(135deg, #2AABEE 0%, #229ED9 100%)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: "0 4px 12px rgba(34,158,217,0.35)"
+                      }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                          <path d="M21.6 3.4L2.6 10.7C1.3 11.2 1.3 12.5 2.4 12.8L7.3 14.3L18.6 7.2C19.1 6.9 19.6 7.1 19.2 7.5L10.1 15.7V19.8C10.5 19.8 10.7 19.6 11 19.3L13.1 17.3L17.5 20.5C18.3 21 18.9 20.6 19.1 19.6L22 4.9C22.3 3.7 21.5 3 21.6 3.4Z" fill="#FFFFFF"/>
+                        </svg>
+                      </div>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Telegram Bot Channel</div>
                         <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>Instant catalyst & order receipt alerts</div>
@@ -2156,13 +2161,16 @@ export default function App() {
                     </div>
 
                     <button
-                      onClick={() => window.open(`https://t.me/StokVigilBot?start=${user?.email}`, "_blank")}
+                      onClick={() => {
+                        const startParam = user?.id || (user?.email ? user.email.replace(/[^a-zA-Z0-9_]/g, '_') : 'user');
+                        window.open(`https://t.me/StokVigilAi_bot?start=${startParam}`, "_blank");
+                      }}
                       style={{
                         background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
                         borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer"
                       }}
                     >
-                      Connect @StokVigilBot
+                      Connect @StokVigilAi_bot
                     </button>
                   </div>
 
@@ -2261,19 +2269,31 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Bottom Action: Neutral Sign Out */}
+              {/* Bottom Action: Brand Gradient Pill Sign Out Button */}
               <button
                 onClick={doSignOut}
                 style={{
-                  background: C.bgCard, border: `1px solid ${C.border}`,
-                  borderRadius: 14, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  color: C.gray1, cursor: "pointer", fontSize: 13, fontWeight: 800,
+                  width: "100%",
+                  height: 50,
+                  borderRadius: 16,
+                  border: "none",
+                  background: "linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)",
+                  color: "#FFFFFF",
+                  fontSize: 14.5,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  boxShadow: "0 6px 20px rgba(6,182,212,0.35)",
+                  transition: "all 0.2s ease"
                 }}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M16 17L21 12L16 7" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M21 12H9" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16 17L21 12L16 7" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M21 12H9" stroke="#FFFFFF" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
                 <span>Sign Out</span>
               </button>
@@ -2501,7 +2521,7 @@ export default function App() {
                       Placed <b>{tradeData.type}</b> order for <b>{orderQty} shares</b> of {tradeData.symbol} at <b>₹{(orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price).toFixed(2)}</b> (Total: ₹{(orderQty * (orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price)).toLocaleString()}).
                     </div>
                     <div style={{ fontSize: 10, color: C.cyan, fontWeight: 700, marginTop: 8 }}>
-                      📱 Execution Receipt sent to @StokVigilBot on Telegram
+                      📱 Execution Receipt sent to @StokVigilAi_bot on Telegram
                     </div>
                   </div>
                   <Btn variant="primary" onClick={() => { setShowTradeModal(false); setOrderSent(false); }}>
