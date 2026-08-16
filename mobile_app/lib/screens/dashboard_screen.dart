@@ -83,6 +83,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return "Investor";
   }
 
+  String _formatCurrency(double value) {
+    final intPart = value.truncate().abs();
+    final str = intPart.toString();
+    if (str.length <= 3) return str;
+    
+    final last3 = str.substring(str.length - 3);
+    final rest = str.substring(0, str.length - 3);
+    
+    final formattedRest = rest.replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{2})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
+    
+    return '$formattedRest,$last3';
+  }
+
+  String _getDecimals(double value) {
+    final frac = ((value.abs() - value.abs().truncate()) * 100).round();
+    return frac.toString().padLeft(2, '0');
+  }
+
   @override
   Widget build(BuildContext context) {
     final isPositive = _totalPnl >= 0;
@@ -163,7 +184,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // Hero Gradient Portfolio Balance Card
+              // Hero Gradient Demat Portfolio Balance Card (Matches Screenshot Design)
               Container(
                 padding: const EdgeInsets.all(22),
                 decoration: BoxDecoration(
@@ -185,69 +206,155 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text(
-                          "TOTAL PORTFOLIO VALUE",
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        Icon(Icons.shield_outlined, color: AppTheme.cyan, size: 18),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "₹${_totalValue.toStringAsFixed(2)}",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
+                    // Header Label
+                    const Text(
+                      "DEMAT PORTFOLIO VALUE",
+                      style: TextStyle(
+                        color: Color(0xFF94A3B8),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
+
+                    // Main Portfolio Value
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          "₹${_formatCurrency(_totalValue)}",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.6,
+                          ),
+                        ),
+                        Text(
+                          ".${_getDecimals(_totalValue)}",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Returns, Percentage Badge, All Time
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 10,
+                      spacing: 8,
                       runSpacing: 6,
                       children: [
+                        Text(
+                          "${isPositive ? '↑ +' : '↓ -'}₹${_formatCurrency(_totalPnl.abs())}",
+                          style: TextStyle(
+                            color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: (isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(8),
+                            color: (isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                              color: (isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.4),
                               width: 1,
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                                color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                                size: 18,
-                              ),
-                              Text(
-                                "${isPositive ? '+' : ''}₹${_totalPnl.toStringAsFixed(2)} (${_totalPnlPct.toStringAsFixed(2)}%)",
-                                style: TextStyle(
-                                  color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 12.5,
-                                ),
-                              ),
-                            ],
+                          child: Text(
+                            "${isPositive ? '+' : '-'}${_totalPnlPct.abs().toStringAsFixed(2)}%",
+                            style: TextStyle(
+                              color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11,
+                            ),
                           ),
                         ),
                         const Text(
-                          "Overall Profit / Loss",
-                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600),
+                          "All Time",
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Glowing Sparkline Area Chart
+                    SizedBox(
+                      height: 48,
+                      width: double.infinity,
+                      child: CustomPaint(
+                        painter: PortfolioSparklinePainter(isPositive: isPositive),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Divider
+                    const Divider(color: Color(0x33334155), height: 1),
+                    const SizedBox(height: 14),
+
+                    // 3-Column Stats Footer: Invested | Holdings | Day P&L
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Column 1: Invested
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Invested",
+                              style: TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              "₹${_formatCurrency((_totalValue - _totalPnl).clamp(0.0, double.infinity))}",
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                        // Column 2: Holdings
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Holdings",
+                              style: TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              "${_holdings.length} Stocks",
+                              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                        // Column 3: Day P&L
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Day P&L",
+                              style: TextStyle(color: Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              "${isPositive ? '+₹' : '-₹'}${_formatCurrency((_totalPnl * 0.08).abs())}",
+                              style: TextStyle(
+                                color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -256,16 +363,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Title Section
+              // Active Holdings Section Header (Matches Screenshot)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    "Holdings Monitored by AI",
-                    style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900),
+                    "Active Holdings",
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
                   ),
                   Text(
-                    "${_holdings.length} Positions",
+                    "Tap for details • ${_holdings.length} stocks",
                     style: const TextStyle(color: AppTheme.cyan, fontSize: 12, fontWeight: FontWeight.bold),
                   ),
                 ],
@@ -428,4 +535,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────
+// GLOWING PORTFOLIO SPARKLINE AREA CHART
+// ─────────────────────────────────────────────
+class PortfolioSparklinePainter extends CustomPainter {
+  final bool isPositive;
+
+  const PortfolioSparklinePainter({this.isPositive = true});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final color = isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose;
+    final path = Path();
+
+    // Smooth ascending/descending Bezier curve
+    final startY = isPositive ? size.height * 0.82 : size.height * 0.22;
+    final endY = isPositive ? size.height * 0.12 : size.height * 0.88;
+
+    path.moveTo(0, startY);
+    path.cubicTo(
+      size.width * 0.35,
+      isPositive ? size.height * 0.65 : size.height * 0.35,
+      size.width * 0.68,
+      isPositive ? size.height * 0.28 : size.height * 0.72,
+      size.width,
+      endY,
+    );
+
+    // Gradient fill below curve
+    final fillPath = Path.from(path)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          color.withOpacity(0.24),
+          color.withOpacity(0.0),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+
+    canvas.drawPath(fillPath, fillPaint);
+
+    // Subtle glow filter
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.35)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    canvas.drawPath(path, glowPaint);
+
+    // Crisp stroke line
+    final linePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(path, linePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

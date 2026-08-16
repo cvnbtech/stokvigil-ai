@@ -13,12 +13,35 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 
 ## 🏗️ Tech Stack (100% Free Tier Architecture)
 - **Mobile Frontend**: Flutter (Dart) for Android (`com.app.stokvigil`) & iOS.
-- **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled).
+- **Web Portal**: Next.js 14 (TypeScript) + Vanilla / Tailwind CSS (PWA Enabled).
 - **Backend API**: Python 3.11 + FastAPI containerized for Google Cloud Run (2M free requests/mo).
-- **AI Agent Engine**: `google-antigravity` / `google-generativeai` powered by `gemini-3.6-flash` (with fallback to `gemini-2.5-flash` & `gemini-1.5-flash`).
+- **AI Agent Engine**: `google-generativeai` powered by `gemini-3.6-flash` (Primary) with automated fallback to `gemini-2.5-flash` and `gemini-1.5-flash`.
 - **Database & Vault**: Supabase PostgreSQL with Row-Level Security (RLS) & Fernet AES-256 encryption.
 - **Integrations**: `breeze-connect` (ICICI Demat holdings), `yfinance` (Valuation metrics), `feedparser` (Google News RSS).
 - **Alert Dispatch**: Firebase Cloud Messaging (FCM) + Telegram Bot API.
+
+---
+
+## 🧠 AI Agent Evaluation Engine & Models
+StokVigil AI evaluates your portfolio and watchlist every 5 minutes during NSE market hours (09:15–15:30 IST).
+
+### Model Fallback Hierarchy
+```python
+# Try Gemini 3.6 Flash first (Primary Model), fallback to 2.5 Flash and 1.5 Flash
+for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
+```
+1. **Primary Model**: `gemini-3.6-flash` — Ultra low-latency, high-frequency financial catalyst reasoning with strict JSON schema enforcement.
+2. **First Fallback**: `gemini-2.5-flash` — High-efficiency secondary engine.
+3. **Second Fallback**: `gemini-1.5-flash` — Fast structured JSON analysis.
+4. **Deterministic Rule Engine**: Offline fallback engine ensuring 100% continuous monitoring uptime if external APIs encounter rate limits.
+
+### Multi-Dimensional Signal Classifications
+- **`⚡ Volume Surge`**: Institutional volume spikes and sudden volume-to-average breaks.
+- **`🔥 High Impact / Strong Buy`**: High-confidence catalysts ($\ge 80\%$) combining quarterly earnings beats and block deals.
+- **`📈 Earnings Beat`**: Revenue/P&L outperformance, EBITDA expansion, and positive quarterly surprises.
+- **`🚀 Price Breakout`**: Technical momentum breaks above key 52-week or moving-average resistance levels.
+- **`📊 FII Buying`**: Institutional bulk/block deals and institutional flow entries.
+- **`⚪ Hold / Neutral`**: Moderate-impact events and maintenance signals.
 
 ---
 

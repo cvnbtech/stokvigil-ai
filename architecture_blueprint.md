@@ -37,7 +37,7 @@ flowchart TD
 
     subgraph Engine["AI Agent Engine (FastAPI on Cloud Run)"]
         D1["5-Min Market Scheduler (GitHub Actions Cron)"]
-        D2["Antigravity / Gemini 3.6 Flash Agent"]
+        D2["Gemini AI Evaluation Agent (3.6 Flash -> 2.5 Flash -> 1.5 Flash)"]
         D3["Noise Filter & Impact Calculator (1-100 Score)"]
     end
 
@@ -59,6 +59,26 @@ flowchart TD
     E1 -->|Push Notification| A1
     E2 -->|Styled Alert Message| A3
 ```
+
+---
+
+## 2.1 AI Agent Evaluation Engine & Models
+
+Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent_runner.py` compiles real-time portfolio holdings, fundamental valuations (P/E, Debt-to-Equity), and live RSS feeds into a strict evaluation prompt.
+
+### Model Execution Fallback Chain
+1. **Primary Model**: `gemini-3.6-flash` — High-frequency financial catalyst evaluation with structured JSON output.
+2. **First Fallback**: `gemini-2.5-flash` — Low-latency secondary reasoning engine.
+3. **Second Fallback**: `gemini-1.5-flash` — Reliable structured payload processor.
+4. **Offline Rule Engine**: Deterministic fallback algorithm ensuring 100% uptime when external AI endpoints are unreachable.
+
+### Supported Alert Categories
+- `⚡ Volume Surge` (Volume breaks)
+- `🔥 High Impact / Strong Buy` (Score $\ge 80\%$)
+- `📈 Earnings Beat` (Quarterly profit & margin surprise)
+- `🚀 Price Breakout` (52-week & technical level breaks)
+- `📊 FII Buying` (Institutional block & bulk deals)
+- `⚪ Hold / Neutral` (Maintenance watch signals)
 
 ---
 
