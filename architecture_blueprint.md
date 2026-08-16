@@ -160,15 +160,31 @@ G:\stokvigil-ai\
 │   │   ├── icon-192.png
 │   │   └── icon-512.png
 │   └── src/
-│       ├── app/
-│       │   ├── layout.tsx
-│       │   └── page.tsx
-│       └── components/
-│           ├── Dashboard.tsx
-│           ├── Alerts.tsx
-│           ├── ICICIModal.tsx
-│           └── Watchlist.tsx
+│       └── app/
+│           ├── layout.tsx
+│           ├── page.tsx
+│           ├── callback/
+│           │   └── page.tsx
+│           └── api/
+│               ├── auth/icici-callback/route.ts
+│               └── icici/callback/route.ts
 └── .github/
     └── workflows/
-        └── 5min_cron.yml
+        ├── 5min_cron.yml
+        └── android_build.yml
 ```
+
+---
+
+## 7. REST API & Endpoint Specifications
+
+| Endpoint | Method | Purpose |
+| :--- | :---: | :--- |
+| `/api/user/credentials` | `POST` | Stores AES-256 encrypted ICICI App Key, Secret Key, and Session Token |
+| `/api/user/portfolio` | `GET` | Returns live portfolio holdings, valuation, and P&L breakdown |
+| `/api/user/alerts` | `GET` | Retrieves historical catalyst alerts with confidence metrics |
+| `/api/user/delete-account` | `POST` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
+| `/api/auth/register-device` | `POST` | Registers FCM notification token and Telegram chat ID |
+| `/api/cron/multi-user-scan` | `POST` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |
+| `/api/telegram/webhook` | `POST` | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
+

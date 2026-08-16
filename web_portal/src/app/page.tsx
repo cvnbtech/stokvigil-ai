@@ -735,6 +735,7 @@ export default function App() {
       } catch (e) {
         console.warn("Watchlist fetch error:", e);
       }
+    }
     setWatchlist([]);
   }, []);
 
@@ -774,6 +775,17 @@ export default function App() {
       console.warn("Update profile preference via API error:", e);
     }
   };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const sessionParam = params.get("apisession");
+      if (sessionParam) {
+        setSessionTok(sessionParam);
+        setShowKeyModal(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (!supabase) return;

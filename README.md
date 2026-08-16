@@ -111,5 +111,34 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 
 ---
 
+## 🔑 ICICI Direct Breeze API Authentication Workflow
+
+Per SEBI regulations, broker session tokens expire daily at midnight IST. StokVigil AI provides an automated flow for both mobile and web:
+
+1. **Broker App Configuration**: In the [ICICI Direct Breeze Portal](https://api.icicidirect.com/apiuser/home), register your App with **Redirect URL** set to:
+   - Web/Cloud: `https://stokvigil-ai.vercel.app/callback` (or `https://stokvigil-ai.vercel.app/api/auth/icici-callback`)
+   - Localhost / Desktop: `https://127.0.0.1`
+2. **1-Tap Login**: In the StokVigil app or web portal, enter your `App Key` & `Secret Key` and tap **`🌐 1-Tap ICICI Web Login`**.
+3. **Automated Token Capture**:
+   - Web Portal automatically routes the redirect to `/callback?apisession=...`.
+   - Displays a 1-tap **`📋 Copy Session Token`** button and a **`📱 1-Tap Open in StokVigil App →`** deep link (`stokvigil://breeze-callback`).
+4. **AES-256 Client-Side Vault**: Tokens are encrypted using AES-256 Fernet before storage, securing all broker interactions.
+
+---
+
+## 🗑️ Account Deletion & Privacy Compliance
+
+Users can permanently delete their account and all associated data directly from the **Settings** page:
+- **Danger Zone**: Includes an interactive **2-Step Verification Modal** with safety text validation (user must type `DELETE`).
+- **Cascade Deletion (`POST /api/user/delete-account`)**:
+  - Wipes all encrypted ICICI Breeze session tokens & API keys from `user_credentials`.
+  - Removes all custom watchlist entries from `user_watchlists`.
+  - Clears registered device push notification tokens and Telegram bindings from `user_devices`.
+  - Permanently deletes the authentication identity from Supabase Auth (`auth.admin.delete_user`).
+- **Post-Deletion Teardown**: Clears on-device cache, signs out active sessions, and presents a confirmation message before returning to the login screen.
+
+---
+
 ## ⏰ 5-Minute Indian Market Hours Cron
 The GitHub Action workflow (`.github/workflows/5min_cron.yml`) automatically executes `POST /api/cron/multi-user-scan` every 5 minutes Monday–Friday from 09:15 AM to 03:30 PM IST (03:45 UTC to 10:00 UTC). Add `STOKVIGIL_BACKEND_URL` to your GitHub Repository Secrets.
+
