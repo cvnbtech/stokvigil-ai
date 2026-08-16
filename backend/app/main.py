@@ -41,8 +41,11 @@ def get_supabase() -> Client:
 class RegisterDeviceRequest(BaseModel):
     user_id: str
     fcm_device_token: Optional[str] = None
+    fcm_enabled: Optional[bool] = None
     telegram_chat_id: Optional[str] = None
     telegram_enabled: Optional[bool] = None
+    alert_sensitivity: Optional[str] = None  # 'HIGH', 'ALL', 'FII'
+    execution_mode: Optional[str] = None  # 'INSTANT', 'CONFIRM'
     tnc_accepted: Optional[bool] = True
 
 class SaveCredentialsRequest(BaseModel):
@@ -78,18 +81,39 @@ def health_check():
     }
 
 
+@app.get("/api/user/profile")
+def get_user_profile(user_id: str, db: Client = Depends(get_supabase)):
+    """
+    Fetches user profile, notification preferences, and system settings.
+    """
+    res = db.table("profiles").select("*").eq("id", user_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="User profile not found.")
+    return {"status": "success", "profile": res.data[0]}
+
+
 @app.post("/api/auth/register-device")
 def register_device(req: RegisterDeviceRequest, db: Client = Depends(get_supabase)):
     """
-    Registers or updates FCM device token and Telegram configuration for a user.
+    Registers or updates FCM device token, Telegram configuration, and alert preferences for a user.
     """
     update_data = {}
     if req.fcm_device_token is not None:
         update_data["fcm_device_token"] = req.fcm_device_token
+    if req.fcm_enabled is not None:
+        update_data["fcm_enabled"] = req.fcm_enabled
     if req.telegram_chat_id is not None:
         update_data["telegram_chat_id"] = req.telegram_chat_id
     if req.telegram_enabled is not None:
         update_data["telegram_enabled"] = req.telegram_enabled
+    if req.alert_sensitivity is not None:
+        sens = req.alert_sensitivity.upper()
+        if sens in ["HIGH", "ALL", "FII"]:
+            update_data["alert_sensitivity"] = sens
+    if req.execution_mode is not None:
+        mode = req.execution_mode.upper()
+        if mode in ["INSTANT", "CONFIRM"]:
+            update_data["execution_mode"] = mode
     if req.tnc_accepted is not None:
         update_data["tnc_accepted"] = req.tnc_accepted
         update_data["tnc_accepted_at"] = "now()"

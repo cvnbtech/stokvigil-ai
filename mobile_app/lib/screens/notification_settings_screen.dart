@@ -44,6 +44,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       setState(() {
         _telegramChatIdController.text = data['telegram_chat_id'] ?? '';
         _telegramEnabled = data['telegram_enabled'] ?? true;
+        _fcmEnabled = data['fcm_enabled'] ?? true;
+        _alertSensitivity = (data['alert_sensitivity'] ?? 'HIGH').toString().toUpperCase();
+        _executionWorkflow = (data['execution_mode'] ?? 'INSTANT').toString().toUpperCase();
       });
     } catch (e) {
       debugPrint("Error loading profile settings: $e");
@@ -58,8 +61,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       await ApiService().registerDeviceToken(
         userId: user.id,
         fcmToken: fcmToken,
+        fcmEnabled: _fcmEnabled,
         telegramChatId: _telegramChatIdController.text.trim(),
         telegramEnabled: _telegramEnabled,
+        alertSensitivity: _alertSensitivity,
+        executionMode: _executionWorkflow,
       );
     } catch (e) {
       debugPrint("Auto-save settings error: $e");
@@ -80,8 +86,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       final success = await ApiService().registerDeviceToken(
         userId: user.id,
         fcmToken: fcmToken,
+        fcmEnabled: _fcmEnabled,
         telegramChatId: _telegramChatIdController.text.trim(),
         telegramEnabled: _telegramEnabled,
+        alertSensitivity: _alertSensitivity,
+        executionMode: _executionWorkflow,
       );
 
       setState(() => _isSaving = false);
@@ -445,7 +454,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _executionWorkflow = 'INSTANT'),
+                        onTap: () {
+                          setState(() => _executionWorkflow = 'INSTANT');
+                          _saveSettingsSilently();
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -474,7 +486,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(width: 8),
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _executionWorkflow = 'CONFIRM'),
+                        onTap: () {
+                          setState(() => _executionWorkflow = 'CONFIRM');
+                          _saveSettingsSilently();
+                        },
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -680,7 +695,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final active = _alertSensitivity == mode;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _alertSensitivity = mode),
+        onTap: () {
+          setState(() => _alertSensitivity = mode);
+          _saveSettingsSilently();
+        },
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 3),
           padding: const EdgeInsets.symmetric(vertical: 8),

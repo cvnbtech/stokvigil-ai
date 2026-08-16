@@ -23,13 +23,21 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
     fcm_device_token TEXT DEFAULT NULL,
+    fcm_enabled BOOLEAN DEFAULT TRUE,
     telegram_chat_id TEXT DEFAULT NULL,
     telegram_enabled BOOLEAN DEFAULT FALSE,
+    alert_sensitivity TEXT DEFAULT 'HIGH' CHECK (alert_sensitivity IN ('HIGH', 'ALL', 'FII')),
+    execution_mode TEXT DEFAULT 'INSTANT' CHECK (execution_mode IN ('INSTANT', 'CONFIRM')),
     tnc_accepted BOOLEAN DEFAULT TRUE,
     tnc_accepted_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure columns exist for existing tables
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fcm_enabled BOOLEAN DEFAULT TRUE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS alert_sensitivity TEXT DEFAULT 'HIGH';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'INSTANT';
 
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;

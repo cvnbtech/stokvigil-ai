@@ -85,14 +85,20 @@ class ApiService {
   Future<bool> registerDeviceToken({
     required String userId,
     String? fcmToken,
+    bool? fcmEnabled,
     String? telegramChatId,
     bool? telegramEnabled,
+    String? alertSensitivity,
+    String? executionMode,
   }) async {
     // Update direct Supabase profile table first for instant reliability
     final profileUpdates = <String, dynamic>{};
     if (fcmToken != null) profileUpdates['fcm_device_token'] = fcmToken;
+    if (fcmEnabled != null) profileUpdates['fcm_enabled'] = fcmEnabled;
     if (telegramChatId != null) profileUpdates['telegram_chat_id'] = telegramChatId;
     if (telegramEnabled != null) profileUpdates['telegram_enabled'] = telegramEnabled;
+    if (alertSensitivity != null) profileUpdates['alert_sensitivity'] = alertSensitivity;
+    if (executionMode != null) profileUpdates['execution_mode'] = executionMode;
     
     if (profileUpdates.isNotEmpty) {
       await SupabaseService().updateProfile(profileUpdates);
@@ -105,8 +111,11 @@ class ApiService {
         body: jsonEncode({
           'user_id': userId,
           if (fcmToken != null) 'fcm_device_token': fcmToken,
+          if (fcmEnabled != null) 'fcm_enabled': fcmEnabled,
           if (telegramChatId != null) 'telegram_chat_id': telegramChatId,
           if (telegramEnabled != null) 'telegram_enabled': telegramEnabled,
+          if (alertSensitivity != null) 'alert_sensitivity': alertSensitivity,
+          if (executionMode != null) 'execution_mode': executionMode,
         }),
       ).timeout(const Duration(seconds: 6));
       return res.statusCode == 200;

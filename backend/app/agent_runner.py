@@ -241,8 +241,12 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         
     profile = profile_res.data[0]
     fcm_token = profile.get("fcm_device_token")
+    fcm_enabled = profile.get("fcm_enabled", True)
+    if fcm_enabled is None:
+        fcm_enabled = True
     telegram_chat_id = profile.get("telegram_chat_id")
     telegram_enabled = profile.get("telegram_enabled", False)
+    alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()
     
     # 2. Fetch user's active watchlist
     watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
@@ -280,16 +284,32 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         
         impact_score = analysis.get("impact_score", 0)
         has_catalyst = analysis.get("has_catalyst", False)
+        alert_title = analysis.get("alert_title", f"{symbol} Alert")
+        catalyst_type = analysis.get("catalyst_type", "NEWS_CATALYST")
+        factual_reasons = analysis.get("factual_reasons", [])
         
-        # Threshold: Dispatches alert if impact score >= 60
-        if has_catalyst or impact_score >= 60:
-            alert_title = analysis.get("alert_title", f"{symbol} Alert")
-            catalyst_type = analysis.get("catalyst_type", "NEWS_CATALYST")
-            factual_reasons = analysis.get("factual_reasons", [])
-            
-            # Dispatch FCM Push Notification
+        # Apply AI Alert Signal Frequency filter based on user profile preference:
+        should_alert = False
+        if alert_sensitivity == "HIGH":
+            # High impact: impact score >= 80
+            should_alert = impact_score >= 80
+        elif alert_sensitivity == "FII":
+            # Institutional & Block deals
+            is_fii_catalyst = (
+                catalyst_type in ("BLOCK_DEAL", "DEBT_CHANGE", "INSTITUTIONAL")
+                or "fii" in alert_title.lower()
+                or "deal" in alert_title.lower()
+                or "institutional" in alert_title.lower()
+            )
+            should_alert = is_fii_catalyst and (impact_score >= 60 or has_catalyst)
+        else:
+            # ALL signals: impact score >= 60 or detected catalyst
+            should_alert = has_catalyst or impact_score >= 60
+
+        if should_alert:
+            # Dispatch FCM Push Notification (if user enabled FCM)
             fcm_sent = False
-            if fcm_token:
+            if fcm_token and fcm_enabled:
                 fcm_body = f"Impact: {impact_score}/100 | " + " ".join(factual_reasons[:1])
                 fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
                     "symbol": symbol,

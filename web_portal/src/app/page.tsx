@@ -735,9 +735,45 @@ export default function App() {
       } catch (e) {
         console.warn("Watchlist fetch error:", e);
       }
-    }
     setWatchlist([]);
   }, []);
+
+  const loadProfileData = useCallback(async (uid: string) => {
+    if (supabase) {
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+        if (data) {
+          if (data.alert_sensitivity) setAlertSensitivity(data.alert_sensitivity.toUpperCase() as any);
+          if (data.execution_mode) setExecutionMode(data.execution_mode.toUpperCase() as any);
+        }
+      } catch (e) {
+        console.warn("Profile load error:", e);
+      }
+    }
+  }, []);
+
+  const updatePreference = async (key: string, val: any) => {
+    if (!user?.id) return;
+    if (supabase) {
+      try {
+        await supabase.from('profiles').update({ [key]: val, updated_at: new Date().toISOString() }).eq('id', user.id);
+      } catch (e) {
+        console.warn("Update profile preference in Supabase error:", e);
+      }
+    }
+    try {
+      await fetch(`${BACKEND_URL}/api/auth/register-device`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          [key]: val,
+        })
+      });
+    } catch (e) {
+      console.warn("Update profile preference via API error:", e);
+    }
+  };
 
   useEffect(() => {
     if (!supabase) return;
@@ -754,6 +790,7 @@ export default function App() {
         loadPortfolioData(session.user.id);
         loadAlertsData(session.user.id);
         loadWatchlistData(session.user.id);
+        loadProfileData(session.user.id);
       }
     });
 
@@ -769,6 +806,7 @@ export default function App() {
         loadPortfolioData(session.user.id);
         loadAlertsData(session.user.id);
         loadWatchlistData(session.user.id);
+        loadProfileData(session.user.id);
       } else {
         setUser(null);
         setScreen("auth");
@@ -776,7 +814,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, [loadPortfolioData, loadAlertsData, loadWatchlistData]);
+  }, [loadPortfolioData, loadAlertsData, loadWatchlistData, loadProfileData]);
 
   const doAuth = async () => {
     if (!tncAccepted) { setShowTnc(true); return; }
@@ -1992,7 +2030,10 @@ export default function App() {
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                       <button
-                        onClick={() => setExecutionMode("INSTANT")}
+                        onClick={() => {
+                          setExecutionMode("INSTANT");
+                          updatePreference("execution_mode", "INSTANT");
+                        }}
                         style={{
                           background: executionMode === "INSTANT" ? "rgba(6,182,212,0.12)" : C.bgCard2,
                           border: `1.5px solid ${executionMode === "INSTANT" ? C.cyan : C.border}`,
@@ -2004,7 +2045,10 @@ export default function App() {
                       </button>
 
                       <button
-                        onClick={() => setExecutionMode("CONFIRM")}
+                        onClick={() => {
+                          setExecutionMode("CONFIRM");
+                          updatePreference("execution_mode", "CONFIRM");
+                        }}
                         style={{
                           background: executionMode === "CONFIRM" ? "rgba(139,92,246,0.12)" : C.bgCard2,
                           border: `1.5px solid ${executionMode === "CONFIRM" ? C.violet : C.border}`,
@@ -2064,7 +2108,10 @@ export default function App() {
                       {(["HIGH", "ALL", "FII"] as const).map(mode => (
                         <button
                           key={mode}
-                          onClick={() => setAlertSensitivity(mode)}
+                          onClick={() => {
+                            setAlertSensitivity(mode);
+                            updatePreference("alert_sensitivity", mode);
+                          }}
                           style={{
                             background: alertSensitivity === mode ? "rgba(6,182,212,0.12)" : C.bgCard2,
                             border: `1px solid ${alertSensitivity === mode ? C.cyan : C.border}`,
