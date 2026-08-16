@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../config/theme.dart';
@@ -6,95 +7,83 @@ import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/custom_widgets.dart';
 
-class AlertRadarScreen extends StatefulWidget {
-  const AlertRadarScreen({super.key});
+class AlertsScreen extends StatefulWidget {
+  const AlertsScreen({super.key});
 
   @override
-  State<AlertRadarScreen> createState() => _AlertRadarScreenState();
+  State<AlertsScreen> createState() => _AlertsScreenState();
 }
 
-class _AlertRadarScreenState extends State<AlertRadarScreen> {
+class _AlertsScreenState extends State<AlertsScreen> {
   bool _isLoading = true;
   String _selectedFilter = 'all';
   List<StokAlert> _alerts = [];
+  StreamSubscription<List<StokAlert>>? _alertsSub;
 
   @override
   void initState() {
     super.initState();
     _loadAlerts();
+    _subscribeToAlerts();
+  }
+
+  @override
+  void dispose() {
+    _alertsSub?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToAlerts() {
+    _alertsSub = SupabaseService().streamAlerts().listen((liveAlerts) {
+      if (mounted && liveAlerts.isNotEmpty) {
+        setState(() {
+          _alerts = liveAlerts;
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   Future<void> _loadAlerts() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
-      _loadFallbackMockAlerts();
+      setState(() {
+        _isLoading = false;
+        _alerts = [];
+      });
       return;
     }
 
     setState(() => _isLoading = true);
     final list = await ApiService().fetchAlerts(user.id);
-    setState(() {
-      if (list.isNotEmpty) {
+    if (mounted) {
+      setState(() {
         _alerts = list;
-      } else {
-        _loadFallbackMockAlerts();
-      }
-      _isLoading = false;
-    });
-  }
-
-  void _loadFallbackMockAlerts() {
-    _alerts = [
-      StokAlert(
-        id: '1',
-        userId: 'demo',
-        symbol: 'TCS',
-        alertTitle: 'Q3 Revenue Surge & Debt Paydown',
-        impactScore: 88,
-        factualReasons: [
-          'Net Income jumped +14.2% YoY in official filing.',
-          'Total Debt-to-Equity reduced from 0.12 to 0.05.',
-          'FII Net inflow increased by ₹420 Cr over the past 3 sessions.',
-        ],
-        metricsSnapshot: {'price': 3950.0, 'pe_ratio': 29.1, 'debt_to_equity': 0.05, 'roe': '28.4%'},
-        createdAt: DateTime.now().subtract(const Duration(minutes: 12)),
-      ),
-      StokAlert(
-        id: '2',
-        userId: 'demo',
-        symbol: 'RELIANCE',
-        alertTitle: '52-Week High Breakout on High Volume',
-        impactScore: 92,
-        factualReasons: [
-          '5-min volume spike of 3.8x above 20-day moving average.',
-          'Broke key resistance at ₹3,100 with massive block deals.',
-          'Quarterly EBITDA margins expanded by 180 bps.',
-        ],
-        metricsSnapshot: {'price': 3120.0, 'pe_ratio': 26.4, 'debt_to_equity': 0.38, 'roe': '16.2%'},
-        createdAt: DateTime.now().subtract(const Duration(minutes: 35)),
-      ),
-      StokAlert(
-        id: '3',
-        userId: 'demo',
-        symbol: 'HDFCBANK',
-        alertTitle: 'Institutional FII Buying Pressure Detected',
-        impactScore: 78,
-        factualReasons: [
-          'Bulk deal reported on NSE: 2.1M shares accumulated.',
-          'NIM (Net Interest Margin) recovered to 3.65%.',
-          'Price consolidating above 200 EMA support.',
-        ],
-        metricsSnapshot: {'price': 1680.0, 'pe_ratio': 19.8, 'debt_to_equity': 0.85, 'roe': '17.1%'},
-        createdAt: DateTime.now().subtract(const Duration(hours: 1, minutes: 45)),
-      ),
-    ];
-    _isLoading = false;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final filteredList = _alerts.where((a) {
       if (_selectedFilter == 'high') return a.impactScore >= 80;
+      if (_selectedFilter == 'earnings') {
+        return a.catalystType == 'EARNINGS_BEAT' ||
+            a.alertTitle.toUpperCase().contains('EARNING') ||
+            a.alertTitle.toUpperCase().contains('REVENUE');
+      }
+      if (_selectedFilter == 'breakout') {
+        return a.catalystType == 'PRICE_BREAKOUT' ||
+            a.alertTitle.toUpperCase().contains('BREAKOUT') ||
+            a.alertTitle.toUpperCase().contains('HIGH');
+      }
+      if (_selectedFilter == 'fii') {
+        return a.catalystType == 'BLOCK_DEAL' ||
+            a.catalystType == 'DEBT_CHANGE' ||
+            a.alertTitle.toUpperCase().contains('FII') ||
+            a.alertTitle.toUpperCase().contains('DEAL');
+      }
       return true;
     }).toList();
 
@@ -105,7 +94,7 @@ class _AlertRadarScreenState extends State<AlertRadarScreen> {
             TradingAILogo(size: 30),
             SizedBox(width: 10),
             Text(
-              "StokVigil Alert Radar",
+              "StokVigil Alerts",
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
             ),
           ],

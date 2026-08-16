@@ -124,7 +124,7 @@ G:\stokvigil-ai\
 │           ├── auth_screen.dart
 │           ├── icici_credentials_screen.dart
 │           ├── dashboard_screen.dart
-│           ├── alert_radar_screen.dart
+│           ├── alerts_screen.dart
 │           ├── notification_settings_screen.dart
 │           └── watchlist_screen.dart
 ├── web_portal/
@@ -145,7 +145,7 @@ G:\stokvigil-ai\
 │       │   └── page.tsx
 │       └── components/
 │           ├── Dashboard.tsx
-│           ├── AlertRadar.tsx
+│           ├── Alerts.tsx
 │           ├── ICICIModal.tsx
 │           └── Watchlist.tsx
 └── .github/

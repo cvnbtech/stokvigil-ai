@@ -42,8 +42,13 @@ jobs:
           if [ -z "$SUPA_KEY" ]; then SUPA_KEY="${{ vars.SUPABASE_ANON_KEY }}"; fi
           if [ -z "$SUPA_KEY" ]; then SUPA_KEY="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"; fi
 
+          BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.STOKVIGIL_BACKEND_URL }}"; fi
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ secrets.BACKEND_URL }}"; fi
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.BACKEND_URL }}"; fi
+
           echo "Compiling APK with SUPABASE_URL length: ${#SUPA_URL}"
-          flutter build apk --release --no-tree-shake-icons --dart-define=SUPABASE_URL="$SUPA_URL" --dart-define=SUPABASE_ANON_KEY="$SUPA_KEY"
+          flutter build apk --release --no-tree-shake-icons --dart-define=SUPABASE_URL="$SUPA_URL" --dart-define=SUPABASE_ANON_KEY="$SUPA_KEY" --dart-define=BACKEND_URL="$BACKEND_URL"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

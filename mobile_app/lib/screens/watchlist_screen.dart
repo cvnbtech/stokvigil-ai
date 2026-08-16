@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../services/supabase_service.dart';
@@ -16,100 +17,51 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   List<Map<String, dynamic>> _watchlist = [];
   bool _isLoading = true;
   bool _autoSync = true;
+  StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
 
   @override
   void initState() {
     super.initState();
     _loadWatchlist();
+    _subscribeToWatchlist();
+  }
+
+  @override
+  void dispose() {
+    _watchlistSub?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _subscribeToWatchlist() {
+    _watchlistSub = SupabaseService().streamWatchlist().listen((liveData) {
+      if (mounted) {
+        setState(() {
+          _watchlist = liveData;
+          _isLoading = false;
+        });
+      }
+    });
   }
 
   Future<void> _loadWatchlist() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
-      _loadFallbackMockWatchlist();
+      setState(() {
+        _isLoading = false;
+        _watchlist = [];
+      });
       return;
     }
 
     setState(() => _isLoading = true);
-    try {
-      final data = await SupabaseService().client
-          .from('user_watchlists')
-          .select()
-          .eq('user_id', user.id);
-
+    final data = await SupabaseService().fetchWatchlist();
+    if (mounted) {
       setState(() {
-        if ((data as List).isNotEmpty) {
-          _watchlist = List<Map<String, dynamic>>.from(data);
-        } else {
-          _loadFallbackMockWatchlist();
-        }
+        _watchlist = data;
         _isLoading = false;
       });
-    } catch (e) {
-      debugPrint("Error loading watchlist: $e");
-      _loadFallbackMockWatchlist();
     }
-  }
-
-  void _loadFallbackMockWatchlist() {
-    _watchlist = [
-      {
-        'id': '1',
-        'symbol': 'RELIANCE',
-        'name': 'Reliance Industries',
-        'price': 2980.50,
-        'chg': '+1.85%',
-        'is_positive': true,
-        'is_auto_synced': true,
-        'signal': 'STRONG BUY',
-        'target': '3,250'
-      },
-      {
-        'id': '2',
-        'symbol': 'TCS',
-        'name': 'Tata Consultancy Serv',
-        'price': 4120.00,
-        'chg': '+0.92%',
-        'is_positive': true,
-        'is_auto_synced': true,
-        'signal': 'BUY',
-        'target': '4,450'
-      },
-      {
-        'id': '3',
-        'symbol': 'INFY',
-        'name': 'Infosys Limited',
-        'price': 1780.25,
-        'chg': '-0.65%',
-        'is_positive': false,
-        'is_auto_synced': true,
-        'signal': 'TAKE PROFIT',
-        'target': '1,820'
-      },
-      {
-        'id': '4',
-        'symbol': 'HDFCBANK',
-        'name': 'HDFC Bank Ltd',
-        'price': 1650.00,
-        'chg': '+1.15%',
-        'is_positive': true,
-        'is_auto_synced': false,
-        'signal': 'ACCUMULATE',
-        'target': '1,820'
-      },
-      {
-        'id': '5',
-        'symbol': 'TATAMOTORS',
-        'name': 'Tata Motors Ltd',
-        'price': 1015.30,
-        'chg': '+3.40%',
-        'is_positive': true,
-        'is_auto_synced': false,
-        'signal': 'STRONG BUY',
-        'target': '1,150'
-      },
-    ];
-    _isLoading = false;
   }
 
   Future<void> _addSymbol(String symbol) async {
@@ -121,51 +73,33 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
     final user = SupabaseService().currentUser;
     if (user != null) {
-      try {
-        await SupabaseService().client.from('user_watchlists').upsert({
-          'user_id': user.id,
-          'symbol': sym,
-          'is_auto_synced': false,
-        });
-        ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
-      } catch (e) {
-        ErrorHandler.showErrorSnackBar(context, e);
+      final ok = await SupabaseService().addToWatchlist(sym);
+      if (ok) {
+        if (mounted) {
+          ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
+        }
+      } else {
+        if (mounted) {
+          ErrorHandler.showErrorSnackBar(context, "Failed to add $sym to watchlist.");
+        }
       }
-    } else {
-      ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
     }
-
-    setState(() {
-      _watchlist.insert(0, {
-        'id': DateTime.now().millisecondsSinceEpoch.toString(),
-        'symbol': sym,
-        'name': '$sym India Ltd',
-        'price': 1450.00,
-        'chg': '+1.20%',
-        'is_positive': true,
-        'is_auto_synced': false,
-        'signal': 'BUY',
-        'target': '1,600'
-      });
-    });
+    _loadWatchlist();
     _searchController.clear();
   }
 
   Future<void> _removeSymbol(String id, String symbol) async {
-    try {
-      final user = SupabaseService().currentUser;
-      if (user != null) {
-        await SupabaseService().client.from('user_watchlists').delete().eq('id', id);
-      }
+    final ok = await SupabaseService().removeFromWatchlist(id);
+    if (ok) {
       setState(() {
         _watchlist.removeWhere((item) => item['id'] == id);
       });
       if (mounted) {
         ErrorHandler.showSuccessSnackBar(context, "$symbol removed from watchlist.");
       }
-    } catch (e) {
+    } else {
       if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, e);
+        ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from watchlist.");
       }
     }
   }
@@ -315,8 +249,27 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator(color: AppTheme.cyan))
                 : _watchlist.isEmpty
-                    ? const Center(
-                        child: Text("Watchlist empty. Search and add NSE tickers above.", style: TextStyle(color: AppTheme.textSecondary)),
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.format_list_bulleted_rounded, color: AppTheme.textSecondary, size: 56),
+                              SizedBox(height: 16),
+                              Text(
+                                "No Stocks in Watchlist",
+                                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                "Add NSE stock symbols above (e.g., RELIANCE, TCS, INFY) to monitor breakouts, earnings, and block deals.",
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),

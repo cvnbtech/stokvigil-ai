@@ -17,9 +17,9 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   bool _hasCredentials = false;
-  double _totalValue = 485200.00;
-  double _totalPnl = 22450.50;
-  double _totalPnlPct = 4.85;
+  double _totalValue = 0.0;
+  double _totalPnl = 0.0;
+  double _totalPnlPct = 0.0;
   List<PortfolioHolding> _holdings = [];
 
   @override
@@ -31,38 +31,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _loadPortfolioData() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
-      _loadFallbackMockData();
+      setState(() {
+        _isLoading = false;
+        _hasCredentials = false;
+        _holdings = [];
+      });
       return;
     }
 
     setState(() => _isLoading = true);
     final data = await ApiService().fetchPortfolioSummary(user.id);
     
-    setState(() {
-      _hasCredentials = data['has_credentials'] ?? false;
-      _totalValue = (data['total_portfolio_value'] ?? 485200.0).toDouble();
-      _totalPnl = (data['total_pnl'] ?? 22450.50).toDouble();
-      _totalPnlPct = (data['total_pnl_percent'] ?? 4.85).toDouble();
-      
-      final list = (data['holdings'] as List? ?? []);
-      if (list.isNotEmpty) {
+    if (mounted) {
+      setState(() {
+        _hasCredentials = data['has_credentials'] ?? false;
+        _totalValue = (data['total_portfolio_value'] ?? 0.0).toDouble();
+        _totalPnl = (data['total_pnl'] ?? 0.0).toDouble();
+        _totalPnlPct = (data['total_pnl_percent'] ?? 0.0).toDouble();
+        
+        final list = (data['holdings'] as List? ?? []);
         _holdings = list.map((item) => PortfolioHolding.fromJson(item)).toList();
-      } else {
-        _loadFallbackMockData();
-      }
-      _isLoading = false;
-    });
-  }
-
-  void _loadFallbackMockData() {
-    _hasCredentials = true;
-    _holdings = [
-      PortfolioHolding(symbol: 'RELIANCE', quantity: 50, avgPrice: 2850.0, currentPrice: 3120.0, currentVal: 156000.0, pnl: 13500.0, pnlPct: 9.47, peRatio: 26.4, debtToEquity: 0.38),
-      PortfolioHolding(symbol: 'TCS', quantity: 25, avgPrice: 3600.0, currentPrice: 3950.0, currentVal: 98750.0, pnl: 8750.0, pnlPct: 9.72, peRatio: 29.1, debtToEquity: 0.05),
-      PortfolioHolding(symbol: 'HDFCBANK', quantity: 80, avgPrice: 1520.0, currentPrice: 1680.0, currentVal: 134400.0, pnl: 12800.0, pnlPct: 10.52, peRatio: 19.8, debtToEquity: 0.85),
-      PortfolioHolding(symbol: 'INFY', quantity: 40, avgPrice: 1450.0, currentPrice: 1580.0, currentVal: 63200.0, pnl: 5200.0, pnlPct: 8.96, peRatio: 24.2, debtToEquity: 0.08),
-    ];
-    _isLoading = false;
+        _isLoading = false;
+      });
+    }
   }
 
   @override

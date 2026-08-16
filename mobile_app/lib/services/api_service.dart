@@ -2,9 +2,16 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
+import 'supabase_service.dart';
 
 class ApiService {
-  static const String baseUrl = "https://stokvigil-backend-xxxx.a.run.app"; // Cloud Run URL
+  static const String baseUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: String.fromEnvironment(
+      'STOKVIGIL_BACKEND_URL',
+      defaultValue: "https://stokvigil-backend-xxxx.a.run.app",
+    ),
+  );
 
   Future<bool> saveIciciCredentials({
     required String userId,
@@ -22,7 +29,7 @@ class ApiService {
           'secret_key': secretKey,
           'session_token': sessionToken,
         }),
-      );
+      ).timeout(const Duration(seconds: 8));
       return res.statusCode == 200;
     } catch (e) {
       debugPrint("API Error saving credentials: $e");
@@ -32,16 +39,23 @@ class ApiService {
 
   Future<Map<String, dynamic>> fetchPortfolioSummary(String userId) async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/user/portfolio?user_id=$userId'));
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/user/portfolio?user_id=$userId'))
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
     } catch (e) {
       debugPrint("API Error fetching portfolio: $e");
     }
+
+    // Check credentials directly via Supabase if backend is unreachable
+    final creds = await SupabaseService().checkCredentials();
     return {
-      "has_credentials": false,
+      "has_credentials": creds != null,
+      "token_date": creds?['token_date'],
       "total_portfolio_value": 0.0,
+      "total_investment_value": 0.0,
       "total_pnl": 0.0,
       "total_pnl_percent": 0.0,
       "holdings": []
@@ -50,16 +64,22 @@ class ApiService {
 
   Future<List<StokAlert>> fetchAlerts(String userId) async {
     try {
-      final res = await http.get(Uri.parse('$baseUrl/api/user/alerts?user_id=$userId'));
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/user/alerts?user_id=$userId'))
+          .timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['alerts'] as List? ?? []);
-        return list.map((item) => StokAlert.fromJson(item)).toList();
+        if (list.isNotEmpty) {
+          return list.map((item) => StokAlert.fromJson(item)).toList();
+        }
       }
     } catch (e) {
-      debugPrint("API Error fetching alerts: $e");
+      debugPrint("API Error fetching alerts from backend: $e");
     }
-    return [];
+
+    // Direct Supabase query fallback (Live PostgreSQL RLS)
+    return await SupabaseService().fetchAlerts();
   }
 
   Future<bool> registerDeviceToken({
@@ -68,6 +88,16 @@ class ApiService {
     String? telegramChatId,
     bool? telegramEnabled,
   }) async {
+    // Update direct Supabase profile table first for instant reliability
+    final profileUpdates = <String, dynamic>{};
+    if (fcmToken != null) profileUpdates['fcm_device_token'] = fcmToken;
+    if (telegramChatId != null) profileUpdates['telegram_chat_id'] = telegramChatId;
+    if (telegramEnabled != null) profileUpdates['telegram_enabled'] = telegramEnabled;
+    
+    if (profileUpdates.isNotEmpty) {
+      await SupabaseService().updateProfile(profileUpdates);
+    }
+
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/api/auth/register-device'),
@@ -78,11 +108,11 @@ class ApiService {
           if (telegramChatId != null) 'telegram_chat_id': telegramChatId,
           if (telegramEnabled != null) 'telegram_enabled': telegramEnabled,
         }),
-      );
+      ).timeout(const Duration(seconds: 6));
       return res.statusCode == 200;
     } catch (e) {
-      debugPrint("API Error registering device token: $e");
-      return false;
+      debugPrint("API Error registering device token via HTTP: $e");
+      return profileUpdates.isNotEmpty;
     }
   }
 }

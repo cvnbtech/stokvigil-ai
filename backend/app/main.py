@@ -305,13 +305,20 @@ async def telegram_webhook(payload: TelegramWebhookPayload, db: Client = Depends
     if text.startswith("/start"):
         parts = text.split(" ")
         if len(parts) > 1:
-            user_id = parts[1].strip()
-            # Link user profile with Telegram chat_id
-            db.table("profiles").update({
-                "telegram_chat_id": chat_id,
-                "telegram_enabled": True,
-                "updated_at": "now()"
-            }).eq("id", user_id).execute()
+            user_param = parts[1].strip()
+            # Link user profile with Telegram chat_id (supports UUID or email)
+            if "@" in user_param:
+                db.table("profiles").update({
+                    "telegram_chat_id": chat_id,
+                    "telegram_enabled": True,
+                    "updated_at": "now()"
+                }).eq("email", user_param).execute()
+            else:
+                db.table("profiles").update({
+                    "telegram_chat_id": chat_id,
+                    "telegram_enabled": True,
+                    "updated_at": "now()"
+                }).eq("id", user_param).execute()
 
             welcome_msg = (
                 "✅ <b>StokVigil AI Successfully Linked!</b>\n\n"
@@ -319,7 +326,7 @@ async def telegram_webhook(payload: TelegramWebhookPayload, db: Client = Depends
                 "<i>Note: StokVigil AI provides factual data alerts only and does not provide financial advice.</i>"
             )
             await send_telegram_notification(chat_id, welcome_msg)
-            return {"status": "linked", "user_id": user_id, "chat_id": chat_id}
+            return {"status": "linked", "user_param": user_param, "chat_id": chat_id}
         else:
             help_msg = (
                 "👋 <b>Welcome to StokVigil AI Bot!</b>\n\n"

@@ -5,7 +5,7 @@ import 'config/theme.dart';
 import 'screens/auth_screen.dart';
 import 'screens/icici_credentials_screen.dart';
 import 'screens/dashboard_screen.dart';
-import 'screens/alert_radar_screen.dart';
+import 'screens/alerts_screen.dart';
 import 'screens/notification_settings_screen.dart';
 import 'screens/watchlist_screen.dart';
 import 'services/supabase_service.dart';
@@ -95,7 +95,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
 
     final pages = [
       DashboardScreen(onOpenCredentials: _openCredentialsSetup),
-      const AlertRadarScreen(),
+      const AlertsScreen(),
       const WatchlistScreen(),
       const NotificationSettingsScreen(),
     ];

@@ -63,12 +63,7 @@ class _AuthScreenState extends State<AuthScreen> {
       }
       widget.onLoginSuccess();
     } catch (e) {
-      final errStr = e.toString().toLowerCase();
-      // If Supabase credentials are placeholder (demo/dev mode), enter Investor Session!
-      if (errStr.contains('your-supabase-project') ||
-          errStr.contains('your-anon-key') ||
-          errStr.contains('invalid api key') ||
-          errStr.contains('unauthorized')) {
+      if (!SupabaseService.isConfigured) {
         widget.onLoginSuccess();
         return;
       }

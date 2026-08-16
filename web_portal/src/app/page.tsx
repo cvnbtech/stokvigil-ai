@@ -1,5 +1,21 @@
 "use client";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+const BACKEND_URL = process.env.BACKEND_URL || process.env.STOKVIGIL_BACKEND_URL || "https://stokvigil-backend-xxxx.a.run.app";
+
+const isSupabaseConfigured =
+  typeof window !== "undefined" &&
+  SUPABASE_URL &&
+  !SUPABASE_URL.includes("your-supabase-project") &&
+  SUPABASE_ANON_KEY &&
+  !SUPABASE_ANON_KEY.includes("dummy");
+
+const supabase: SupabaseClient | null = isSupabaseConfigured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // ─────────────────────────────────────────────
 // DESIGN TOKENS (Vibrant Cyan-Violet Theme)
@@ -17,6 +33,8 @@ const C = {
   rose:        "#EF4444",
   amber:       "#F59E0B",
   white:       "#F8FAFC",
+  gray1:       "#94A3B8",
+  gray2:       "#64748B",
   gray3:       "#1E293B",
 };
 
@@ -242,94 +260,9 @@ interface HoldingItem {
   signalType: "strong_buy" | "buy" | "sell" | "hold" | "neutral";
 }
 
-const HOLDINGS: HoldingItem[] = [
-  { symbol: "RELIANCE", qty: 25, avg: 2450, price: 2980.50, pnl: 13262.50, pnlPct: 21.65, dayHigh: 2995.00, dayLow: 2920.00, high52: 3024.90, sector: "Energy & Conglomerate", signal: "STRONG BUY", signalType: "strong_buy" },
-  { symbol: "TCS",      qty: 10, avg: 3600, price: 4120.00, pnl: 5200.00,  pnlPct: 14.44, dayHigh: 4145.00, dayLow: 4080.00, high52: 4250.00, sector: "IT Services", signal: "BUY", signalType: "buy" },
-  { symbol: "INFY",     qty: 40, avg: 1420, price: 1780.25, pnl: 14410.00, pnlPct: 25.37, dayHigh: 1795.50, dayLow: 1740.00, high52: 1840.00, sector: "IT Services", signal: "TAKE PROFIT", signalType: "sell" },
-];
-
-const ALERTS = [
-  {
-    id: "a1", symbol: "RELIANCE", impact: 88, impactColor: "emerald" as const, catalyst: "BLOCK DEAL", category: "high",
-    signal: "STRONG BUY", signalType: "strong_buy" as const, targetPrice: "₹3,250", stopLoss: "₹2,820",
-    title: "Multi-Crore Block Deal + Q1 Net Profit ↑18.5% YoY",
-    reasons: [
-      "Institutional block deal: 1.45M shares at ₹2,950",
-      "Q1 Net Profit at 14.2% margin — 18.5% YoY growth",
-      "Debt-to-Equity improved from 0.45 → 0.38",
-    ],
-    metrics: { price: "₹2,980", pe: "24.2", debt: "0.38", roe: "16.4%" },
-    time: "10:45 AM",
-  },
-  {
-    id: "a2", symbol: "TCS", impact: 82, impactColor: "emerald" as const, catalyst: "EARNINGS BEAT", category: "earnings",
-    signal: "BUY", signalType: "buy" as const, targetPrice: "₹4,450", stopLoss: "₹3,920",
-    title: "Q1 Profit Surges 12.8% YoY · $500M Order Win",
-    reasons: [
-      "Q1 Net Profit ₹12,040 Cr vs ₹10,670 Cr YoY",
-      "$500M multi-year order from European enterprise",
-      "Operating margin expanded by 60 bps",
-    ],
-    metrics: { price: "₹4,120", pe: "31.5", debt: "0.08", roe: "42.1%" },
-    time: "09:30 AM",
-  },
-  {
-    id: "a3", symbol: "HDFCBANK", impact: 74, impactColor: "amber" as const, catalyst: "BREAKOUT", category: "breakout",
-    signal: "ACCUMULATE", signalType: "buy" as const, targetPrice: "₹1,820", stopLoss: "₹1,580",
-    title: "Deposit Growth +16% YoY · 52-Week Resistance Test",
-    reasons: [
-      "Total deposits crossed ₹23.8 Lakh Cr milestone",
-      "NIM stable at 3.63% — strong retail momentum",
-      "Testing 52-week resistance at ₹1,680",
-    ],
-    metrics: { price: "₹1,650", pe: "18.6", debt: "1.10", roe: "15.8%" },
-    time: "Yesterday",
-  },
-  {
-    id: "a6", symbol: "ITC", impact: 71, impactColor: "amber" as const, catalyst: "CONSOLIDATION", category: "high",
-    signal: "HOLD", signalType: "hold" as const, targetPrice: "₹485", stopLoss: "₹420",
-    title: "Consolidating near 200-DMA · Stable FMCG Demand",
-    reasons: [
-      "Stock trading in tight consolidation band ₹430 – ₹460",
-      "FII institutional holding steady at 42.8%",
-      "Neutral momentum ahead of Q2 Earnings announcement",
-    ],
-    metrics: { price: "₹445", pe: "26.4", debt: "0.02", roe: "29.1%" },
-    time: "03:45 PM",
-  },
-  {
-    id: "a4", symbol: "TATAMOTORS", impact: 85, impactColor: "emerald" as const, catalyst: "VOLUME SURGE", category: "volume",
-    signal: "STRONG BUY", signalType: "strong_buy" as const, targetPrice: "₹1,150", stopLoss: "₹940",
-    title: "JLR Wholesale Sales ↑14% · Heavy Institutional Accumulation",
-    reasons: [
-      "3.4x Average Daily Volume spike on NSE",
-      "Jaguar Land Rover Q1 revenues reach £7.3B",
-      "EV Market Share expands to 73% in domestic segment",
-    ],
-    metrics: { price: "₹1,015", pe: "15.2", debt: "0.62", roe: "22.8%" },
-    time: "02:15 PM",
-  },
-  {
-    id: "a5", symbol: "INFY", impact: 79, impactColor: "amber" as const, catalyst: "PROFIT TAKING", category: "fii",
-    signal: "TAKE PROFIT", signalType: "sell" as const, targetPrice: "₹1,820", stopLoss: "₹1,740",
-    title: "Testing Major Overhead Resistance · FII Partial Trim",
-    reasons: [
-      "RSI reached 78 (Overbought Territory)",
-      "Institutional order flow showing resistance at ₹1,800",
-      "Recommend partial profit taking to lock in +25% gains",
-    ],
-    metrics: { price: "₹1,780", pe: "26.8", debt: "0.11", roe: "31.2%" },
-    time: "11:20 AM",
-  },
-];
-
-const WATCHLIST_INIT = [
-  { id: "1", symbol: "RELIANCE", name: "Reliance Industries", auto: true, price: 2980.50, chg: "+1.85%", isPositive: true, signal: "STRONG BUY", signalType: "strong_buy", target: "₹3,250", sl: "₹2,820" },
-  { id: "2", symbol: "TCS",      name: "Tata Consultancy Serv", auto: true, price: 4120.00, chg: "+0.92%", isPositive: true, signal: "BUY", signalType: "buy", target: "₹4,450", sl: "₹3,920" },
-  { id: "3", symbol: "INFY",     name: "Infosys Limited", auto: true, price: 1780.25, chg: "-0.65%", isPositive: false, signal: "TAKE PROFIT", signalType: "sell", target: "₹1,820", sl: "₹1,740" },
-  { id: "4", symbol: "HDFCBANK", name: "HDFC Bank Ltd", auto: false, price: 1650.00, chg: "+1.15%", isPositive: true, signal: "ACCUMULATE", signalType: "buy", target: "₹1,820", sl: "₹1,580" },
-  { id: "5", symbol: "TATAMOTORS", name: "Tata Motors Ltd", auto: false, price: 1015.30, chg: "+3.40%", isPositive: true, signal: "STRONG BUY", signalType: "strong_buy", target: "₹1,150", sl: "₹940" },
-];
+const HOLDINGS: HoldingItem[] = [];
+const ALERTS: any[] = [];
+const WATCHLIST_INIT: any[] = [];
 
 // ─────────────────────────────────────────────
 // TNC MODAL WITH PROGRESS BAR & GLOW SCROLL
@@ -658,13 +591,16 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [name, setName]  = useState("");
   const [loading, setLoading] = useState(false);
-  const [user, setUser]  = useState<{ name: string; email: string } | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
+  const [user, setUser]  = useState<{ id?: string; name: string; email: string } | null>(null);
 
   const [tncAccepted, setTncAccepted] = useState(false);
   const [showTnc, setShowTnc]         = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent]   = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -672,25 +608,217 @@ export default function App() {
   const [secretKey, setSecretKey] = useState("");
   const [sessionTok, setSessionTok] = useState("");
   const [keySaved, setKeySaved]   = useState(false);
+  const [keySaving, setKeySaving] = useState(false);
+  const [hasCredentials, setHasCredentials] = useState(false);
 
-  const [watchlist, setWatchlist] = useState(WATCHLIST_INIT);
+  const [holdings, setHoldings]   = useState<HoldingItem[]>([]);
+  const [totalValue, setTotalValue] = useState(0);
+  const [totalInvested, setTotalInvested] = useState(0);
+  const [totalPnl, setTotalPnl]   = useState(0);
+  const [totalPnlPct, setTotalPnlPct] = useState(0);
+
+  const [alerts, setAlerts]       = useState<any[]>([]);
+  const [watchlist, setWatchlist] = useState<any[]>([]);
   const [ticker, setTicker]       = useState("");
-  const [alertFilter, setAlertFilter] = useState<"all" | "high" | "earnings" | "breakout" | "volume" | "fii" | "hold">("all");
+  const [alertFilter, setAlertFilter] = useState<string>("all");
   const [selectedStock, setSelectedStock] = useState<HoldingItem | null>(null);
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeData, setTradeData] = useState<{ symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string } | null>(null);
   const [orderQty, setOrderQty] = useState(10);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [orderSent, setOrderSent] = useState(false);
-  const [limitPrice, setLimitPrice] = useState<string>("");
-  const [targetPriceInput, setTargetPriceInput] = useState<string>("3250");
-  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("2820");
+  const [orderSending, setOrderSending] = useState(false);
+  const [limitPrice, setLimitPrice] = useState<string>("1250");
+  const [targetPriceInput, setTargetPriceInput] = useState<string>("1400");
+  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("1180");
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
 
-  const doAuth = () => {
+  const loadPortfolioData = useCallback(async (uid: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHasCredentials(data.has_credentials || false);
+        setTotalValue(data.total_portfolio_value || 0);
+        setTotalInvested(data.total_investment_value || 0);
+        setTotalPnl(data.total_pnl || 0);
+        setTotalPnlPct(data.total_pnl_percent || 0);
+        if (data.holdings && data.holdings.length > 0) {
+          setHoldings(data.holdings.map((h: any) => ({
+            symbol: h.symbol,
+            qty: h.quantity,
+            avg: h.avg_price,
+            price: h.current_price,
+            pnl: h.pnl,
+            pnlPct: h.pnl_percent,
+            dayHigh: h.current_price * 1.02,
+            dayLow: h.current_price * 0.98,
+            high52: h.current_price * 1.15,
+            sector: "Equity",
+            signal: h.pnl >= 0 ? "STRONG BUY" : "HOLD",
+            signalType: h.pnl >= 0 ? "strong_buy" : "hold",
+          })));
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Portfolio fetch fallback:", e);
+    }
+
+    if (supabase) {
+      const { data: cred } = await supabase.from('user_credentials').select('token_date').eq('user_id', uid).maybeSingle();
+      setHasCredentials(!!cred);
+    }
+    setHoldings([]);
+    setTotalValue(0);
+    setTotalInvested(0);
+    setTotalPnl(0);
+    setTotalPnlPct(0);
+  }, []);
+
+  const loadAlertsData = useCallback(async (uid: string) => {
+    if (supabase) {
+      try {
+        const { data } = await supabase.from('stok_alerts').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+        if (data && data.length > 0) {
+          setAlerts(data.map((a: any) => ({
+            id: a.id,
+            symbol: a.symbol,
+            impact: a.impact_score || 80,
+            impactColor: a.impact_score >= 80 ? "emerald" : "amber",
+            catalyst: a.catalyst_type || "CATALYST",
+            category: a.catalyst_type?.toLowerCase() || "high",
+            signal: a.impact_score >= 80 ? "STRONG BUY" : "BUY",
+            signalType: a.impact_score >= 80 ? "strong_buy" : "buy",
+            targetPrice: `₹${((a.metrics_snapshot?.price || 1250) * 1.12).toFixed(0)}`,
+            stopLoss: `₹${((a.metrics_snapshot?.price || 1250) * 0.94).toFixed(0)}`,
+            title: a.alert_title,
+            reasons: a.factual_reasons || [],
+            metrics: {
+              price: `₹${a.metrics_snapshot?.price || 1250}`,
+              pe: a.metrics_snapshot?.pe_ratio?.toString() || "24.2",
+              debt: a.metrics_snapshot?.debt_to_equity?.toString() || "0.38",
+              roe: a.metrics_snapshot?.roe || "18.5%"
+            },
+            time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          })));
+          return;
+        }
+      } catch (e) {
+        console.warn("Alerts fetch error:", e);
+      }
+    }
+    setAlerts([]);
+  }, []);
+
+  const loadWatchlistData = useCallback(async (uid: string) => {
+    if (supabase) {
+      try {
+        const { data } = await supabase.from('user_watchlists').select('*').eq('user_id', uid).order('created_at', { ascending: false });
+        if (data && data.length > 0) {
+          setWatchlist(data.map((w: any) => ({
+            id: w.id,
+            symbol: w.symbol,
+            name: `${w.symbol} India`,
+            auto: w.is_auto_synced || false,
+            price: 1250.0,
+            chg: "+1.20%",
+            isPositive: true,
+            signal: "BUY",
+            signalType: "buy",
+            target: "₹1,400",
+            sl: "₹1,180"
+          })));
+          return;
+        }
+      } catch (e) {
+        console.warn("Watchlist fetch error:", e);
+      }
+    }
+    setWatchlist([]);
+  }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const u = {
+          id: session.user.id,
+          name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Investor",
+          email: session.user.email || ""
+        };
+        setUser(u);
+        setScreen("app");
+        loadPortfolioData(session.user.id);
+        loadAlertsData(session.user.id);
+        loadWatchlistData(session.user.id);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        const u = {
+          id: session.user.id,
+          name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Investor",
+          email: session.user.email || ""
+        };
+        setUser(u);
+        setScreen("app");
+        loadPortfolioData(session.user.id);
+        loadAlertsData(session.user.id);
+        loadWatchlistData(session.user.id);
+      } else {
+        setUser(null);
+        setScreen("auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadPortfolioData, loadAlertsData, loadWatchlistData]);
+
+  const doAuth = async () => {
     if (!tncAccepted) { setShowTnc(true); return; }
     setLoading(true);
+    setAuthError(null);
+    setAuthSuccess(null);
+
+    if (supabase) {
+      try {
+        if (authTab === "signup") {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: name } }
+          });
+          if (error) throw error;
+          if (data.session) {
+            setUser({ id: data.user?.id, name: name || email.split("@")[0], email });
+            setScreen("app");
+          } else {
+            setAuthSuccess("✉️ Verification link sent! Please check your email inbox to activate your account.");
+          }
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          if (data.user) {
+            setUser({
+              id: data.user.id,
+              name: data.user.user_metadata?.full_name || email.split("@")[0],
+              email: data.user.email || email
+            });
+            setScreen("app");
+          }
+        }
+      } catch (err: any) {
+        setAuthError(err.message || "Authentication failed.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     setTimeout(() => {
       setUser({ name: name || (email.split("@")[0]) || "Investor", email: email || "investor@gmail.com" });
       setScreen("app");
@@ -698,8 +826,19 @@ export default function App() {
     }, 900);
   };
 
-  const doGoogleOAuth = () => {
+  const doGoogleOAuth = async () => {
     if (!tncAccepted) { setShowTnc(true); return; }
+    if (supabase) {
+      try {
+        await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin }
+        });
+      } catch (err: any) {
+        setAuthError(err.message || "Google OAuth failed.");
+      }
+      return;
+    }
     setLoading(true);
     setTimeout(() => {
       setUser({ name: "Google Investor", email: "google.user@gmail.com" });
@@ -708,34 +847,114 @@ export default function App() {
     }, 900);
   };
 
-  const saveKey = () => {
+  const saveKey = async () => {
+    setKeySaving(true);
+    if (user?.id) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/user/credentials`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: user.id,
+            app_key: appKey,
+            secret_key: secretKey,
+            session_token: sessionTok
+          })
+        });
+        if (res.ok) {
+          setHasCredentials(true);
+          loadPortfolioData(user.id);
+        }
+      } catch (e) {
+        console.warn("Save key error:", e);
+      }
+    }
     setKeySaved(true);
+    setKeySaving(false);
     setTimeout(() => { setShowKeyModal(false); setKeySaved(false); }, 1200);
   };
 
-  const addTicker = () => {
+  const addTicker = async () => {
     if (!ticker.trim()) return;
     const sym = ticker.trim().toUpperCase();
-    setWatchlist(prev => [
-      ...prev,
-      {
-        id: Date.now().toString(),
+    if (user?.id && supabase) {
+      await supabase.from('user_watchlists').upsert({
+        user_id: user.id,
         symbol: sym,
-        name: `${sym} India`,
-        auto: false,
-        price: 1250.0,
-        chg: "+1.20%",
-        isPositive: true,
-        signal: "BUY",
-        signalType: "buy",
-        target: "₹1,400",
-        sl: "₹1,180",
-      }
-    ]);
+        is_auto_synced: false
+      });
+      loadWatchlistData(user.id);
+    } else {
+      setWatchlist(prev => [
+        {
+          id: Date.now().toString(),
+          symbol: sym,
+          name: `${sym} India`,
+          auto: false,
+          price: 1250.0,
+          chg: "+1.20%",
+          isPositive: true,
+          signal: "BUY",
+          signalType: "buy",
+          target: "₹1,400",
+          sl: "₹1,180"
+        },
+        ...prev
+      ]);
+    }
     setTicker("");
   };
 
-  const filteredAlerts = ALERTS.filter(a => alertFilter === "all" ? true : a.category === alertFilter || a.signalType === alertFilter);
+  const removeTicker = async (id: string) => {
+    if (user?.id && supabase) {
+      await supabase.from('user_watchlists').delete().eq('id', id);
+      loadWatchlistData(user.id);
+    } else {
+      setWatchlist(prev => prev.filter(w => w.id !== id));
+    }
+  };
+
+  const executeTrade = async () => {
+    if (!tradeData) return;
+    setOrderSending(true);
+    if (user?.id) {
+      try {
+        await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: user.id,
+            symbol: tradeData.symbol,
+            action: tradeData.type,
+            order_type: orderType,
+            quantity: orderQty,
+            price: orderType === "LIMIT" ? parseFloat(limitPrice) || 0.0 : 0.0
+          })
+        });
+      } catch (e) {
+        console.warn("Trade order execution:", e);
+      }
+    }
+    setOrderSending(false);
+    setOrderSent(true);
+  };
+
+  const doSignOut = async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setScreen("auth");
+  };
+
+  const filteredAlerts = alerts.filter(a => {
+    if (alertFilter === "all") return true;
+    if (alertFilter === "high") return a.impact >= 80;
+    if (alertFilter === "earnings") return a.catalyst?.toLowerCase().includes("earning") || a.title?.toLowerCase().includes("earning");
+    if (alertFilter === "breakout") return a.catalyst?.toLowerCase().includes("breakout") || a.title?.toLowerCase().includes("breakout");
+    if (alertFilter === "fii") return a.catalyst?.toLowerCase().includes("block") || a.title?.toLowerCase().includes("fii");
+    return true;
+  });
 
   const rootStyle: React.CSSProperties = {
     minHeight: "100vh",
@@ -927,6 +1146,36 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Error and Success Feedback */}
+              {authError && (
+                <div style={{
+                  background: "rgba(239,68,68,0.1)",
+                  border: "1px solid rgba(239,68,68,0.35)",
+                  borderRadius: 12,
+                  padding: "10px 14px",
+                  color: C.rose,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  lineHeight: 1.4,
+                }}>
+                  ⚠️ {authError}
+                </div>
+              )}
+              {authSuccess && (
+                <div style={{
+                  background: "rgba(16,185,129,0.1)",
+                  border: "1px solid rgba(16,185,129,0.35)",
+                  borderRadius: 12,
+                  padding: "10px 14px",
+                  color: C.emerald,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  lineHeight: 1.4,
+                }}>
+                  {authSuccess}
+                </div>
+              )}
 
               {/* Submit CTA */}
               <Btn
@@ -1130,81 +1379,122 @@ export default function App() {
                   Demat Portfolio Value
                 </div>
                 <div style={{ fontSize: 34, fontWeight: 900, color: C.white, letterSpacing: "-1px", lineHeight: 1 }}>
-                  ₹1,68,560<span style={{ fontSize: 18 }}>.00</span>
+                  ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: C.emerald }}>↑ +₹32,872.50</span>
-                  <Badge label="+24.23%" color="emerald" />
-                  <span style={{ fontSize: 11, color: C.gray2 }}>All Time</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: totalPnl >= 0 ? C.emerald : C.rose }}>
+                    {totalPnl >= 0 ? "↑ +" : "↓ -"}₹{Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <Badge label={`${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}%`} color={totalPnlPct >= 0 ? "emerald" : "rose"} />
+                  <span style={{ fontSize: 11, color: C.gray2 }}>Real-Time Breeze</span>
                 </div>
 
                 {/* Sparkline chart */}
                 <svg width="100%" height="40" viewBox="0 0 200 40" style={{ marginTop: 14 }}>
                   <defs>
                     <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={C.emerald} stopOpacity="0.35" />
-                      <stop offset="100%" stopColor={C.emerald} stopOpacity="0" />
+                      <stop offset="0%" stopColor={totalPnl >= 0 ? C.emerald : C.rose} stopOpacity="0.35" />
+                      <stop offset="100%" stopColor={totalPnl >= 0 ? C.emerald : C.rose} stopOpacity="0" />
                     </linearGradient>
                   </defs>
-                  <path d="M0,32 L20,28 L45,22 L70,18 L95,14 L120,10 L145,8 L170,5 L200,3" stroke={C.emerald} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                  <path d="M0,32 L20,28 L45,22 L70,18 L95,14 L120,10 L145,8 L170,5 L200,3" stroke={totalPnl >= 0 ? C.emerald : C.rose} strokeWidth="2.5" fill="none" strokeLinecap="round" />
                   <path d="M0,32 L20,28 L45,22 L70,18 L95,14 L120,10 L145,8 L170,5 L200,3 L200,40 L0,40 Z" fill="url(#sparkGrad)" />
                 </svg>
 
                 <div style={{ display: "flex", gap: 16, marginTop: 4, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Invested</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹1,35,688</div></div>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Holdings</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>3 Stocks</div></div>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Day P&L</div><div style={{ fontSize: 13, fontWeight: 800, color: C.emerald }}>+₹1,240</div></div>
+                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Invested</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹{totalInvested.toLocaleString('en-IN')}</div></div>
+                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Holdings</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{holdings.length} Stocks</div></div>
+                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Broker API</div><div style={{ fontSize: 13, fontWeight: 800, color: hasCredentials ? C.emerald : C.amber }}>{hasCredentials ? "Connected" : "Key Needed"}</div></div>
                 </div>
               </div>
 
               {/* Active Holdings Header */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>Active Holdings</div>
-                <span style={{ fontSize: 11, color: C.cyan, fontWeight: 700 }}>Tap for details • {HOLDINGS.length} stocks</span>
+                <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>Active Demat Holdings</div>
+                <span style={{ fontSize: 11, color: C.cyan, fontWeight: 700 }}>{holdings.length} stocks</span>
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {HOLDINGS.map(h => (
-                  <Card
-                    key={h.symbol}
-                    onClick={() => setSelectedStock(h)}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      transition: "transform 0.15s ease",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{
-                        width: 38, height: 38, borderRadius: 12,
-                        background: `linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15))`,
-                        border: `1px solid ${C.borderCyan}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 10, fontWeight: 900, color: C.cyan,
-                      }}>{h.symbol.slice(0, 2)}</div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{h.symbol}</div>
-                        <div style={{ fontSize: 11, color: C.gray1 }}>Qty {h.qty} · Avg ₹{h.avg}</div>
+                {holdings.length === 0 ? (
+                  <div style={{
+                    background: C.bgCard, border: `1px solid ${C.border}`,
+                    borderRadius: 18, padding: "28px 20px", textAlign: "center",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                  }}>
+                    <div style={{
+                      width: 48, height: 48, borderRadius: 14,
+                      background: "rgba(6,182,212,0.1)", border: `1px solid ${C.borderCyan}`,
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22
+                    }}>
+                      💼
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: C.white }}>No Holdings Synced Yet</div>
+                      <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4 }}>
+                        {hasCredentials
+                          ? "Your ICICI Direct Demat portfolio is empty or sync is in progress."
+                          : "Configure your ICICI Direct Breeze API Key to view live portfolio & holdings."}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹{h.price.toFixed(2)}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: C.emerald }}>+{h.pnlPct}%</span>
-                        <SignalBadge signal={h.signal} type={h.signalType} />
+                    {!hasCredentials && (
+                      <button
+                        onClick={() => setShowKeyModal(true)}
+                        style={{
+                          background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
+                          border: "none", borderRadius: 12, padding: "9px 18px",
+                          color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                          boxShadow: "0 4px 16px rgba(6,182,212,0.3)"
+                        }}
+                      >
+                        ⚡ Configure Breeze Key
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  holdings.map(h => (
+                    <Card
+                      key={h.symbol}
+                      onClick={() => setSelectedStock(h)}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        transition: "transform 0.15s ease",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{
+                          width: 38, height: 38, borderRadius: 12,
+                          background: `linear-gradient(135deg, rgba(6,182,212,0.15), rgba(139,92,246,0.15))`,
+                          border: `1px solid ${C.borderCyan}`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 10, fontWeight: 900, color: C.cyan,
+                        }}>{h.symbol.slice(0, 2)}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{h.symbol}</div>
+                          <div style={{ fontSize: 11, color: C.gray1 }}>Qty {h.qty} · Avg ₹{h.avg}</div>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                      <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹{h.price.toFixed(2)}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: h.pnlPct >= 0 ? C.emerald : C.rose }}>
+                            {h.pnlPct >= 0 ? "+" : ""}{h.pnlPct.toFixed(2)}%
+                          </span>
+                          <SignalBadge signal={h.signal} type={h.signalType} />
+                        </div>
+                      </div>
+                    </Card>
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* ALERT RADAR TAB WITH FILTER PILLS */}
+          {/* ALERTS TAB WITH FILTER PILLS */}
           {tab === "alerts" && (
             <div className="anim-fadeup" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div style={{ fontSize: 16, fontWeight: 900, color: C.white }}>Alert Radar</div>
+                <div style={{ fontSize: 16, fontWeight: 900, color: C.white }}>Alerts</div>
                 <Badge label="5-MIN AUTO SCAN" color="emerald" />
               </div>
 
@@ -1308,65 +1598,87 @@ export default function App() {
                 })}
               </DraggableChipBar>
 
-              {filteredAlerts.map(a => (
-                <div key={a.id} style={{
+              {filteredAlerts.length === 0 ? (
+                <div style={{
                   background: C.bgCard, border: `1px solid ${C.border}`,
-                  borderLeft: `3.5px solid ${a.signalType === "strong_buy" ? C.emerald : a.signalType === "sell" ? C.amber : C.cyan}`,
-                  borderRadius: 18, padding: 16,
-                  boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+                  borderRadius: 18, padding: "36px 20px", textAlign: "center",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
                 }}>
-                  {/* Top Badge & Action Signal Row */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <SignalBadge signal={a.signal} type={a.signalType} />
-                      <Badge label={`${a.impact}% CONFIDENCE`} color={a.impactColor} />
-                    </div>
-                    <span style={{ fontSize: 10, color: C.gray2, fontWeight: 600 }}>{a.time}</span>
-                  </div>
-
-                  <div style={{ fontSize: 13.5, fontWeight: 900, color: C.white, marginBottom: 10, lineHeight: 1.4 }}>
-                    <span style={{ color: C.cyan, marginRight: 6 }}>[{a.symbol}]</span>
-                    {a.title}
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
-                    {a.reasons.map((r, i) => (
-                      <div key={i} style={{ display: "flex", gap: 7, fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
-                        <span style={{ color: C.cyan, fontWeight: 800 }}>•</span>
-                        <span>{r}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Target & Stop-Loss Action Box */}
                   <div style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.2)`,
-                    borderRadius: 12, padding: "8px 12px", marginBottom: 10,
+                    width: 52, height: 52, borderRadius: 16,
+                    background: "rgba(6,182,212,0.1)", border: `1px solid ${C.borderCyan}`,
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24
                   }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.gray1 }}>
-                      🎯 Target: <span style={{ color: C.emerald, fontWeight: 900 }}>{a.targetPrice}</span>
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: C.gray1 }}>
-                      🛡️ Stop Loss: <span style={{ color: C.rose, fontWeight: 900 }}>{a.stopLoss}</span>
-                    </div>
+                    ⚡
                   </div>
-
-                  {/* Fundamental Metrics Grid */}
-                  <div style={{
-                    display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                    gap: 6, background: "#080B16", borderRadius: 12, padding: 10,
-                    border: `1px solid ${C.border}`,
-                  }}>
-                    {Object.entries(a.metrics).map(([k, v]) => (
-                      <div key={k} style={{ textAlign: "center" }}>
-                        <div style={{ fontSize: 9, color: C.gray2, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>{k}</div>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: k === "roe" ? C.emerald : C.white }}>{v}</div>
-                      </div>
-                    ))}
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: C.white }}>No High-Impact Catalysts Yet</div>
+                    <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4, maxWidth: 300 }}>
+                      StokVigil scans your portfolio every 5 minutes during Indian market hours. Noise is filtered out automatically.
+                    </div>
                   </div>
                 </div>
-              ))}
+              ) : (
+                filteredAlerts.map(a => (
+                  <div key={a.id} style={{
+                    background: C.bgCard, border: `1px solid ${C.border}`,
+                    borderLeft: `3.5px solid ${a.signalType === "strong_buy" ? C.emerald : a.signalType === "sell" ? C.amber : C.cyan}`,
+                    borderRadius: 18, padding: 16,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+                  }}>
+                    {/* Top Badge & Action Signal Row */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <SignalBadge signal={a.signal} type={a.signalType} />
+                        <Badge label={`${a.impact}% CONFIDENCE`} color={a.impactColor} />
+                      </div>
+                      <span style={{ fontSize: 10, color: C.gray2, fontWeight: 600 }}>{a.time}</span>
+                    </div>
+
+                    <div style={{ fontSize: 13.5, fontWeight: 900, color: C.white, marginBottom: 10, lineHeight: 1.4 }}>
+                      <span style={{ color: C.cyan, marginRight: 6 }}>[{a.symbol}]</span>
+                      {a.title}
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
+                      {a.reasons.map((r: string, i: number) => (
+                        <div key={i} style={{ display: "flex", gap: 7, fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
+                          <span style={{ color: C.cyan, fontWeight: 800 }}>•</span>
+                          <span>{r}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Target & Stop-Loss Action Box */}
+                    <div style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.2)`,
+                      borderRadius: 12, padding: "8px 12px", marginBottom: 10,
+                    }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.gray1 }}>
+                        🎯 Target: <span style={{ color: C.emerald, fontWeight: 900 }}>{a.targetPrice}</span>
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.gray1 }}>
+                        🛡️ Stop Loss: <span style={{ color: C.rose, fontWeight: 900 }}>{a.stopLoss}</span>
+                      </div>
+                    </div>
+
+                    {/* Fundamental Metrics Grid */}
+                    <div style={{
+                      display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
+                      gap: 6, background: "#080B16", borderRadius: 12, padding: 10,
+                      border: `1px solid ${C.border}`,
+                    }}>
+                      {Object.entries(a.metrics || {}).map(([k, v]) => (
+                        <div key={k} style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 9, color: C.gray2, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>{k}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: k === "roe" ? C.emerald : C.white }}>{String(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -1430,115 +1742,137 @@ export default function App() {
 
               {/* Watchlist Cards Stack */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {watchlist.map(item => (
-                  <div key={item.id} style={{
-                    background: "linear-gradient(145deg, #0D111E 0%, #12172A 100%)",
-                    border: `1px solid ${C.border}`,
-                    borderRadius: 16, padding: "14px 16px",
-                    display: "flex", flexDirection: "column", gap: 10,
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
-                    transition: "all 0.2s ease"
+                {watchlist.length === 0 ? (
+                  <div style={{
+                    background: C.bgCard, border: `1px solid ${C.border}`,
+                    borderRadius: 18, padding: "36px 20px", textAlign: "center",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
                   }}>
-                    {/* Top Symbol Row */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{
-                          width: 38, height: 38, borderRadius: 11,
-                          background: item.isPositive ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-                          border: `1.5px solid ${item.isPositive ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 900, color: item.isPositive ? C.emerald : C.rose,
-                        }}>
-                          {item.symbol.slice(0, 2)}
-                        </div>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 14, fontWeight: 900, color: C.white }}>{item.symbol}</span>
-                            <span style={{
-                              fontSize: 9.5, fontWeight: 700,
-                              color: item.auto ? C.cyan : C.gray2,
-                              background: item.auto ? "rgba(6,182,212,0.1)" : "rgba(255,255,255,0.05)",
-                              borderRadius: 4, padding: "1px 5px", border: `1px solid ${item.auto ? "rgba(6,182,212,0.25)" : C.border}`
-                            }}>
-                              {item.auto ? "📊 Demat Auto-Sync" : "📌 Custom"}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>{item.name || item.symbol}</div>
-                        </div>
-                      </div>
-
-                      {/* Price & Change Pill */}
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>
-                          ₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                        </div>
-                        <div style={{
-                          fontSize: 10.5, fontWeight: 800,
-                          color: item.isPositive ? C.emerald : C.rose,
-                          display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2
-                        }}>
-                          {item.isPositive ? "▲" : "▼"} {item.chg}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action & Signal Ribbon */}
                     <div style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
+                      width: 52, height: 52, borderRadius: 16,
+                      background: "rgba(6,182,212,0.1)", border: `1px solid ${C.borderCyan}`,
+                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <SignalBadge signal={item.signal || "BUY"} type={item.signalType || "buy"} />
-                        <span style={{ fontSize: 10, color: C.gray2 }}>
-                          Target: <b style={{ color: C.emerald }}>{item.target || "₹3,250"}</b>
-                        </span>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <button
-                          onClick={() => {
-                            setTradeData({
-                              symbol: item.symbol,
-                              price: item.price,
-                              type: item.signalType === "sell" ? "SELL" : "BUY",
-                              target: item.target || "₹3,250",
-                              sl: item.sl || "₹2,820"
-                            });
-                            setOrderQty(10);
-                            setLimitPrice(item.price.toFixed(2));
-                            setShowTradeModal(true);
-                          }}
-                          style={{
-                            background: item.signalType === "sell" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
-                            border: `1px solid ${item.signalType === "sell" ? C.rose : C.emerald}`,
-                            borderRadius: 8, padding: "5px 10px",
-                            fontSize: 11, fontWeight: 800,
-                            color: item.signalType === "sell" ? C.rose : C.emerald,
-                            cursor: "pointer"
-                          }}
-                        >
-                          ⚡ Trade Order
-                        </button>
-
-                        <button
-                          onClick={() => setWatchlist(prev => prev.filter(w => w.id !== item.id))}
-                          title="Remove stock from watchlist"
-                          style={{
-                            background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
-                            borderRadius: 8, width: 30, height: 30, color: C.rose, cursor: "pointer",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            transition: "all 0.2s ease"
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                            <path d="M3 6H5H21" stroke={C.rose} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke={C.rose} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
+                      📌
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: C.white }}>No Stocks in Watchlist</div>
+                      <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4, maxWidth: 300 }}>
+                        Search and add any NSE stock symbol above to monitor high-impact catalysts and automated signals.
                       </div>
                     </div>
                   </div>
-                ))}
+                ) : (
+                  watchlist.map(item => (
+                    <div key={item.id} style={{
+                      background: "linear-gradient(145deg, #0D111E 0%, #12172A 100%)",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 16, padding: "14px 16px",
+                      display: "flex", flexDirection: "column", gap: 10,
+                      boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+                      transition: "all 0.2s ease"
+                    }}>
+                      {/* Top Symbol Row */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{
+                            width: 38, height: 38, borderRadius: 11,
+                            background: item.isPositive ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                            border: `1.5px solid ${item.isPositive ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 900, color: item.isPositive ? C.emerald : C.rose,
+                          }}>
+                            {item.symbol.slice(0, 2)}
+                          </div>
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: C.white }}>{item.symbol}</span>
+                              <span style={{
+                                fontSize: 9.5, fontWeight: 700,
+                                color: item.auto ? C.cyan : C.gray2,
+                                background: item.auto ? "rgba(6,182,212,0.1)" : "rgba(255,255,255,0.05)",
+                                borderRadius: 4, padding: "1px 5px", border: `1px solid ${item.auto ? "rgba(6,182,212,0.25)" : C.border}`
+                              }}>
+                                {item.auto ? "📊 Demat Auto-Sync" : "📌 Custom"}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>{item.name || item.symbol}</div>
+                          </div>
+                        </div>
+
+                        {/* Price & Change Pill */}
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>
+                            ₹{item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                          </div>
+                          <div style={{
+                            fontSize: 10.5, fontWeight: 800,
+                            color: item.isPositive ? C.emerald : C.rose,
+                            display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2
+                          }}>
+                            {item.isPositive ? "▲" : "▼"} {item.chg}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Action & Signal Ribbon */}
+                      <div style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <SignalBadge signal={item.signal || "BUY"} type={item.signalType || "buy"} />
+                          <span style={{ fontSize: 10, color: C.gray2 }}>
+                            Target: <b style={{ color: C.emerald }}>{item.target || "₹3,250"}</b>
+                          </span>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <button
+                            onClick={() => {
+                              setTradeData({
+                                symbol: item.symbol,
+                                price: item.price,
+                                type: item.signalType === "sell" ? "SELL" : "BUY",
+                                target: item.target || "₹3,250",
+                                sl: item.sl || "₹2,820"
+                              });
+                              setOrderQty(10);
+                              setLimitPrice(item.price.toFixed(2));
+                              setShowTradeModal(true);
+                            }}
+                            style={{
+                              background: item.signalType === "sell" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                              border: `1px solid ${item.signalType === "sell" ? C.rose : C.emerald}`,
+                              borderRadius: 8, padding: "5px 10px",
+                              fontSize: 11, fontWeight: 800,
+                              color: item.signalType === "sell" ? C.rose : C.emerald,
+                              cursor: "pointer"
+                            }}
+                          >
+                            ⚡ Trade Order
+                          </button>
+
+                          <button
+                            onClick={() => removeTicker(item.id)}
+                            title="Remove stock from watchlist"
+                            style={{
+                              background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+                              borderRadius: 8, width: 30, height: 30, color: C.rose, cursor: "pointer",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              transition: "all 0.2s ease"
+                            }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                              <path d="M3 6H5H21" stroke={C.rose} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              <path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke={C.rose} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
@@ -1776,7 +2110,7 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => { setScreen("auth"); setUser(null); }}
+                    onClick={doSignOut}
                     style={{
                       background: "rgba(239,68,68,0.1)", border: `1.5px solid rgba(239,68,68,0.4)`,
                       borderRadius: 12, padding: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -2191,9 +2525,10 @@ export default function App() {
                   {/* Submit CTA */}
                   <Btn
                     variant={tradeData.type === "BUY" ? "primary" : "danger"}
-                    onClick={() => setOrderSent(true)}
+                    onClick={executeTrade}
+                    disabled={orderSending}
                   >
-                    ⚡ Confirm & Send Order via Breeze →
+                    {orderSending ? "⚡ Sending Order via Breeze…" : "⚡ Confirm & Send Order via Breeze →"}
                   </Btn>
                 </div>
               )}
@@ -2243,8 +2578,27 @@ export default function App() {
                     Enter your registered email address to receive an instant secure link to change your password.
                   </div>
                   <Input label="Registered Email Address" type="email" value={forgotEmail || user?.email || ""} onChange={setForgotEmail} placeholder="investor@gmail.com" />
-                  <Btn variant="primary" onClick={() => setForgotSent(true)} disabled={!(forgotEmail || user?.email)}>
-                    ⚡ Send Password Reset Link →
+                  <Btn
+                    variant="primary"
+                    onClick={async () => {
+                      const target = forgotEmail || user?.email;
+                      if (!target) return;
+                      setForgotLoading(true);
+                      if (supabase) {
+                        try {
+                          await supabase.auth.resetPasswordForEmail(target, {
+                            redirectTo: window.location.origin
+                          });
+                        } catch (e) {
+                          console.warn("Reset password error:", e);
+                        }
+                      }
+                      setForgotLoading(false);
+                      setForgotSent(true);
+                    }}
+                    disabled={forgotLoading || !(forgotEmail || user?.email)}
+                  >
+                    {forgotLoading ? "Sending Link…" : "⚡ Send Password Reset Link →"}
                   </Btn>
                 </div>
               )}

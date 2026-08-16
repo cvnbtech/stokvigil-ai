@@ -16,6 +16,7 @@ class AppTheme {
   static const Color primaryEmerald = Color(0xFF10B981);
   static const Color dangerRose = Color(0xFFEF4444);
   static const Color secondaryAmber = Color(0xFFF59E0B);
+  static const Color warningAmber = Color(0xFFF59E0B);
   
   static const Color textPrimary = Color(0xFFF8FAFC);
   static const Color textSecondary = Color(0xFF94A3B8);

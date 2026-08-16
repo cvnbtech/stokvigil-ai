@@ -75,13 +75,137 @@ class SupabaseService {
 
   Future<UserProfile?> fetchUserProfile() async {
     final user = currentUser;
-    if (user == null) return null;
+    if (user == null || !isConfigured) return null;
     try {
-      final data = await client.from('profiles').select().eq('id', user.id).single();
+      final data = await client.from('profiles').select().eq('id', user.id).maybeSingle();
+      if (data == null) return null;
       return UserProfile.fromJson(data);
     } catch (e) {
       debugPrint("Error fetching profile: $e");
       return UserProfile(id: user.id, email: user.email ?? '', telegramEnabled: false);
+    }
+  }
+
+  Future<bool> updateProfile(Map<String, dynamic> updates) async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return false;
+    try {
+      updates['updated_at'] = DateTime.now().toIso8601String();
+      await client.from('profiles').update(updates).eq('id', user.id);
+      return true;
+    } catch (e) {
+      debugPrint("Error updating profile: $e");
+      return false;
+    }
+  }
+
+  // Real-time Alerts Streams and Queries
+  Stream<List<StokAlert>> streamAlerts() {
+    final user = currentUser;
+    if (user == null || !isConfigured) return Stream.value([]);
+    try {
+      return client
+          .from('stok_alerts')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false)
+          .map((data) => data.map((json) => StokAlert.fromJson(json)).toList());
+    } catch (e) {
+      debugPrint("Error streaming alerts: $e");
+      return Stream.value([]);
+    }
+  }
+
+  Future<List<StokAlert>> fetchAlerts() async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return [];
+    try {
+      final data = await client
+          .from('stok_alerts')
+          .select()
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
+      return (data as List).map((json) => StokAlert.fromJson(json)).toList();
+    } catch (e) {
+      debugPrint("Error fetching alerts from Supabase: $e");
+      return [];
+    }
+  }
+
+  // Real-time Watchlists Streams and Queries
+  Stream<List<Map<String, dynamic>>> streamWatchlist() {
+    final user = currentUser;
+    if (user == null || !isConfigured) return Stream.value([]);
+    try {
+      return client
+          .from('user_watchlists')
+          .stream(primaryKey: ['id'])
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
+    } catch (e) {
+      debugPrint("Error streaming watchlist: $e");
+      return Stream.value([]);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchWatchlist() async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return [];
+    try {
+      final data = await client
+          .from('user_watchlists')
+          .select()
+          .eq('user_id', user.id)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint("Error fetching watchlist: $e");
+      return [];
+    }
+  }
+
+  Future<bool> addToWatchlist(String symbol) async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return false;
+    try {
+      await client.from('user_watchlists').upsert({
+        'user_id': user.id,
+        'symbol': symbol.toUpperCase(),
+        'is_auto_synced': false,
+      });
+      return true;
+    } catch (e) {
+      debugPrint("Error adding to watchlist: $e");
+      return false;
+    }
+  }
+
+  Future<bool> removeFromWatchlist(String id) async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return false;
+    try {
+      await client.from('user_watchlists').delete().eq('id', id);
+      return true;
+    } catch (e) {
+      debugPrint("Error removing from watchlist: $e");
+      return false;
+    }
+  }
+
+  // ICICI Credentials Status
+  Future<Map<String, dynamic>?> checkCredentials() async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return null;
+    try {
+      final data = await client
+          .from('user_credentials')
+          .select('token_date, updated_at')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      return data;
+    } catch (e) {
+      debugPrint("Error checking credentials: $e");
+      return null;
     }
   }
 }

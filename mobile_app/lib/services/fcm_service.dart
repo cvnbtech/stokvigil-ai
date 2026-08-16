@@ -8,7 +8,7 @@ class FcmService {
   FcmService._internal();
 
   FirebaseMessaging get messaging => FirebaseMessaging.instance;
-  String? fcmToken = "mock_fcm_token_android_device_2026";
+  String? fcmToken;
 
   Future<void> initialize() async {
     try {
