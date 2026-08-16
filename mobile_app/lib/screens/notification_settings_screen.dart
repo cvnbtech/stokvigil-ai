@@ -400,51 +400,118 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     onChanged: (val) => setModalState(() {}),
                   ),
                 ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppTheme.cardBorder),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
+                const SizedBox(height: 22),
+                Builder(
+                  builder: (context) {
+                    final isConfirmed = confirmController.text.trim() == "DELETE";
+                    return Row(
+                      children: [
+                        // CANCEL BUTTON
+                        Expanded(
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF131A2B),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: const Color(0xFF2A364F), width: 1.2),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                                child: const Center(
+                                  child: Text(
+                                    "Cancel",
+                                    style: TextStyle(
+                                      color: Color(0xFF94A3B8),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 13.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        onPressed: isDeleting ? null : () => Navigator.of(dialogContext).pop(),
-                        child: const Text("Cancel", style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 13)),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.dangerRose,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        const SizedBox(width: 12),
+
+                        // DELETE ACCOUNT BUTTON
+                        Expanded(
+                          child: Container(
+                            height: 48,
+                            decoration: BoxDecoration(
+                              gradient: isConfirmed
+                                  ? const LinearGradient(
+                                      colors: [
+                                        Color(0xFFEF4444),
+                                        Color(0xFFDC2626),
+                                        Color(0xFFB91C1C),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    )
+                                  : null,
+                              color: isConfirmed ? null : const Color(0xFF201318),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isConfirmed ? const Color(0xFFF87171) : const Color(0xFF4A1D24),
+                                width: 1.2,
+                              ),
+                              boxShadow: isConfirmed
+                                  ? const [
+                                      BoxShadow(
+                                        color: Color(0x66EF4444),
+                                        blurRadius: 16,
+                                        offset: Offset(0, 4),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(14),
+                                onTap: (!isConfirmed || isDeleting)
+                                    ? null
+                                    : () async {
+                                        setModalState(() => isDeleting = true);
+                                        if (user != null) {
+                                          await ApiService().deleteUserAccount(user.id);
+                                          await SupabaseService().deleteAccountCascade();
+                                        }
+                                        await SupabaseService().signOut();
+                                        if (mounted) {
+                                          Navigator.of(dialogContext).pop();
+                                          ErrorHandler.showSuccessSnackBar(
+                                            context,
+                                            "✅ Your account and all associated data have been permanently deleted.",
+                                          );
+                                        }
+                                      },
+                                child: Center(
+                                  child: isDeleting
+                                      ? const SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
+                                        )
+                                      : Text(
+                                          "Delete Account",
+                                          style: TextStyle(
+                                            color: isConfirmed ? Colors.white : const Color(0xFF8B3A44),
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 13.5,
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        onPressed: (confirmController.text.trim() != "DELETE" || isDeleting)
-                            ? null
-                            : () async {
-                                setModalState(() => isDeleting = true);
-                                if (user != null) {
-                                  await ApiService().deleteUserAccount(user.id);
-                                  await SupabaseService().deleteAccountCascade();
-                                }
-                                await SupabaseService().signOut();
-                                if (mounted) {
-                                  Navigator.of(dialogContext).pop();
-                                  ErrorHandler.showSuccessSnackBar(
-                                    context,
-                                    "✅ Your account and all associated data have been permanently deleted.",
-                                  );
-                                }
-                              },
-                        child: isDeleting
-                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text("Delete Account", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
-                      ),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
@@ -813,75 +880,40 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           const SizedBox(height: 20),
 
           // ─────────────────────────────────────────────
-          // SECTION 3: ACCOUNT SESSION
+          // SECTION 3: SECURITY & ACCESS
           // ─────────────────────────────────────────────
-          _buildSectionHeader("🔒 ACCOUNT SESSION"),
-          const SizedBox(height: 8),
+          _buildSectionHeader("🔒 SECURITY & ACCESS"),
+          const SizedBox(height: 10),
 
           GlassCard(
-            child: Column(
-              children: [
-                // Change Password Button Box
-                GestureDetector(
-                  onTap: _showChangePasswordModal,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.cardBackground2,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.cardBorder),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Row(
-                          children: [
-                            Text("🔑 ", style: TextStyle(fontSize: 14)),
-                            Text("Change Password", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
-                          ],
-                        ),
-                        Icon(Icons.arrow_forward, color: AppTheme.textSecondary, size: 16),
+            child: GestureDetector(
+              onTap: _showChangePasswordModal,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.cardBackground2,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.cardBorder),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Row(
+                      children: [
+                        Text("🔑 ", style: TextStyle(fontSize: 14)),
+                        Text("Change Password", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
                       ],
                     ),
-                  ),
+                    Icon(Icons.arrow_forward, color: AppTheme.textSecondary, size: 16),
+                  ],
                 ),
-                const SizedBox(height: 12),
-
-                // Sign Out Container Button
-                GestureDetector(
-                  onTap: _signOutUser,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppTheme.dangerRose.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.6)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(Icons.logout, color: AppTheme.dangerRose, size: 18),
-                        SizedBox(width: 8),
-                        Text(
-                          "Sign Out",
-                          style: TextStyle(
-                            color: AppTheme.dangerRose,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 18),
 
           // ─────────────────────────────────────────────
-          // DANGER ZONE (DELETE ACCOUNT)
+          // SECTION 4: DANGER ZONE (DELETE ACCOUNT)
           // ─────────────────────────────────────────────
           _buildSectionHeader("⚠️ DANGER ZONE"),
           const SizedBox(height: 10),
@@ -927,6 +959,38 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ─────────────────────────────────────────────
+          // BOTTOM ACTION: NEUTRAL SIGN OUT
+          // ─────────────────────────────────────────────
+          GestureDetector(
+            onTap: _signOutUser,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D111E),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.logout_rounded, color: AppTheme.textSecondary, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    "Sign Out",
+                    style: TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 24),

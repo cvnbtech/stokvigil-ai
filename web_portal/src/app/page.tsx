@@ -601,6 +601,9 @@ export default function App() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent]   = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -946,6 +949,29 @@ export default function App() {
     setKeySaved(true);
     setKeySaving(false);
     setTimeout(() => { setShowKeyModal(false); setKeySaved(false); }, 1200);
+  };
+
+  const doDeleteAccount = async () => {
+    if (deleteConfirmText.trim() !== "DELETE" || !user?.id) return;
+    setIsDeletingAccount(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/user/delete-account`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: user.id })
+      });
+      if (supabase) {
+        await supabase.from("user_credentials").delete().eq("user_id", user.id);
+        await supabase.from("user_watchlists").delete().eq("user_id", user.id);
+        await supabase.from("user_devices").delete().eq("user_id", user.id);
+      }
+    } catch (e) {
+      console.warn("Delete account error:", e);
+    }
+    await doSignOut();
+    setIsDeletingAccount(false);
+    setShowDeleteModal(false);
+    alert("✅ Your account and all associated data have been permanently deleted.");
   };
 
   const addTicker = async () => {
@@ -2171,15 +2197,15 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Section 3: Account & Session */}
+              {/* Section 3: Security & Access */}
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
-                  🔒 Account Session
+                  🔒 Security & Access
                 </div>
 
                 <div style={{
                   background: C.bgCard, border: `1px solid ${C.border}`,
-                  borderRadius: 16, padding: 14, display: "flex", flexDirection: "column", gap: 10
+                  borderRadius: 16, padding: 14,
                 }}>
                   <button
                     onClick={() => {
@@ -2187,6 +2213,7 @@ export default function App() {
                       setShowForgotModal(true);
                     }}
                     style={{
+                      width: "100%",
                       background: C.bgCard2, border: `1px solid ${C.border}`,
                       borderRadius: 10, padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between",
                       color: C.white, cursor: "pointer", fontSize: 12, fontWeight: 700
@@ -2198,25 +2225,58 @@ export default function App() {
                     </div>
                     <span style={{ color: C.gray2 }}>→</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Section 4: Danger Zone */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 10, color: C.rose, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
+                  ⚠️ Danger Zone
+                </div>
+
+                <div style={{
+                  background: C.bgCard, border: `1px solid rgba(239,68,68,0.3)`,
+                  borderRadius: 16, padding: 14, display: "flex", flexDirection: "column", gap: 12
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: C.white }}>Delete Account & Data</div>
+                    <div style={{ fontSize: 11, color: C.gray1, marginTop: 2 }}>
+                      Permanently erase your account, watchlist, and encrypted broker keys.
+                    </div>
+                  </div>
 
                   <button
-                    onClick={doSignOut}
+                    onClick={() => {
+                      setDeleteConfirmText("");
+                      setShowDeleteModal(true);
+                    }}
                     style={{
-                      background: "rgba(239,68,68,0.1)", border: `1.5px solid rgba(239,68,68,0.4)`,
+                      background: "rgba(239,68,68,0.12)", border: `1.5px solid rgba(239,68,68,0.5)`,
                       borderRadius: 12, padding: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                       color: C.rose, cursor: "pointer", fontSize: 13, fontWeight: 900,
-                      boxShadow: "0 4px 14px rgba(239,68,68,0.15)"
                     }}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                      <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke={C.rose} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M16 17L21 12L16 7" stroke={C.rose} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M21 12H9" stroke={C.rose} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    <span>Sign Out</span>
+                    <span>🗑️ Delete My Account</span>
                   </button>
                 </div>
               </div>
+
+              {/* Bottom Action: Neutral Sign Out */}
+              <button
+                onClick={doSignOut}
+                style={{
+                  background: C.bgCard, border: `1px solid ${C.border}`,
+                  borderRadius: 14, padding: "13px 16px", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  color: C.gray1, cursor: "pointer", fontSize: 13, fontWeight: 800,
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16 17L21 12L16 7" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M21 12H9" stroke={C.gray1} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Sign Out</span>
+              </button>
 
               {/* Version Badge */}
               <div style={{ textAlign: "center", fontSize: 10, color: C.gray2, padding: "4px 0" }}>
@@ -2692,6 +2752,95 @@ export default function App() {
                   </Btn>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* GLOBAL DELETE ACCOUNT MODAL */}
+        {showDeleteModal && (
+          <div style={{
+            position: "fixed", inset: 0,
+            background: "rgba(6,8,18,0.92)", backdropFilter: "blur(16px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20, zIndex: 60,
+          }}>
+            <div className="anim-fadeup" style={{
+              width: "100%", maxWidth: 400, background: C.bgCard,
+              border: `1.5px solid rgba(239,68,68,0.5)`, borderRadius: 22, padding: 22,
+              boxShadow: "0 20px 50px rgba(0,0,0,0.8), 0 0 30px rgba(239,68,68,0.15)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: C.white, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ color: C.rose }}>⚠️</span> Delete Account Permanently?
+                </div>
+                <button onClick={() => setShowDeleteModal(false)} style={{ background: "none", border: "none", color: C.gray1, fontSize: 18, cursor: "pointer" }}>✕</button>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ fontSize: 12, color: C.gray1, lineHeight: 1.4 }}>
+                  This action is permanent and cannot be undone. All of the following will be erased immediately:
+                </div>
+
+                <div style={{
+                  background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
+                  borderRadius: 12, padding: 12, fontSize: 11.5, color: C.gray1, display: "flex", flexDirection: "column", gap: 4
+                }}>
+                  <div>• All personal watchlists and synced tickers</div>
+                  <div>• Encrypted ICICI Breeze API & Session keys</div>
+                  <div>• Telegram bot bindings & device tokens</div>
+                  <div style={{ color: C.rose, fontWeight: 800 }}>• Your login credentials and account identity</div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: 12, color: C.gray1, marginBottom: 6 }}>
+                    To confirm, please type <b style={{ color: C.rose }}>DELETE</b> below:
+                  </div>
+                  <input
+                    value={deleteConfirmText}
+                    onChange={e => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE to confirm"
+                    style={{
+                      width: "100%", background: "#080B16", border: `1px solid ${C.border}`,
+                      borderRadius: 10, padding: "10px 12px", color: C.white, fontSize: 13, fontWeight: 700,
+                      outline: "none"
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", gap: 12, marginTop: 6 }}>
+                  <button
+                    onClick={() => setShowDeleteModal(false)}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 12,
+                      background: "#131A2B", border: "1.2px solid #2A364F",
+                      color: "#94A3B8", fontSize: 13.5, fontWeight: 800, cursor: "pointer",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={doDeleteAccount}
+                    disabled={deleteConfirmText.trim() !== "DELETE" || isDeletingAccount}
+                    style={{
+                      flex: 1, height: 44, borderRadius: 12,
+                      background: deleteConfirmText.trim() === "DELETE"
+                        ? "linear-gradient(135deg, #EF4444 0%, #DC2626 50%, #B91C1C 100%)"
+                        : "#201318",
+                      border: deleteConfirmText.trim() === "DELETE"
+                        ? "1.2px solid #F87171"
+                        : "1.2px solid #4A1D24",
+                      color: deleteConfirmText.trim() === "DELETE" ? "#FFFFFF" : "#8B3A44",
+                      fontSize: 13.5, fontWeight: 900,
+                      cursor: deleteConfirmText.trim() === "DELETE" ? "pointer" : "not-allowed",
+                      boxShadow: deleteConfirmText.trim() === "DELETE" ? "0 4px 16px rgba(239,68,68,0.4)" : "none",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    {isDeletingAccount ? "Deleting…" : "Delete Account"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
