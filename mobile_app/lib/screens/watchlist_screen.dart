@@ -93,19 +93,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   }
 
   Future<void> _loadWatchlist() async {
-    final defaultList = [
-      {'symbol': 'RELIANCE', 'is_auto_synced': true},
-      {'symbol': 'TCS', 'is_auto_synced': true},
-      {'symbol': 'INFY', 'is_auto_synced': true},
-      {'symbol': 'HDFCBANK', 'is_auto_synced': false},
-      {'symbol': 'TATAMOTORS', 'is_auto_synced': false},
-    ];
-
     final user = SupabaseService().currentUser;
     if (user == null) {
       setState(() {
         _isLoading = false;
-        _watchlist = defaultList;
       });
       return;
     }
@@ -114,7 +105,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     final data = await SupabaseService().fetchWatchlist();
     if (mounted) {
       setState(() {
-        _watchlist = data.isNotEmpty ? data : defaultList;
+        _watchlist = data;
         _isLoading = false;
       });
     }
@@ -138,6 +129,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
         if (mounted) {
           ErrorHandler.showErrorSnackBar(context, "Failed to add $sym to watchlist.");
         }
+      }
+    } else {
+      setState(() {
+        if (!_watchlist.any((item) => item['symbol']?.toString().toUpperCase() == sym)) {
+          _watchlist.insert(0, {'symbol': sym, 'is_auto_synced': false});
+        }
+      });
+      if (mounted) {
+        ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
       }
     }
     _loadWatchlist();

@@ -32,19 +32,24 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
   void _openIciciLogin() async {
     final appKey = _appKeyController.text.trim();
-    final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey.isNotEmpty ? appKey : 'YOUR_KEY')}";
+    if (appKey.isEmpty) {
+      ErrorHandler.showErrorSnackBar(context, "Please enter your ICICI App Key above first before opening login.");
+      return;
+    }
+    final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey)}";
     final url = Uri.parse(urlStr);
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ErrorHandler.showErrorSnackBar(context, "Unable to open browser login. Please verify web browser.");
-        }
+      final success = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!success) {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, e);
+      try {
+        await launchUrl(url, mode: LaunchMode.inAppBrowserView);
+      } catch (err) {
+        if (mounted) {
+          ErrorHandler.showErrorSnackBar(context, "Unable to open browser: $err");
+        }
       }
     }
   }
