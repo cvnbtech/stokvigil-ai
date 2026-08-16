@@ -88,17 +88,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
     }).toList();
 
     return Scaffold(
+      backgroundColor: AppTheme.darkBackground,
       appBar: AppBar(
-        title: Row(
-          children: const [
-            TradingAILogo(size: 30),
-            SizedBox(width: 10),
-            Text(
-              "StokVigil Alerts",
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
-            ),
-          ],
-        ),
+        backgroundColor: AppTheme.darkBackground,
+        elevation: 0,
+        title: const StokVigilBrandHeader(),
         actions: [
           IconButton(onPressed: _loadAlerts, icon: const Icon(Icons.refresh, color: AppTheme.cyan)),
         ],

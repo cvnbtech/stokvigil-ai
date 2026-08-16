@@ -111,40 +111,49 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       appBar: AppBar(
         backgroundColor: AppTheme.darkBackground,
         elevation: 0,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+        title: const StokVigilBrandHeader(),
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ─────────────────────────────────────────────
+          // WATCHLIST SECTION HEADER
+          // ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 4.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  "Watchlist",
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                Row(
+                  children: [
+                    const Text(
+                      "Watchlist",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cyan.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.borderCyan),
+                      ),
+                      child: Text(
+                        "${_watchlist.length} Tickers",
+                        style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppTheme.cyan.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.borderCyan),
-                  ),
-                  child: Text(
-                    "${_watchlist.length} Tickers",
-                    style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900),
-                  ),
+                const SizedBox(height: 2),
+                const Text(
+                  "Real-time market feed • Auto-synced with ICICI Demat",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
-            const SizedBox(height: 2),
-            const Text(
-              "Real-time market feed • Auto-synced with ICICI Demat",
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
+          ),
+
           // ─────────────────────────────────────────────
           // ADD STOCK SEARCH BAR
           // ─────────────────────────────────────────────

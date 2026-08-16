@@ -1402,8 +1402,15 @@ export default function App() {
           {tab === "home" && (
             <div className="anim-fadeup" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div>
-                <div style={{ fontSize: 12, color: C.gray1 }}>Good morning 👋</div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: C.white, marginTop: 2 }}>{user?.name}</div>
+                <div style={{ fontSize: 12, color: C.gray1 }}>
+                  {(() => {
+                    const h = new Date().getHours();
+                    if (h < 12) return "Good morning 👋";
+                    if (h < 17) return "Good afternoon 👋";
+                    return "Good evening 👋";
+                  })()}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: C.white, marginTop: 2 }}>{user?.name || "Investor"}</div>
               </div>
 
               {/* Hero Card */}

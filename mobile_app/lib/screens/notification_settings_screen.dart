@@ -307,13 +307,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       appBar: AppBar(
         backgroundColor: AppTheme.darkBackground,
         elevation: 0,
-        title: Row(
-          children: const [
-            TradingAILogo(size: 32),
-            SizedBox(width: 10),
-            Text("Settings & API Control", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
-          ],
-        ),
+        title: const StokVigilBrandHeader(),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),

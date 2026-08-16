@@ -56,6 +56,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      return "Good morning 👋";
+    } else if (hour < 17) {
+      return "Good afternoon 👋";
+    } else {
+      return "Good evening 👋";
+    }
+  }
+
+  String _getUserName() {
+    final user = SupabaseService().currentUser;
+    if (user == null) return "Investor";
+    final metaName = user.userMetadata?['full_name'] ?? user.userMetadata?['name'];
+    if (metaName != null && metaName.toString().trim().isNotEmpty) {
+      return metaName.toString().trim();
+    }
+    if (user.email != null && user.email!.isNotEmpty) {
+      final handle = user.email!.split('@').first;
+      if (handle.isNotEmpty) {
+        return handle[0].toUpperCase() + handle.substring(1);
+      }
+    }
+    return "Investor";
+  }
+
   @override
   Widget build(BuildContext context) {
     final isPositive = _totalPnl >= 0;
@@ -68,72 +95,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
           child: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
             children: [
-              // Header Row Matching Web Portal
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              // Top Brand Header
+              const StokVigilBrandHeader(logoSize: 38),
+              const SizedBox(height: 18),
+
+              // Dynamic Greeting & User Name
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      const TradingAILogo(size: 38),
-                      const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Text(
-                                "StokVigil ",
-                                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.3),
-                              ),
-                              ShaderMask(
-                                shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
-                                child: const Text(
-                                  "AI",
-                                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            "Track Your Stocks. Spot the Signals.",
-                            style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  GestureDetector(
-                    onTap: widget.onOpenCredentials,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: (_hasCredentials ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: _hasCredentials ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                          width: 1.2,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.circle, size: 7, color: _hasCredentials ? AppTheme.primaryEmerald : AppTheme.dangerRose),
-                          const SizedBox(width: 5),
-                          Text(
-                            _hasCredentials ? "Key Active" : "Needs Key",
-                            style: TextStyle(
-                              color: _hasCredentials ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
+                  Text(
+                    _getGreeting(),
+                    style: const TextStyle(
+                      color: AppTheme.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
-                  )
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _getUserName(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.4,
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
 
               // Hero Gradient Portfolio Balance Card
               Container(

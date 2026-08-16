@@ -82,6 +82,92 @@ class _GoogleLogoPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────
+// OFFICIAL STOKVIGIL BRAND HEADER
+// ─────────────────────────────────────────────
+class StokVigilBrandHeader extends StatelessWidget {
+  final double logoSize;
+  final Widget? trailing;
+
+  const StokVigilBrandHeader({
+    super.key,
+    this.logoSize = 34,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TradingAILogo(size: logoSize),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      "StokVigil ",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    ShaderMask(
+                      shaderCallback: (bounds) => AppTheme.logoGradient.createShader(bounds),
+                      child: const Text(
+                        "AI",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: AppTheme.primaryEmerald,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      "NSE LIVE 09:15–15:30",
+                      style: TextStyle(
+                        color: AppTheme.primaryEmerald,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // OFFICIAL TRADING AI LOGO EMBLEM (MATCHES WEB PORTAL)
 // ─────────────────────────────────────────────
 class TradingAILogo extends StatelessWidget {
