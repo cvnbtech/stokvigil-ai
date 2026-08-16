@@ -303,6 +303,157 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     );
   }
 
+  void _showDeleteAccountDialog() {
+    final user = SupabaseService().currentUser;
+    final confirmController = TextEditingController();
+    bool isDeleting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) => Dialog(
+          backgroundColor: const Color(0xFF0D111E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: const BorderSide(color: AppTheme.dangerRose, width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(22.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.warning_amber_rounded, color: AppTheme.dangerRose, size: 28),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        "Delete Account Permanently?",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                const Text(
+                  "This action is permanent and cannot be undone. All of the following data will be erased immediately:",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.dangerRose.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.dangerRose.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text("• All personal watchlists and synced stocks", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                      SizedBox(height: 4),
+                      Text("• Encrypted ICICI Breeze API & Session keys", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                      SizedBox(height: 4),
+                      Text("• Telegram bot bindings & device tokens", style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5)),
+                      SizedBox(height: 4),
+                      Text("• Your login credentials and account identity", style: TextStyle(color: AppTheme.dangerRose, fontSize: 11.5, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                RichText(
+                  text: const TextSpan(
+                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                    children: [
+                      TextSpan(text: "To confirm, please type "),
+                      TextSpan(
+                        text: "DELETE",
+                        style: TextStyle(color: AppTheme.dangerRose, fontWeight: FontWeight.w900),
+                      ),
+                      TextSpan(text: " below:"),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF080B16),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: TextField(
+                    controller: confirmController,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    decoration: const InputDecoration(
+                      hintText: "Type DELETE to confirm",
+                      hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (val) => setModalState(() {}),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppTheme.cardBorder),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        onPressed: isDeleting ? null : () => Navigator.of(dialogContext).pop(),
+                        child: const Text("Cancel", style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 13)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.dangerRose,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                        ),
+                        onPressed: (confirmController.text.trim() != "DELETE" || isDeleting)
+                            ? null
+                            : () async {
+                                setModalState(() => isDeleting = true);
+                                if (user != null) {
+                                  await ApiService().deleteUserAccount(user.id);
+                                  await SupabaseService().deleteAccountCascade();
+                                }
+                                await SupabaseService().signOut();
+                                if (mounted) {
+                                  Navigator.of(dialogContext).pop();
+                                  ErrorHandler.showSuccessSnackBar(
+                                    context,
+                                    "✅ Your account and all associated data have been permanently deleted.",
+                                  );
+                                }
+                              },
+                        child: isDeleting
+                            ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text("Delete Account", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -727,7 +878,58 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
+
+          // ─────────────────────────────────────────────
+          // DANGER ZONE (DELETE ACCOUNT)
+          // ─────────────────────────────────────────────
+          _buildSectionHeader("⚠️ DANGER ZONE"),
+          const SizedBox(height: 10),
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Delete Account & Data",
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Permanently erase your account, watchlist, and encrypted broker keys.",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                ),
+                const SizedBox(height: 14),
+                GestureDetector(
+                  onTap: _showDeleteAccountDialog,
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.dangerRose.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.6)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.delete_forever_rounded, color: AppTheme.dangerRose, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          "Delete My Account",
+                          style: TextStyle(
+                            color: AppTheme.dangerRose,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );

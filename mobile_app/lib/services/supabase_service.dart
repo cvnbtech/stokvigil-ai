@@ -212,4 +212,22 @@ class SupabaseService {
       return null;
     }
   }
+
+  // Complete User Account Cascade Deletion
+  Future<bool> deleteAccountCascade() async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return true;
+    try {
+      await client.from('user_credentials').delete().eq('user_id', user.id);
+      await client.from('user_watchlists').delete().eq('user_id', user.id);
+      await client.from('user_devices').delete().eq('user_id', user.id);
+      try {
+        await client.from('user_profiles').delete().eq('id', user.id);
+      } catch (_) {}
+      return true;
+    } catch (e) {
+      debugPrint("Error cascading deletion: $e");
+      return false;
+    }
+  }
 }

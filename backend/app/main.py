@@ -66,6 +66,9 @@ class TelegramWebhookPayload(BaseModel):
     update_id: Optional[int] = None
     message: Optional[dict] = None
 
+class DeleteAccountRequest(BaseModel):
+    user_id: str
+
 
 # ==========================================
 # REST API ENDPOINTS
@@ -158,6 +161,48 @@ def save_user_credentials(req: SaveCredentialsRequest, db: Client = Depends(get_
         "message": "ICICI Breeze Session Token saved & encrypted successfully.",
         "token_date": today_str
     }
+
+
+@app.post("/api/user/delete-account")
+def delete_user_account(req: DeleteAccountRequest, db: Client = Depends(get_supabase)):
+    """
+    Permanently deletes all data associated with a user:
+    1. Removes encrypted broker credentials from user_credentials.
+    2. Removes all saved symbols from user_watchlists.
+    3. Removes registered FCM & Telegram tokens from user_devices.
+    4. Deletes the user identity from Supabase auth.users via Admin API.
+    """
+    logger.info(f"Initiating complete account deletion for user_id: {req.user_id}")
+    try:
+        # 1. Clean broker credentials
+        db.table("user_credentials").delete().eq("user_id", req.user_id).execute()
+        
+        # 2. Clean user watchlists
+        db.table("user_watchlists").delete().eq("user_id", req.user_id).execute()
+        
+        # 3. Clean user devices / notification bindings
+        db.table("user_devices").delete().eq("user_id", req.user_id).execute()
+
+        # 4. Clean user profiles if table exists
+        try:
+            db.table("user_profiles").delete().eq("id", req.user_id).execute()
+        except Exception:
+            pass
+
+        # 5. Delete user from auth.users (Supabase Admin API)
+        try:
+            db.auth.admin.delete_user(req.user_id)
+        except Exception as auth_err:
+            logger.warning(f"Note on auth admin deletion: {auth_err}")
+
+        logger.info(f"Successfully deleted all data and identity for user_id: {req.user_id}")
+        return {
+            "status": "success",
+            "message": "Your account and all associated data have been permanently deleted."
+        }
+    except Exception as e:
+        logger.error(f"Error deleting account for user {req.user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 
 @app.get("/api/user/portfolio")

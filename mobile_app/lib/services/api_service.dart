@@ -37,6 +37,20 @@ class ApiService {
     }
   }
 
+  Future<bool> deleteUserAccount(String userId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/user/delete-account'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'user_id': userId}),
+      ).timeout(const Duration(seconds: 10));
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint("API Error deleting account: $e");
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> fetchPortfolioSummary(String userId) async {
     try {
       final res = await http
