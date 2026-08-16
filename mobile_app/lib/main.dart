@@ -118,65 +118,77 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
         decoration: const BoxDecoration(
           color: Color(0xF6060812), // rgba(6,8,18,0.97)
           border: Border(
-            top: BorderSide(color: AppTheme.cardBorder, width: 1),
+            top: BorderSide(color: Color(0x33334155), width: 1),
           ),
         ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: _onTabTapped,
-          backgroundColor: Colors.transparent,
-          selectedItemColor: AppTheme.cyan,
-          unselectedItemColor: AppTheme.textSecondary,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          type: BottomNavigationBarType.fixed,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w900),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.bar_chart_rounded),
-              activeIcon: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.bar_chart_rounded, color: AppTheme.cyan),
-                  SizedBox(height: 2),
-                ],
-              ),
-              label: 'Home',
+        child: SafeArea(
+          top: false,
+          child: Container(
+            height: 62,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(0, 'Home', Icons.bar_chart_rounded, Icons.bar_chart_rounded),
+                _buildNavItem(1, 'Alerts', Icons.notifications_none_rounded, Icons.notifications_rounded),
+                _buildNavItem(2, 'Watchlist', Icons.format_list_bulleted_rounded, Icons.format_list_bulleted_rounded),
+                _buildNavItem(3, 'Settings', Icons.settings_outlined, Icons.settings_rounded),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.notifications_none_rounded),
-              activeIcon: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.notifications_rounded, color: AppTheme.cyan),
-                  SizedBox(height: 2),
-                ],
-              ),
-              label: 'Alerts',
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(int index, String label, IconData icon, IconData activeIcon) {
+    final isSelected = _currentIndex == index;
+
+    return Expanded(
+      child: InkWell(
+        onTap: () => _onTabTapped(index),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isSelected ? activeIcon : icon,
+              color: isSelected ? const Color(0xFF00B4D8) : const Color(0xFF64748B),
+              size: 22,
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.format_list_bulleted_rounded),
-              activeIcon: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.format_list_bulleted_rounded, color: AppTheme.cyan),
-                  SizedBox(height: 2),
-                ],
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? const Color(0xFF00B4D8) : const Color(0xFF64748B),
+                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                fontSize: 11,
               ),
-              label: 'Watchlist',
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.settings_rounded, color: AppTheme.cyan),
-                  SizedBox(height: 2),
-                ],
-              ),
-              label: 'Settings',
-            ),
+            const SizedBox(height: 4),
+            // Glowing Indicator Pill (Matches User Screenshot)
+            if (isSelected)
+              Container(
+                width: 24,
+                height: 3,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF00B4D8), Color(0xFF8B5CF6)],
+                  ),
+                  borderRadius: BorderRadius.circular(2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0xBB00B4D8),
+                      blurRadius: 6,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+              )
+            else
+              const SizedBox(height: 3),
           ],
         ),
       ),

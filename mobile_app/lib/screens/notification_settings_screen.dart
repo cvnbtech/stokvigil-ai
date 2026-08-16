@@ -211,6 +211,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     decoration: BoxDecoration(
                       gradient: AppTheme.logoGradient,
                       borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x4D06B6D4), blurRadius: 10, offset: Offset(0, 4)),
+                      ],
                     ),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -445,16 +448,37 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       ),
                     ),
                     const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.cyan.withOpacity(0.15),
-                        foregroundColor: AppTheme.cyan,
-                        side: const BorderSide(color: AppTheme.borderCyan),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF00B4D8),
+                            Color(0xFF6366F1),
+                            Color(0xFF8B5CF6),
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x4406B6D4),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      onPressed: _navigateToIciciConfig,
-                      child: const Text("Configure →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        onPressed: _navigateToIciciConfig,
+                        child: const Text("Setup Key →", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)),
+                      ),
                     ),
                   ],
                 ),

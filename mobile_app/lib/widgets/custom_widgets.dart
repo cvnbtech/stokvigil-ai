@@ -609,10 +609,10 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
         decoration: BoxDecoration(
           color: AppTheme.cardBackground,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(
-            top: BorderSide(color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose, width: 1.8),
-            left: const BorderSide(color: AppTheme.cardBorder, width: 1),
-            right: const BorderSide(color: AppTheme.cardBorder, width: 1),
+          border: const Border(
+            top: BorderSide(color: AppTheme.cardBorder, width: 1),
+            left: BorderSide(color: AppTheme.cardBorder, width: 1),
+            right: BorderSide(color: AppTheme.cardBorder, width: 1),
           ),
           boxShadow: const [
             BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
@@ -712,16 +712,25 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                SizedBox(
+                Container(
                   width: double.infinity,
-                  height: 46,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.logoGradient,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x4D06B6D4), blurRadius: 12, offset: Offset(0, 4)),
+                    ],
+                  ),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.cyan,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: EdgeInsets.zero,
                     ),
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text("Done", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14)),
+                    child: const Text("Done", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
                   ),
                 ),
               ] else ...[
@@ -1112,22 +1121,45 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                 ),
                 const SizedBox(height: 18),
 
-                // Confirm CTA Button
-                SizedBox(
+                // Confirm & Send CTA Button (Matches User Screenshot)
+                Container(
                   width: double.infinity,
-                  height: 48,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF00B4D8), // Vibrant Cyan
+                        Color(0xFF0284C7), // Sky Blue
+                        Color(0xFF6366F1), // Indigo
+                        Color(0xFF8B5CF6), // Violet Purple
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x6606B6D4),
+                        blurRadius: 16,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: EdgeInsets.zero,
                     ),
                     onPressed: _executeOrder,
                     child: Text(
-                      "⚡ Confirm $_tradeType Order",
-                      style: TextStyle(
-                        color: isBuy ? Colors.black : Colors.white,
+                      "⚡ Confirm $_tradeType & Send Order via Breeze →",
+                      style: const TextStyle(
+                        color: Colors.white,
                         fontWeight: FontWeight.w900,
-                        fontSize: 14,
+                        fontSize: 14.5,
+                        letterSpacing: -0.2,
                       ),
                     ),
                   ),

@@ -144,18 +144,20 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     _searchController.clear();
   }
 
-  Future<void> _removeSymbol(String id, String symbol) async {
-    final ok = await SupabaseService().removeFromWatchlist(id);
-    if (ok) {
-      setState(() {
-        _watchlist.removeWhere((item) => item['id'] == id);
-      });
-      if (mounted) {
+  Future<void> _removeSymbol(dynamic id, String symbol) async {
+    // Optimistically update local watchlist immediately
+    setState(() {
+      _watchlist.removeWhere((item) =>
+          (id != null && item['id'] == id) ||
+          (item['symbol']?.toString().toUpperCase() == symbol.toUpperCase()));
+    });
+
+    final ok = await SupabaseService().removeFromWatchlist(id, symbol);
+    if (mounted) {
+      if (ok) {
         ErrorHandler.showSuccessSnackBar(context, "$symbol removed from watchlist.");
-      }
-    } else {
-      if (mounted) {
-        ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from watchlist.");
+      } else {
+        ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from database.");
       }
     }
   }
@@ -563,16 +565,20 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                         const SizedBox(width: 6),
 
                                         // Delete Ticker Button
-                                        GestureDetector(
-                                          onTap: () => _removeSymbol(item['id'], symbol),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.dangerRose.withOpacity(0.12),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: AppTheme.dangerRose.withOpacity(0.4)),
+                                        Material(
+                                          color: Colors.transparent,
+                                          child: InkWell(
+                                            onTap: () => _removeSymbol(item['id'], symbol),
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Ink(
+                                              padding: const EdgeInsets.all(7),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.dangerRose.withOpacity(0.14),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: AppTheme.dangerRose.withOpacity(0.4)),
+                                              ),
+                                              child: const Icon(Icons.delete_outline, color: AppTheme.dangerRose, size: 16),
                                             ),
-                                            child: const Icon(Icons.delete_outline, color: AppTheme.dangerRose, size: 16),
                                           ),
                                         ),
                                       ],

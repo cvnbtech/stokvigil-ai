@@ -400,11 +400,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                       ),
                       const SizedBox(height: 16),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.cyan),
-                        onPressed: widget.onOpenCredentials,
-                        child: const Text("Setup Session Key", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                      )
+                      Container(
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF00B4D8),
+                              Color(0xFF0284C7),
+                              Color(0xFF6366F1),
+                              Color(0xFF8B5CF6),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x5506B6D4),
+                              blurRadius: 12,
+                              offset: Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                          ),
+                          onPressed: widget.onOpenCredentials,
+                          child: const Text(
+                            "🔑 Setup Session Key →",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13.5,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 )

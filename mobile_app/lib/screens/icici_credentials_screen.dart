@@ -182,19 +182,53 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 _buildInput("SESSION TOKEN", _sessionTokenController, "Paste morning session token here", false),
                 const SizedBox(height: 24),
 
-                // Encrypt & Save CTA Button
-                SizedBox(
+                // Encrypt & Save CTA Button (Matches User Screenshot)
+                Container(
                   width: double.infinity,
-                  height: 48,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF00B4D8), // Vibrant Cyan
+                        Color(0xFF0284C7), // Sky Blue
+                        Color(0xFF6366F1), // Indigo
+                        Color(0xFF8B5CF6), // Violet Purple
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x6606B6D4),
+                        blurRadius: 16,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.cyan,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      padding: EdgeInsets.zero,
                     ),
                     onPressed: _isLoading ? null : _saveCredentials,
                     child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.black)
-                        : const Text("🔐 Encrypt & Save Credentials", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14)),
+                        ? const SizedBox(
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
+                          )
+                        : const Text(
+                            "🔐 Encrypt & Save Key",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
                   ),
                 ),
               ],

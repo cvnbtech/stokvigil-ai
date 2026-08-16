@@ -155,6 +155,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     decoration: BoxDecoration(
                       gradient: AppTheme.logoGradient,
                       borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x4D06B6D4), blurRadius: 10, offset: Offset(0, 4)),
+                      ],
                     ),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
@@ -323,6 +326,9 @@ class _AuthScreenState extends State<AuthScreen> {
                     decoration: BoxDecoration(
                       gradient: AppTheme.logoGradient,
                       borderRadius: BorderRadius.circular(12),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x4D06B6D4), blurRadius: 10, offset: Offset(0, 4)),
+                      ],
                     ),
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
