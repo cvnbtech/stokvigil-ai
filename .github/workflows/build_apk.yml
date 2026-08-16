@@ -28,20 +28,26 @@ jobs:
 
       - name: Inject google-services.json from GitHub Secrets
         env:
-          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
           GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
         run: |
           mkdir -p mobile_app/android/app
-          CONTENT="${FIREBASE_CREDENTIALS:-$GOOGLE_SERVICES}"
-          if [ -n "$CONTENT" ]; then
+          CONTENT="$GOOGLE_SERVICES"
+          if [ -z "$CONTENT" ] || ! echo "$CONTENT" | grep -q "project_info"; then
+            if echo "$FIREBASE_CREDENTIALS" | grep -q "project_info"; then
+              CONTENT="$FIREBASE_CREDENTIALS"
+            fi
+          fi
+
+          if [ -n "$CONTENT" ] && echo "$CONTENT" | grep -q "project_info"; then
             if echo "$CONTENT" | grep -q '^{' ; then
               echo "$CONTENT" > mobile_app/android/app/google-services.json
             else
               echo "$CONTENT" | base64 --decode > mobile_app/android/app/google-services.json || echo "$CONTENT" > mobile_app/android/app/google-services.json
             fi
-            echo "✅ Successfully wrote mobile_app/android/app/google-services.json (size: $(wc -c < mobile_app/android/app/google-services.json) bytes)"
+            echo "✅ Valid Android google-services.json injected (size: $(wc -c < mobile_app/android/app/google-services.json) bytes)"
           else
-            echo "⚠️ WARNING: Neither FIREBASE_CREDENTIALS_JSON nor GOOGLE_SERVICES_JSON found in secrets!"
+            echo "⚠️ No valid Android client google-services.json found containing 'project_info'."
           fi
 
       - name: Clean & Install dependencies
