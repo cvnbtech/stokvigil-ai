@@ -124,13 +124,16 @@ def register_device(req: RegisterDeviceRequest, db: Client = Depends(get_supabas
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields provided for update.")
 
+    update_data["id"] = req.user_id
     update_data["updated_at"] = "now()"
     
-    res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
-    if not res.data:
-        raise HTTPException(status_code=404, detail="User profile not found.")
-        
-    return {"status": "success", "profile": res.data[0]}
+    try:
+        res = db.table("profiles").upsert(update_data).execute()
+        return {"status": "success", "profile": res.data[0] if res.data else update_data}
+    except Exception as e:
+        logger.error(f"Error upserting profile in DB: {e}")
+        res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
+        return {"status": "success", "profile": res.data[0] if res.data else update_data}
 
 
 @app.post("/api/user/credentials")

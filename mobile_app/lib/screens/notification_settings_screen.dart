@@ -58,7 +58,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   Future<void> _toggleFcm(bool val) async {
     setState(() => _fcmEnabled = val);
     final user = SupabaseService().currentUser;
-    if (user == null) return;
+    if (user == null) {
+      ErrorHandler.showErrorSnackBar(context, "Please log in to update preferences.");
+      return;
+    }
 
     try {
       // 1. Direct instant Supabase update
@@ -77,6 +80,13 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         alertSensitivity: _alertSensitivity,
         executionMode: _executionWorkflow,
       );
+
+      if (mounted) {
+        ErrorHandler.showSuccessSnackBar(
+          context,
+          val ? "🔔 Push notifications turned ON" : "🔕 Push notifications paused",
+        );
+      }
     } catch (e) {
       debugPrint("Toggle FCM error: $e");
     }
