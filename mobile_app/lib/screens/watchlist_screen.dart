@@ -16,7 +16,7 @@ class WatchlistScreen extends StatefulWidget {
 class _WatchlistScreenState extends State<WatchlistScreen> {
   final _searchController = TextEditingController();
   List<Map<String, dynamic>> _watchlist = [];
-  List<Map<String, String>> _suggestions = [];
+  List<Map<String, dynamic>> _suggestions = [];
   bool _isLoading = true;
   bool _autoSync = true;
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
@@ -447,6 +447,12 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                 ),
               ),
             ),
+
+          // ─────────────────────────────────────────────
+          // DEMAT AUTO-SYNC WATCHLIST CARD
+          // ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
             child: GlassCard(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               child: Row(
