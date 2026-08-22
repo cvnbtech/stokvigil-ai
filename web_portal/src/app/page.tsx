@@ -2,13 +2,12 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_STOKVIGIL_BACKEND_URL || process.env.BACKEND_URL || process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
-  if (str.startsWith("gAAAAA")) return "";
   try {
     let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4 !== 0) {
@@ -19,7 +18,11 @@ function decodeSafeBase64(str: string): string {
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
-    return new TextDecoder().decode(bytes);
+    const decoded = new TextDecoder().decode(bytes);
+    if (/^[\x20-\x7E\s]+$/.test(decoded)) {
+      return decoded;
+    }
+    return str;
   } catch {
     return str;
   }
@@ -39,12 +42,12 @@ function encodeSafeBase64(str: string): string {
   }
 }
 
-const isSupabaseConfigured =
-  typeof window !== "undefined" &&
+const isSupabaseConfigured = Boolean(
   SUPABASE_URL &&
   !SUPABASE_URL.includes("your-supabase-project") &&
   SUPABASE_ANON_KEY &&
-  !SUPABASE_ANON_KEY.includes("dummy");
+  !SUPABASE_ANON_KEY.includes("dummy")
+);
 
 const supabase: SupabaseClient | null = isSupabaseConfigured
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -662,8 +665,18 @@ export default function App() {
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [appKey, setAppKey]       = useState("");
-  const [secretKey, setSecretKey] = useState("");
+  const [appKey, setAppKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("stokvigil_app_key") || "";
+    }
+    return "";
+  });
+  const [secretKey, setSecretKey] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("stokvigil_secret_key") || "";
+    }
+    return "";
+  });
   const [sessionTok, setSessionTok] = useState("");
   const [showAppKey, setShowAppKey] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
@@ -2929,7 +2942,10 @@ export default function App() {
                   label="App Key"
                   type={showAppKey ? "text" : "password"}
                   value={appKey}
-                  onChange={setAppKey}
+                  onChange={(val) => {
+                    setAppKey(val);
+                    if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", val.trim());
+                  }}
                   placeholder="Enter App Key"
                   rightAction={
                     <button
@@ -2948,7 +2964,10 @@ export default function App() {
                   label="Secret Key"
                   type={showSecretKey ? "text" : "password"}
                   value={secretKey}
-                  onChange={setSecretKey}
+                  onChange={(val) => {
+                    setSecretKey(val);
+                    if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", val.trim());
+                  }}
                   placeholder="Enter Secret Key"
                   rightAction={
                     <button
