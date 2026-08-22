@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     fcm_device_token TEXT DEFAULT NULL,
     telegram_chat_id TEXT DEFAULT NULL,
     telegram_enabled BOOLEAN DEFAULT FALSE,
+    demat_auto_sync BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

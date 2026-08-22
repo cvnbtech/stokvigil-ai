@@ -517,6 +517,20 @@ def get_user_portfolio(
     total_pnl = total_val - total_investment
     total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
 
+    # Auto-sync Demat holdings to user_watchlists table
+    if detailed_holdings:
+        try:
+            for h in detailed_holdings:
+                stock_sym = h['symbol'].upper()
+                db.table("user_watchlists").upsert({
+                    "user_id": user_id,
+                    "symbol": stock_sym,
+                    "is_auto_synced": True
+                }, on_conflict="user_id,symbol").execute()
+            logger.info(f"Auto-synced {len(detailed_holdings)} Demat holdings to user_watchlists for user {user_id}")
+        except Exception as sync_err:
+            logger.warning(f"Note on auto-syncing Demat holdings to watchlists: {sync_err}")
+
     return {
         "has_credentials": True,
         "token_date": cred.get("token_date"),

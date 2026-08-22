@@ -124,6 +124,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     });
   }
 
+  List<Map<String, dynamic>> _dematHoldings = [];
+
   Future<void> _loadWatchlist() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
@@ -140,6 +142,40 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
         _autoSync = profile.dematAutoSync;
       }
     } catch (_) {}
+
+    // Auto-fetch Demat holdings from portfolio summary
+    try {
+      final portfolioData = await ApiService().fetchPortfolioSummary(user.id);
+      if (portfolioData != null && portfolioData['holdings'] is List) {
+        final list = portfolioData['holdings'] as List;
+        _dematHoldings = list.map((h) {
+          final sym = (h['symbol'] ?? '').toString().toUpperCase();
+          final pnlPct = (h['pnl_percent'] as num? ?? 0).toDouble();
+          final pnl = (h['pnl'] as num? ?? 0).toDouble();
+          final price = (h['current_price'] as num? ?? 1250.0).toDouble();
+          return {
+            'symbol': sym,
+            'name': '$sym (Demat Holding)',
+            'price': price,
+            'chg': pnlPct >= 0 ? '+${pnlPct.toStringAsFixed(2)}%' : '${pnlPct.toStringAsFixed(2)}%',
+            'is_positive': pnlPct >= 0,
+            'is_auto_synced': true,
+            'signal': pnl >= 0 ? 'STRONG BUY' : 'HOLD',
+            'target': (price * 1.12).toStringAsFixed(0),
+          };
+        }).toList();
+
+        // Background auto-sync into Supabase user_watchlists table
+        for (final dh in _dematHoldings) {
+          final sym = dh['symbol'] as String;
+          if (sym.isNotEmpty) {
+            SupabaseService().addToWatchlist(sym, isAutoSynced: true);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching demat holdings for watchlist: $e");
+    }
 
     final data = await SupabaseService().fetchWatchlist();
     if (mounted) {
@@ -215,18 +251,49 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     _loadWatchlist();
   }
 
-  Future<void> _removeSymbol(dynamic id, String symbol) async {
-    // Optimistically update local watchlist immediately
-    setState(() {
-      _watchlist.removeWhere((item) =>
-          (id != null && item['id'] == id) ||
-          (item['symbol']?.toString().toUpperCase() == symbol.toUpperCase()));
-    });
+  Future<void> _removeSymbol(String symbol, [dynamic id]) async {
+    final user = SupabaseService().currentUser;
+    if (user == null) {
+      setState(() {
+        _watchlist.removeWhere((item) => item['symbol']?.toString().toUpperCase() == symbol.toUpperCase());
+      });
+      ErrorHandler.showSuccessSnackBar(context, "Removed $symbol from local watchlist.");
+      return;
+    }
 
-    final ok = await SupabaseService().removeFromWatchlist(id, symbol);
-    if (mounted) {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0F172A),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text("Remove $symbol?", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text("Are you sure you want to stop tracking $symbol?", style: const TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel", style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.dangerRose,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text("Remove", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final ok = await SupabaseService().removeFromWatchlist(id, symbol);
       if (ok) {
-        ErrorHandler.showSuccessSnackBar(context, "$symbol removed from watchlist.");
+        setState(() {
+          _watchlist.removeWhere((item) => item['symbol']?.toString().toUpperCase() == symbol.toUpperCase());
+        });
+        if (mounted) {
+          ErrorHandler.showSuccessSnackBar(context, "🗑️ Removed $symbol from watchlist.");
+        }
       } else {
         ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from database.");
       }
@@ -235,13 +302,22 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final combinedList = List<Map<String, dynamic>>.from(_watchlist);
+    if (_autoSync) {
+      for (final dh in _dematHoldings) {
+        final sym = (dh['symbol'] ?? '').toString().toUpperCase();
+        if (!combinedList.any((item) => (item['symbol'] ?? '').toString().toUpperCase() == sym)) {
+          combinedList.add(dh);
+        }
+      }
+    }
+
     final displayedList = _autoSync
-        ? _watchlist
-        : _watchlist.where((item) {
+        ? combinedList
+        : combinedList.where((item) {
             final symbol = (item['symbol'] as String? ?? '').toUpperCase();
-            final meta = _stockMeta[symbol] ?? {};
-            final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
-            return isAuto != true;
+            final isAuto = item['is_auto_synced'] == true;
+            return !isAuto;
           }).toList();
 
     return Scaffold(

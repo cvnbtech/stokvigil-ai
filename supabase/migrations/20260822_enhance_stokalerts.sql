@@ -31,7 +31,8 @@ ALTER TABLE public.profiles
     ADD COLUMN IF NOT EXISTS alert_sensitivity TEXT DEFAULT 'HIGH',
     ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'CONFIRM',
     ADD COLUMN IF NOT EXISTS tnc_accepted BOOLEAN DEFAULT TRUE,
-    ADD COLUMN IF NOT EXISTS tnc_accepted_at TIMESTAMPTZ DEFAULT NOW();
+    ADD COLUMN IF NOT EXISTS tnc_accepted_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS demat_auto_sync BOOLEAN DEFAULT FALSE;
 
 -- 3. Add indexes for high-throughput 5-minute cron scanning
 CREATE INDEX IF NOT EXISTS idx_stok_alerts_created_at ON public.stok_alerts(created_at DESC);

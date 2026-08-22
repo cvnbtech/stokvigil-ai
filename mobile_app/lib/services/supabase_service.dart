@@ -167,14 +167,14 @@ class SupabaseService {
     }
   }
 
-  Future<bool> addToWatchlist(String symbol) async {
+  Future<bool> addToWatchlist(String symbol, {bool isAutoSynced = false}) async {
     final user = currentUser;
     if (user == null || !isConfigured) return false;
     try {
       await client.from('user_watchlists').upsert({
         'user_id': user.id,
         'symbol': symbol.toUpperCase(),
-        'is_auto_synced': false,
+        'is_auto_synced': isAutoSynced,
       });
       return true;
     } catch (e) {

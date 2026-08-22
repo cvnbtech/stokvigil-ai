@@ -800,6 +800,22 @@ export default function App() {
             signalType: h.pnl >= 0 ? "strong_buy" : "hold",
           })));
           portfolioLoaded = true;
+
+          // Auto-sync Demat holdings into user_watchlists table
+          if (supabase && uid) {
+            try {
+              for (const h of data.holdings) {
+                await supabase.from('user_watchlists').upsert({
+                  user_id: uid,
+                  symbol: h.symbol.toUpperCase(),
+                  is_auto_synced: true,
+                }, { onConflict: 'user_id,symbol' });
+              }
+              loadWatchlistData(uid);
+            } catch (err) {
+              console.warn("Error auto-syncing demat holdings to watchlists:", err);
+            }
+          }
         }
       }
 
@@ -2355,9 +2371,32 @@ export default function App() {
               {/* Watchlist Cards Stack */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {(() => {
+                  const holdingItems: any[] = holdings.map(h => ({
+                    id: `demat-${h.symbol}`,
+                    symbol: h.symbol,
+                    name: `${h.symbol} (Demat Holding)`,
+                    auto: true,
+                    price: h.price || 1250.0,
+                    chg: h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`,
+                    isPositive: h.pnlPct >= 0,
+                    signal: h.signal || (h.pnl >= 0 ? "STRONG BUY" : "HOLD"),
+                    signalType: h.signalType || (h.pnl >= 0 ? "strong_buy" : "hold"),
+                    target: `₹${((h.price || 1000) * 1.12).toFixed(0)}`,
+                    sl: `₹${((h.price || 1000) * 0.94).toFixed(0)}`
+                  }));
+
+                  const combinedList = [...watchlist];
+                  if (dematAutoSync) {
+                    for (const dh of holdingItems) {
+                      if (!combinedList.some(w => w.symbol.toUpperCase() === dh.symbol.toUpperCase())) {
+                        combinedList.push(dh);
+                      }
+                    }
+                  }
+
                   const displayedWatchlist = dematAutoSync
-                    ? watchlist
-                    : watchlist.filter(item => !item.auto);
+                    ? combinedList
+                    : combinedList.filter(item => !item.auto);
 
                   if (displayedWatchlist.length === 0) {
                     return (
