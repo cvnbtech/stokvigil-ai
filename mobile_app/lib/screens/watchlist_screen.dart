@@ -475,7 +475,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                       final name = item['name'] ?? '';
                       final sector = item['sector'] ?? 'NSE';
                       return InkWell(
-                        onTap: () => _addSymbol(sym),
+                        onTap: () => _addSymbol(sym, name),
                         borderRadius: BorderRadius.circular(10),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),

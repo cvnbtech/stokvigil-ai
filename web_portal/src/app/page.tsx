@@ -4,7 +4,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = (process.env.STOKVIGIL_BACKEND_URL || "").trim().replace(/\/+$/, "");
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
@@ -1297,7 +1297,9 @@ export default function App() {
       }
     } catch (e) {
       console.warn("Stock validation error:", e);
-      isValid = false;
+      if (/^[A-Z0-9&-]{2,15}$/.test(raw)) {
+        isValid = true;
+      }
     }
 
     if (!isValid) {
@@ -1309,16 +1311,20 @@ export default function App() {
     setTicker("");
 
     if (user?.id && supabase) {
-      await supabase.from('user_watchlists').upsert({
-        user_id: user.id,
-        symbol: raw,
-        is_auto_synced: false
-      }, { onConflict: 'user_id,symbol' });
+      try {
+        await supabase.from('user_watchlists').upsert({
+          user_id: user.id,
+          symbol: raw,
+          is_auto_synced: false
+        }, { onConflict: 'user_id,symbol' });
+      } catch (e) {
+        console.warn("Save ticker to Supabase error:", e);
+      }
       loadWatchlistData(user.id);
     } else {
       setWatchlist(prev => [
         {
-          id: Date.now().toString(),
+          id: String(Date.now()),
           symbol: raw,
           name: stockName,
           auto: false,
