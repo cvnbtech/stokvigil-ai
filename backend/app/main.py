@@ -1,10 +1,12 @@
 import base64
 import json
 import logging
+import re
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
 from datetime import date
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -19,6 +21,9 @@ from app.notifications import send_telegram_notification
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("stokvigil.main")
+
+# Strict alphanumeric regex whitelist for stock symbols
+STOCK_SYMBOL_REGEX = re.compile(r'^[A-Z0-9_\-&]{1,20}$')
 
 app = FastAPI(
     title="StokVigil AI Engine API",
@@ -347,6 +352,13 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
             "error": f"'{sym}' is too short. Please enter a valid stock symbol."
         }
 
+    if not STOCK_SYMBOL_REGEX.match(sym):
+        return {
+            "is_valid": False,
+            "symbol": sym,
+            "error": f"'{sym}' contains invalid characters. Use valid alphanumeric stock symbols."
+        }
+
     search_headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
@@ -426,11 +438,20 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
     }
 
 
-# In-memory quote cache: { symbol: { "data": {...}, "timestamp": float } }
-_QUOTE_CACHE: Dict[str, Dict[str, Any]] = {}
+# In-memory bounded quote cache with max 2000 items (FIFO eviction) to prevent memory exhaustion
+_QUOTE_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 _QUOTE_CACHE_TTL = 5.0  # 5 seconds TTL
+_MAX_QUOTE_CACHE_SIZE = 2000
+
+def _cache_set_quote(sym: str, data: Dict[str, Any], timestamp: float):
+    if len(_QUOTE_CACHE) >= _MAX_QUOTE_CACHE_SIZE:
+        _QUOTE_CACHE.popitem(last=False)  # Evict oldest entry (FIFO)
+    _QUOTE_CACHE[sym] = {"data": data, "timestamp": timestamp}
 
 def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
+    if not sym or not STOCK_SYMBOL_REGEX.match(sym):
+        return None
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
@@ -488,8 +509,8 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
     if not raw_symbols:
         return {"quotes": {}}
 
-    # Deduplicate while preserving order
-    unique_symbols = list(dict.fromkeys(raw_symbols))
+    # Filter strictly valid symbols using regex whitelist
+    unique_symbols = [s for s in list(dict.fromkeys(raw_symbols)) if STOCK_SYMBOL_REGEX.match(s)]
     now = time.time()
     results: Dict[str, Dict[str, Any]] = {}
     missing_symbols: List[str] = []
@@ -511,7 +532,7 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
                     q_data = future.result()
                     if q_data:
                         results[sym] = q_data
-                        _QUOTE_CACHE[sym] = {"data": q_data, "timestamp": now}
+                        _cache_set_quote(sym, q_data, now)
                 except Exception as e:
                     logger.warning(f"Error fetching quote for {sym}: {e}")
 
@@ -695,10 +716,9 @@ async def run_multi_user_scan(
     5-Minute Cron Endpoint triggered during Indian market hours.
     Shielded by X-Cron-Secret header token to prevent unauthorized triggers and quota drain.
     """
-    if settings.CRON_SECRET_KEY and settings.CRON_SECRET_KEY != "stokvigil_cron_default_secret_2026":
-        if x_cron_secret != settings.CRON_SECRET_KEY:
-            logger.warning("Unauthorized multi-user cron scan attempt blocked.")
-            raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid X-Cron-Secret header.")
+    if not x_cron_secret or x_cron_secret != settings.CRON_SECRET_KEY:
+        logger.warning("Unauthorized multi-user cron scan attempt blocked.")
+        raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header.")
 
     today_str = str(date.today())
     profiles_res = db.table("profiles").select("id").execute()

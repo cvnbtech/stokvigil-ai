@@ -11,10 +11,13 @@ class CryptoVault:
     def __init__(self, raw_secret_key: str = None):
         key_source = raw_secret_key or settings.ENCRYPTION_KEY
         
-        # Production Environment Key Audit
+        # Production Environment Key Audit - Strict Enforcement
         if settings.ENVIRONMENT == "production":
             if not key_source or key_source.startswith("d3d3d3"):
-                logger.warning("SECURITY WARNING: Using default/weak ENCRYPTION_KEY in production mode. Set a strong custom key!")
+                raise RuntimeError(
+                    "CRITICAL SECURITY ERROR: Default/weak ENCRYPTION_KEY detected in production mode. "
+                    "You must set a unique, strong ENCRYPTION_KEY environment variable in your deployment settings."
+                )
 
         # Ensure valid 32-byte urlsafe base64 key for Fernet
         if len(key_source) != 44 or not key_source.endswith('='):

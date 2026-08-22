@@ -35,22 +35,24 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional
         except Exception as e:
             logger.error(f"JWT Verification failed: {e}")
             raise HTTPException(status_code=401, detail="Session authentication failed.")
-            
-    if settings.ENVIRONMENT == "production":
-        # In production, strict authentication is required for user-specific endpoints
+
+    # Strict authentication required unless running explicitly in unit test mode
+    if settings.ENVIRONMENT != "test":
         if not authorization:
             raise HTTPException(status_code=401, detail="Missing Authorization Bearer token.")
-            
+
     return None
 
 def verify_user_access(requested_user_id: str, authenticated_user_id: Optional[str]) -> bool:
     """
     Ensures that a user can only access and modify their own data.
+    Strictly prevents IDOR / BOLA attacks.
     """
     if authenticated_user_id is None:
-        # Development mode bypass
-        return True
-        
+        if settings.ENVIRONMENT == "test":
+            return True
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
     if requested_user_id != authenticated_user_id:
         logger.warning(f"IDOR attempt detected: Authenticated user '{authenticated_user_id}' tried to access user '{requested_user_id}'.")
         raise HTTPException(

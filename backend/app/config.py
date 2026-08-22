@@ -25,12 +25,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
     # Supabase Settings
-    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "https://your-supabase-project.supabase.co")
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_ANON_KEY: str = os.getenv("SUPABASE_ANON_KEY", "")
-    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "your-service-role-key")
+    SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
     
     # Vault Encryption Key (Fernet AES-256 base64 key)
-    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=")
+    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "")
     
     # Gemini AI Agent Key
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     
     # Cron Security Token
-    CRON_SECRET_KEY: str = os.getenv("CRON_SECRET_KEY", "stokvigil_cron_default_secret_2026")
+    CRON_SECRET_KEY: str = os.getenv("CRON_SECRET_KEY", "")
     
     # CORS Allowed Origins (Loaded dynamically from ALLOWED_ORIGINS in .env)
     ALLOWED_ORIGINS: List[str] = get_allowed_origins()
