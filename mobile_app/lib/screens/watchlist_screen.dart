@@ -235,6 +235,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displayedList = _autoSync
+        ? _watchlist
+        : _watchlist.where((item) {
+            final symbol = (item['symbol'] as String? ?? '').toUpperCase();
+            final meta = _stockMeta[symbol] ?? {};
+            final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
+            return isAuto != true;
+          }).toList();
+
     return Scaffold(
       backgroundColor: AppTheme.darkBackground,
       appBar: AppBar(
@@ -513,19 +522,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           // ─────────────────────────────────────────────
           // WATCHLIST CARDS LIST
           // ─────────────────────────────────────────────
-          Builder(
-            builder: (context) {
-              final displayedList = _autoSync
-                  ? _watchlist
-                  : _watchlist.where((item) {
-                      final symbol = (item['symbol'] as String? ?? '').toUpperCase();
-                      final meta = _stockMeta[symbol] ?? {};
-                      final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
-                      return isAuto != true;
-                    }).toList();
-
-              return Expanded(
-                child: _isLoading
+          Expanded(
+            child: _isLoading
                     ? const Center(child: CircularProgressIndicator(color: AppTheme.cyan))
                     : displayedList.isEmpty
                         ? Center(
