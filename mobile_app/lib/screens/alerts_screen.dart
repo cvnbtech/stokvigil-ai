@@ -187,11 +187,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
                             final alert = filteredList[index];
                             final isHigh = alert.impactScore >= 80;
                             final dateStr = DateFormat('dd MMM, hh:mm a').format(alert.createdAt);
-                            final priceVal = alert.metricsSnapshot['current_price'] ?? alert.metricsSnapshot['price'] ?? 1250.0;
+                            final priceVal = alert.metricsSnapshot['current_price'] ?? alert.metricsSnapshot['price'] ?? 0.0;
                             final signalLabel = _getSignalLabel(alert);
                             final signalType = _getSignalType(alert);
-                            final targetStr = alert.target1 ?? "₹${((priceVal as num) * 1.08).toStringAsFixed(0)}";
-                            final slStr = alert.stopLoss ?? "₹${((priceVal as num) * 0.96).toStringAsFixed(0)}";
+                            final targetStr = alert.target1 ?? ((priceVal as num) > 0 ? "₹${(priceVal * 1.08).toStringAsFixed(0)}" : "₹0");
+                            final slStr = alert.stopLoss ?? ((priceVal as num) > 0 ? "₹${(priceVal * 0.96).toStringAsFixed(0)}" : "₹0");
                             final rrStr = alert.riskReward ?? "1:2.0";
 
                             return GlassCard(

@@ -703,9 +703,9 @@ export default function App() {
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [orderSent, setOrderSent] = useState(false);
   const [orderSending, setOrderSending] = useState(false);
-  const [limitPrice, setLimitPrice] = useState<string>("1250");
-  const [targetPriceInput, setTargetPriceInput] = useState<string>("1400");
-  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("1180");
+  const [limitPrice, setLimitPrice] = useState<string>("0");
+  const [targetPriceInput, setTargetPriceInput] = useState<string>("0");
+  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("0");
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
   const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
@@ -855,10 +855,10 @@ export default function App() {
         if (data && data.length > 0) {
           setAlerts(data.map((a: any) => {
             const rawSnap = a.metrics_snapshot || {};
-            const livePrice = rawSnap.current_price || rawSnap.price || 1250;
+            const livePrice = rawSnap.current_price || rawSnap.price || 0;
             const bias = rawSnap.action_bias || (a.impact_score >= 80 ? "STRONG BUY" : "BUY");
-            const tPrice = rawSnap.tactical_levels?.target_1 || `₹${(livePrice * 1.12).toFixed(0)}`;
-            const sLoss = rawSnap.tactical_levels?.protective_stop_loss || `₹${(livePrice * 0.94).toFixed(0)}`;
+            const tPrice = rawSnap.tactical_levels?.target_1 || (livePrice > 0 ? `₹${(livePrice * 1.12).toFixed(0)}` : "₹0");
+            const sLoss = rawSnap.tactical_levels?.protective_stop_loss || (livePrice > 0 ? `₹${(livePrice * 0.94).toFixed(0)}` : "₹0");
             const peVal = rawSnap.financials?.pe_ratio?.toString() || rawSnap.pe_ratio?.toString() || "24.2";
             const debtVal = rawSnap.financials?.debt_to_equity?.toString() || rawSnap.debt_to_equity?.toString() || "0.38";
             const roeVal = rawSnap.financials?.roe_pct ? `${rawSnap.financials.roe_pct}%` : (rawSnap.roe || "18.5%");
@@ -904,19 +904,47 @@ export default function App() {
       try {
         const { data } = await supabase.from('user_watchlists').select('*').eq('user_id', uid).order('created_at', { ascending: false });
         if (data && data.length > 0) {
-          setWatchlist(data.map((w: any) => ({
-            id: w.id,
-            symbol: w.symbol,
-            name: `${w.symbol} India`,
-            auto: w.is_auto_synced || false,
-            price: 1250.0,
-            chg: "+1.20%",
-            isPositive: true,
-            signal: "BUY",
-            signalType: "buy",
-            target: "₹1,400",
-            sl: "₹1,180"
-          })));
+          const symbols = data.map((w: any) => w.symbol.toUpperCase());
+          let quotesMap: Record<string, any> = {};
+
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+              signal: AbortSignal.timeout(30000)
+            });
+            if (res.ok) {
+              const qData = await res.json();
+              quotesMap = qData.quotes || {};
+            }
+          } catch (qErr) {
+            console.warn("Error fetching live batch stock quotes:", qErr);
+          }
+
+          setWatchlist(data.map((w: any) => {
+            const sym = w.symbol.toUpperCase();
+            const q = quotesMap[sym] || {};
+            const price = q.price !== undefined ? q.price : 0;
+            const chgPct = q.change_pct !== undefined ? q.change_pct : 0.0;
+            const isPos = q.is_positive !== undefined ? q.is_positive : chgPct >= 0;
+            const name = q.name || sym;
+            const signal = q.signal || (isPos ? "BUY" : "HOLD");
+            const signalType = q.signal_type || (isPos ? "buy" : "hold");
+            const target = q.target ? `₹${q.target}` : (price > 0 ? `₹${(price * 1.12).toFixed(0)}` : "₹0");
+            const sl = q.stop_loss ? `₹${q.stop_loss}` : (price > 0 ? `₹${(price * 0.94).toFixed(0)}` : "₹0");
+
+            return {
+              id: w.id,
+              symbol: sym,
+              name,
+              auto: w.is_auto_synced || false,
+              price,
+              chg: isPos ? `+${chgPct.toFixed(2)}%` : `${chgPct.toFixed(2)}%`,
+              isPositive: isPos,
+              signal,
+              signalType,
+              target,
+              sl
+            };
+          }));
           return;
         }
       } catch (e) {
@@ -1249,7 +1277,7 @@ export default function App() {
     alert("✅ Your account and all associated data have been permanently deleted.");
   };
 
-  const handleTickerChange = (val: string) => {
+  const handleStockChange = (val: string) => {
     setTicker(val);
     const q = val.trim();
     if (!q) {
@@ -1261,7 +1289,9 @@ export default function App() {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/stocks/search?q=${encodeURIComponent(q)}`);
+        const res = await fetch(`${BACKEND_URL}/api/stocks/search?q=${encodeURIComponent(q)}`, {
+          signal: AbortSignal.timeout(30000)
+        });
         if (res.ok) {
           const data = await res.json();
           setTickerSuggestions(data.stocks || []);
@@ -1272,12 +1302,13 @@ export default function App() {
     }, 300);
   };
 
-  const addTicker = async (explicitSym?: string, explicitName?: string) => {
+  const addStock = async (explicitSym?: string, explicitName?: string) => {
     const raw = (explicitSym || ticker).trim().toUpperCase();
     if (!raw) return;
 
     let isValid = false;
-    let stockName = explicitName || `${raw} India`;
+    let isTimeout = false;
+    let stockName = explicitName || raw;
     let exchange = "NSE";
 
     if (raw.length < 2) {
@@ -1285,19 +1316,34 @@ export default function App() {
       return;
     }
 
+    let livePrice = 0;
+
     try {
-      const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`);
+      const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`, {
+        signal: AbortSignal.timeout(30000)
+      });
       if (res.ok) {
         const valData = await res.json();
         if (valData.is_valid === true) {
           isValid = true;
           exchange = valData.exchange || "NSE";
           if (valData.name) stockName = valData.name;
+          if (valData.price) livePrice = Number(valData.price);
+        } else if (valData.is_timeout) {
+          isTimeout = true;
         }
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
+        isTimeout = true;
+      }
       console.warn("Stock validation error:", e);
       isValid = false;
+    }
+
+    if (isTimeout) {
+      alert(`⏳ Connection to exchange timed out for '${raw}'. Please check your connection and try again.`);
+      return;
     }
 
     if (!isValid) {
@@ -1322,13 +1368,13 @@ export default function App() {
           symbol: raw,
           name: stockName,
           auto: false,
-          price: 1250.0,
-          chg: "+1.20%",
+          price: livePrice,
+          chg: "+0.00%",
           isPositive: true,
           signal: "BUY",
           signalType: "buy",
-          target: "₹1,400",
-          sl: "₹1,180"
+          target: livePrice > 0 ? `₹${(livePrice * 1.12).toFixed(0)}` : "₹0",
+          sl: livePrice > 0 ? `₹${(livePrice * 0.94).toFixed(0)}` : "₹0"
         },
         ...prev.filter(p => p.symbol !== raw)
       ]);
@@ -2213,8 +2259,8 @@ export default function App() {
                     <span style={{ position: "absolute", left: 12, fontSize: 14, color: C.cyan }}>🔍</span>
                     <input
                       value={ticker}
-                      onChange={e => handleTickerChange(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && addTicker()}
+                      onChange={e => handleStockChange(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addStock()}
                       placeholder="Search NSE stock (e.g. TATA, RELIANCE, HDFCBANK)"
                       style={{
                         width: "100%", background: "none", border: "none",
@@ -2225,7 +2271,7 @@ export default function App() {
                     />
                   </div>
                   <button
-                    onClick={() => addTicker()}
+                    onClick={() => addStock()}
                     style={{
                       background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
                       border: "none", borderRadius: 14, padding: "0 18px",
@@ -2267,7 +2313,7 @@ export default function App() {
                     {tickerSuggestions.map((sug) => (
                       <div
                         key={sug.symbol}
-                        onClick={() => addTicker(sug.symbol, sug.name)}
+                        onClick={() => addStock(sug.symbol, sug.name)}
                         style={{
                           display: "flex",
                           alignItems: "center",
@@ -2301,7 +2347,7 @@ export default function App() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            addTicker(sug.symbol, sug.name);
+                            addStock(sug.symbol, sug.name);
                           }}
                           style={{
                             background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
@@ -2376,13 +2422,13 @@ export default function App() {
                     symbol: h.symbol,
                     name: `${h.symbol} (Demat Holding)`,
                     auto: true,
-                    price: h.price || 1250.0,
+                    price: h.price || 0,
                     chg: h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`,
                     isPositive: h.pnlPct >= 0,
                     signal: h.signal || (h.pnl >= 0 ? "STRONG BUY" : "HOLD"),
                     signalType: h.signalType || (h.pnl >= 0 ? "strong_buy" : "hold"),
-                    target: `₹${((h.price || 1000) * 1.12).toFixed(0)}`,
-                    sl: `₹${((h.price || 1000) * 0.94).toFixed(0)}`
+                    target: h.price ? `₹${(h.price * 1.12).toFixed(0)}` : "₹0",
+                    sl: h.price ? `₹${(h.price * 0.94).toFixed(0)}` : "₹0"
                   }));
 
                   const combinedList = [...watchlist];

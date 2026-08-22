@@ -22,54 +22,6 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
   Timer? _searchDebounce;
 
-  static final Map<String, Map<String, dynamic>> _stockMeta = {
-    'RELIANCE': {
-      'name': 'Reliance Industries',
-      'price': 2980.50,
-      'chg': '+1.85%',
-      'is_positive': true,
-      'is_auto_synced': true,
-      'signal': 'STRONG BUY',
-      'target': '3,250',
-    },
-    'TCS': {
-      'name': 'Tata Consultancy Serv',
-      'price': 4120.00,
-      'chg': '+0.92%',
-      'is_positive': true,
-      'is_auto_synced': true,
-      'signal': 'BUY',
-      'target': '4,450',
-    },
-    'INFY': {
-      'name': 'Infosys Limited',
-      'price': 1780.25,
-      'chg': '-0.65%',
-      'is_positive': false,
-      'is_auto_synced': true,
-      'signal': 'TAKE PROFIT',
-      'target': '1,820',
-    },
-    'HDFCBANK': {
-      'name': 'HDFC Bank Ltd',
-      'price': 1650.00,
-      'chg': '+1.15%',
-      'is_positive': true,
-      'is_auto_synced': false,
-      'signal': 'ACCUMULATE',
-      'target': '1,820',
-    },
-    'TATAMOTORS': {
-      'name': 'Tata Motors Ltd',
-      'price': 1015.30,
-      'chg': '+3.40%',
-      'is_positive': true,
-      'is_auto_synced': false,
-      'signal': 'STRONG BUY',
-      'target': '1,150',
-    },
-  };
-
   @override
   void initState() {
     super.initState();
@@ -152,7 +104,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           final sym = (h['symbol'] ?? '').toString().toUpperCase();
           final pnlPct = (h['pnl_percent'] as num? ?? 0).toDouble();
           final pnl = (h['pnl'] as num? ?? 0).toDouble();
-          final price = (h['current_price'] as num? ?? 1250.0).toDouble();
+          final price = (h['current_price'] as num? ?? 0.0).toDouble();
           return {
             'symbol': sym,
             'name': '$sym (Demat Holding)',
@@ -161,7 +113,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             'is_positive': pnlPct >= 0,
             'is_auto_synced': true,
             'signal': pnl >= 0 ? 'STRONG BUY' : 'HOLD',
-            'target': (price * 1.12).toStringAsFixed(0),
+            'target': price > 0 ? (price * 1.12).toStringAsFixed(0) : "0",
           };
         }).toList();
 
@@ -178,6 +130,31 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     }
 
     final data = await SupabaseService().fetchWatchlist();
+    
+    // Fetch real-time live quotes from exchange for all watchlist stocks
+    final symbols = data
+        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (symbols.isNotEmpty) {
+      final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
+      for (var item in data) {
+        final sym = (item['symbol']?.toString() ?? '').toUpperCase();
+        if (liveQuotes.containsKey(sym)) {
+          final q = liveQuotes[sym] as Map<String, dynamic>;
+          item['price'] = q['price'];
+          final isPos = q['is_positive'] == true;
+          final chgPct = q['change_pct'] ?? 0.0;
+          item['chg'] = isPos ? "+$chgPct%" : "$chgPct%";
+          item['is_positive'] = isPos;
+          item['name'] = q['name'];
+          item['signal'] = q['signal'];
+          item['target'] = q['target'] != null ? "₹${q['target']}" : null;
+          item['stop_loss'] = q['stop_loss'] != null ? "₹${q['stop_loss']}" : null;
+        }
+      }
+    }
+
     if (mounted) {
       setState(() {
         _watchlist = data;
@@ -211,16 +188,24 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     final validation = await ApiService().validateStock(sym);
     if (validation['is_valid'] != true) {
       if (mounted) {
-        ErrorHandler.showErrorSnackBar(
-          context,
-          "⚠️ '$sym' is not a recognized or traded stock on NSE or BSE.",
-        );
+        if (validation['is_timeout'] == true) {
+          ErrorHandler.showErrorSnackBar(
+            context,
+            "⏳ Connection to exchange timed out for '$sym'. Please try again.",
+          );
+        } else {
+          ErrorHandler.showErrorSnackBar(
+            context,
+            "⚠️ '$sym' is not a recognized or traded stock on NSE or BSE.",
+          );
+        }
       }
       return;
     }
 
     final exchange = validation['exchange'] ?? 'NSE';
     final name = displayName ?? validation['name'] ?? "$sym ($exchange)";
+    final livePrice = validation['price'] != null ? (validation['price'] as num).toDouble() : 0.0;
 
     // Clear suggestions immediately
     setState(() => _suggestions = []);
@@ -241,7 +226,17 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     } else {
       setState(() {
         if (!_watchlist.any((item) => item['symbol']?.toString().toUpperCase() == sym)) {
-          _watchlist.insert(0, {'symbol': sym, 'is_auto_synced': false, 'name': name});
+          _watchlist.insert(0, {
+            'symbol': sym,
+            'is_auto_synced': false,
+            'name': name,
+            'price': livePrice,
+            'is_positive': true,
+            'chg': "+0.00%",
+            'signal': 'BUY',
+            'target': livePrice > 0 ? "₹${(livePrice * 1.12).toStringAsFixed(0)}" : "₹0",
+            'stop_loss': livePrice > 0 ? "₹${(livePrice * 0.94).toStringAsFixed(0)}" : "₹0"
+          });
         }
       });
       if (mounted) {
@@ -630,15 +625,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                             itemBuilder: (context, index) {
                               final item = displayedList[index];
                           final symbol = (item['symbol'] as String? ?? '').toUpperCase();
-                          final meta = _stockMeta[symbol] ?? {};
-
-                          final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
-                          final isPos = item['is_positive'] ?? meta['is_positive'] ?? true;
-                          final priceNum = (item['price'] as num? ?? meta['price'] ?? 1250.0).toDouble();
-                          final chg = item['chg'] ?? meta['chg'] ?? (isPos ? "+1.20%" : "-0.65%");
-                          final signal = item['signal'] ?? meta['signal'] ?? 'BUY';
-                          final target = item['target'] ?? meta['target'] ?? (priceNum * 1.12).toStringAsFixed(0);
-                          final name = item['name'] ?? meta['name'] ?? "$symbol India";
+                          final isAuto = item['is_auto_synced'] == true;
+                          final isPos = item['is_positive'] ?? true;
+                          final priceNum = (item['price'] as num? ?? 0.0).toDouble();
+                          final chg = item['chg'] ?? (isPos ? "+0.00%" : "-0.00%");
+                          final signal = item['signal'] ?? 'BUY';
+                          final target = item['target'] ?? (priceNum > 0 ? "₹${(priceNum * 1.12).toStringAsFixed(0)}" : "₹0");
+                          final name = item['name'] ?? symbol;
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
 
                           Color signalColor = const Color(0xFF06B6D4);

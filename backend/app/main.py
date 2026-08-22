@@ -267,7 +267,7 @@ def search_stocks(q: str = Query(..., min_length=1)):
         try:
             url = f"https://{host}/v1/finance/search?q={urllib.parse.quote(query)}&quotesCount=10&newsCount=0"
             req = urllib.request.Request(url, headers=search_headers)
-            with urllib.request.urlopen(req, timeout=4) as response:
+            with urllib.request.urlopen(req, timeout=15) as response:
                 data = json.loads(response.read().decode('utf-8'))
                 for item in data.get("quotes", []):
                     sym = item.get("symbol", "")
@@ -347,12 +347,42 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
             "error": f"'{sym}' is too short. Please enter a valid stock symbol."
         }
 
-    # 1. Fast chart API validation
+    search_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+    }
+
+    # 1. Fast quote API multi-exchange lookup (NSE and BSE)
+    try:
+        symbols_param = f"{sym}.NS,{sym}.BO"
+        url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols_param}"
+        req = urllib.request.Request(url, headers=search_headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            results = data.get("quoteResponse", {}).get("result", [])
+            for q in results:
+                q_sym = q.get("symbol", "")
+                price = q.get("regularMarketPrice")
+                if price is not None and price > 0:
+                    exch = "NSE" if q_sym.endswith(".NS") else "BSE"
+                    name = q.get("shortName") or q.get("longName") or f"{sym} ({exch})"
+                    return {
+                        "is_valid": True,
+                        "symbol": sym,
+                        "name": name,
+                        "exchange": exch,
+                        "price": price,
+                        "full_symbol": q_sym
+                    }
+    except Exception as e:
+        logger.warning(f"Fast quote validation for {sym} failed: {e}")
+
+    # 2. Fast chart API validation
     for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
         try:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            req = urllib.request.Request(url, headers=search_headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 res_list = data.get("chart", {}).get("result")
                 if res_list and len(res_list) > 0:
@@ -371,18 +401,19 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
         except Exception:
             pass
 
-    # 2. Historical tick confirmation fallback
+    # 3. Direct fast_info ticker check
     for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
         try:
-            df = yf.download(f"{sym}{suffix}", period="1d", progress=False)
-            if not df.empty and len(df) > 0:
-                price = float(df['Close'].iloc[-1])
+            t = yf.Ticker(f"{sym}{suffix}")
+            fast = t.fast_info
+            price = getattr(fast, "last_price", None)
+            if price is not None and price > 0:
                 return {
                     "is_valid": True,
                     "symbol": sym,
                     "name": f"{sym} ({exch})",
                     "exchange": exch,
-                    "price": price,
+                    "price": float(price),
                     "full_symbol": f"{sym}{suffix}"
                 }
         except Exception:
@@ -393,6 +424,95 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
         "symbol": sym,
         "error": f"'{sym}' is not a valid listed stock on NSE or BSE."
     }
+
+
+# In-memory quote cache: { symbol: { "data": {...}, "timestamp": float } }
+_QUOTE_CACHE: Dict[str, Dict[str, Any]] = {}
+_QUOTE_CACHE_TTL = 5.0  # 5 seconds TTL
+
+def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+    }
+    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+        try:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode('utf-8'))
+                res_list = data.get("chart", {}).get("result")
+                if res_list and len(res_list) > 0:
+                    meta = res_list[0].get("meta", {})
+                    p = meta.get("regularMarketPrice")
+                    if p is not None and p > 0:
+                        prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
+                        chg_pct = round(((p - prev) / prev) * 100, 2) if prev else 0.0
+                        name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
+                        day_high = meta.get("regularMarketDayHigh") or (p * 1.02)
+                        day_low = meta.get("regularMarketDayLow") or (p * 0.98)
+
+                        return {
+                            "symbol": sym,
+                            "name": name,
+                            "exchange": exch,
+                            "price": round(float(p), 2),
+                            "change_pct": chg_pct,
+                            "is_positive": chg_pct >= 0,
+                            "day_high": round(float(day_high), 2),
+                            "day_low": round(float(day_low), 2),
+                            "target": round(float(p) * 1.12, 2),
+                            "stop_loss": round(float(p) * 0.94, 2),
+                            "signal": "STRONG BUY" if chg_pct >= 1.5 else ("BUY" if chg_pct >= 0 else "HOLD"),
+                            "signal_type": "strong_buy" if chg_pct >= 1.5 else ("buy" if chg_pct >= 0 else "hold")
+                        }
+        except Exception:
+            continue
+    return None
+
+@app.get("/api/stocks/quotes")
+def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separated stock symbols")):
+    """
+    Fetches real-time market prices, day % change, and metadata for multiple stocks.
+    Supports 200+ stocks concurrently with 5-second RAM caching.
+    """
+    import time
+    import concurrent.futures
+    if not symbols:
+        return {"quotes": {}}
+
+    raw_symbols = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not raw_symbols:
+        return {"quotes": {}}
+
+    # Deduplicate while preserving order
+    unique_symbols = list(dict.fromkeys(raw_symbols))
+    now = time.time()
+    results: Dict[str, Dict[str, Any]] = {}
+    missing_symbols: List[str] = []
+
+    # Check in-memory cache first (<1ms)
+    for sym in unique_symbols:
+        cached = _QUOTE_CACHE.get(sym)
+        if cached and (now - cached["timestamp"] < _QUOTE_CACHE_TTL):
+            results[sym] = cached["data"]
+        else:
+            missing_symbols.append(sym)
+
+    if missing_symbols:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=25) as pool:
+            future_to_sym = {pool.submit(_fetch_single_stock_quote, sym): sym for sym in missing_symbols}
+            for future in concurrent.futures.as_completed(future_to_sym):
+                sym = future_to_sym[future]
+                try:
+                    q_data = future.result()
+                    if q_data:
+                        results[sym] = q_data
+                        _QUOTE_CACHE[sym] = {"data": q_data, "timestamp": now}
+                except Exception as e:
+                    logger.warning(f"Error fetching quote for {sym}: {e}")
+
+    return {"quotes": results}
 
 
 @app.post("/api/user/delete-account")

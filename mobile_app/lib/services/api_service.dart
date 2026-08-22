@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -37,7 +38,7 @@ class ApiService {
           'secret_key': secretKey,
           'session_token': sessionToken,
         }),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 30));
       return res.statusCode == 200;
     } catch (e) {
       debugPrint("API Error saving credentials: $e");
@@ -52,7 +53,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/user/credentials?user_id=$userId'),
             headers: _getAuthHeaders(),
           )
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
@@ -68,7 +69,7 @@ class ApiService {
       final q = Uri.encodeComponent(query.trim());
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/search?q=$q'))
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['stocks'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
@@ -89,14 +90,40 @@ class ApiService {
       final q = Uri.encodeComponent(sym);
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$q'))
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
+    } on TimeoutException {
+      debugPrint("API Timeout validating stock '$sym'");
+      return {
+        "is_valid": false,
+        "symbol": sym,
+        "is_timeout": true,
+        "error": "Exchange connection timed out."
+      };
     } catch (e) {
       debugPrint("API Error validating stock: $e");
     }
     return {"is_valid": false, "symbol": sym, "error": "Could not verify '$sym' on NSE/BSE."};
+  }
+
+  Future<Map<String, dynamic>> fetchBatchQuotes(List<String> symbols) async {
+    if (symbols.isEmpty) return {};
+    try {
+      final clean = symbols.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet().toList();
+      final q = Uri.encodeComponent(clean.join(','));
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
+          .timeout(const Duration(seconds: 30));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return Map<String, dynamic>.from(data['quotes'] ?? {});
+      }
+    } catch (e) {
+      debugPrint("API Error fetching batch stock quotes: $e");
+    }
+    return {};
   }
 
   Future<bool> deleteUserAccount(String userId) async {
@@ -105,7 +132,7 @@ class ApiService {
         Uri.parse('$baseUrl/api/user/delete-account'),
         headers: _getAuthHeaders(),
         body: jsonEncode({'user_id': userId}),
-      ).timeout(const Duration(seconds: 10));
+      ).timeout(const Duration(seconds: 30));
       return res.statusCode == 200;
     } catch (e) {
       debugPrint("API Error deleting account: $e");
@@ -120,7 +147,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/user/portfolio?user_id=$userId'),
             headers: _getAuthHeaders(),
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
@@ -148,7 +175,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/user/alerts?user_id=$userId'),
             headers: _getAuthHeaders(),
           )
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['alerts'] as List? ?? []);
@@ -199,7 +226,7 @@ class ApiService {
           if (alertSensitivity != null) 'alert_sensitivity': alertSensitivity,
           if (executionMode != null) 'execution_mode': executionMode,
         }),
-      ).timeout(const Duration(seconds: 6));
+      ).timeout(const Duration(seconds: 30));
       return res.statusCode == 200;
     } catch (e) {
       debugPrint("API Error registering device token via HTTP: $e");
