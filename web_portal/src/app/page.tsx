@@ -4,7 +4,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = (process.env.STOKVIGIL_BACKEND_URL || "").trim().replace(/\/+$/, "");
+const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
@@ -1297,9 +1297,7 @@ export default function App() {
       }
     } catch (e) {
       console.warn("Stock validation error:", e);
-      if (/^[A-Z0-9&-]{2,15}$/.test(raw)) {
-        isValid = true;
-      }
+      isValid = false;
     }
 
     if (!isValid) {
@@ -1311,20 +1309,16 @@ export default function App() {
     setTicker("");
 
     if (user?.id && supabase) {
-      try {
-        await supabase.from('user_watchlists').upsert({
-          user_id: user.id,
-          symbol: raw,
-          is_auto_synced: false
-        }, { onConflict: 'user_id,symbol' });
-      } catch (e) {
-        console.warn("Save ticker to Supabase error:", e);
-      }
+      await supabase.from('user_watchlists').upsert({
+        user_id: user.id,
+        symbol: raw,
+        is_auto_synced: false
+      }, { onConflict: 'user_id,symbol' });
       loadWatchlistData(user.id);
     } else {
       setWatchlist(prev => [
         {
-          id: String(Date.now()),
+          id: Date.now().toString(),
           symbol: raw,
           name: stockName,
           auto: false,

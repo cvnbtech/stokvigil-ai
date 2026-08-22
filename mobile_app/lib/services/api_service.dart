@@ -63,91 +63,20 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> searchStocks(String query) async {
-    final cleanQ = query.trim();
-    if (cleanQ.isEmpty) return [];
-
-    final q = Uri.encodeComponent(cleanQ);
-
-    // 1. Try Backend URL first
+    if (query.trim().isEmpty) return [];
     try {
+      final q = Uri.encodeComponent(query.trim());
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/search?q=$q'))
           .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['stocks'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
-        if (list.isNotEmpty) return list;
+        return list;
       }
     } catch (e) {
-      debugPrint("API Error searching stocks via backend: $e");
+      debugPrint("API Error searching stocks: $e");
     }
-
-    // 2. Direct Yahoo Finance live exchange fallback (Mobile client-side)
-    try {
-      final url = 'https://query1.finance.yahoo.com/v1/finance/search?q=$q&quotesCount=10&newsCount=0';
-      final res = await http.get(Uri.parse(url), headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-      }).timeout(const Duration(seconds: 4));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final List<Map<String, dynamic>> results = [];
-        final Set<String> seen = {};
-
-        for (final item in (data['quotes'] as List? ?? [])) {
-          if (item['quoteType'] != 'EQUITY') continue;
-          final sym = (item['symbol'] ?? '').toString();
-          String cleanSym = sym;
-          String exchange = 'NSE';
-
-          if (sym.endsWith('.NS')) {
-            cleanSym = sym.replaceAll('.NS', '');
-            exchange = 'NSE';
-          } else if (sym.endsWith('.BO')) {
-            cleanSym = sym.replaceAll('.BO', '');
-            exchange = 'BSE';
-          } else if (item['exchange'] == 'NSI' || item['exchange'] == 'NSE') {
-            exchange = 'NSE';
-          } else if (item['exchange'] == 'BOM' || item['exchange'] == 'BSE') {
-            exchange = 'BSE';
-          } else {
-            continue;
-          }
-
-          if (seen.contains(cleanSym) || cleanSym.startsWith('0P')) continue;
-          seen.add(cleanSym);
-
-          final name = item['longname'] ?? item['shortname'] ?? cleanSym;
-          final sector = item['sector'] ?? item['industry'] ?? '$exchange Listed';
-
-          results.add({
-            'symbol': cleanSym,
-            'name': name,
-            'exchange': exchange,
-            'full_symbol': sym,
-            'sector': sector,
-          });
-          if (results.length >= 5) break;
-        }
-
-        if (results.isNotEmpty) return results;
-      }
-    } catch (e) {
-      debugPrint("Direct Yahoo search error: $e");
-    }
-
-    if (cleanQ.length >= 2 && RegExp(r'^[A-Za-z0-9&-]{2,15}$').hasMatch(cleanQ)) {
-      final sym = cleanQ.toUpperCase();
-      return [{
-        'symbol': sym,
-        'name': '$sym (NSE)',
-        'exchange': 'NSE',
-        'full_symbol': '$sym.NS',
-        'sector': 'NSE Listed',
-      }];
-    }
-
     return [];
   }
 
@@ -156,8 +85,6 @@ class ApiService {
     if (sym.length < 2) {
       return {"is_valid": false, "symbol": sym, "error": "Symbol too short."};
     }
-
-    // 1. Try Backend URL first
     try {
       final q = Uri.encodeComponent(sym);
       final res = await http
@@ -167,52 +94,8 @@ class ApiService {
         return jsonDecode(res.body);
       }
     } catch (e) {
-      debugPrint("API Error validating stock via backend: $e");
+      debugPrint("API Error validating stock: $e");
     }
-
-    // 2. Direct Yahoo Finance chart check
-    for (final suffix in ['.NS', '.BO']) {
-      try {
-        final fullSym = '$sym$suffix';
-        final url = 'https://query1.finance.yahoo.com/v8/finance/chart/${Uri.encodeComponent(fullSym)}?range=1d&interval=1d';
-        final res = await http.get(Uri.parse(url), headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-          'Accept': 'application/json',
-        }).timeout(const Duration(seconds: 4));
-
-        if (res.statusCode == 200) {
-          final data = jsonDecode(res.body);
-          final result = data['chart']?['result']?[0];
-          final meta = result?['meta'];
-          final price = meta?['regularMarketPrice'];
-          if (price != null && (price as num) > 0) {
-            final exchange = suffix == '.NS' ? 'NSE' : 'BSE';
-            final name = meta?['shortName'] ?? meta?['longName'] ?? '$sym ($exchange)';
-            return {
-              "is_valid": true,
-              "symbol": sym,
-              "name": name,
-              "exchange": exchange,
-              "price": (price as num).toDouble(),
-              "full_symbol": fullSym,
-            };
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Valid format fallback
-    if (RegExp(r'^[A-Z0-9&-]{2,15}$').hasMatch(sym)) {
-      return {
-        "is_valid": true,
-        "symbol": sym,
-        "name": "$sym (NSE)",
-        "exchange": "NSE",
-        "price": 1250.0,
-        "full_symbol": "$sym.NS",
-      };
-    }
-
     return {"is_valid": false, "symbol": sym, "error": "Could not verify '$sym' on NSE/BSE."};
   }
 
