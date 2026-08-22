@@ -601,6 +601,11 @@ export default function App() {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent]   = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordDone, setNewPasswordDone] = useState(false);
+  const [newPasswordLoading, setNewPasswordLoading] = useState(false);
+  const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -640,6 +645,7 @@ export default function App() {
   const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("1180");
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
+  const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
   const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
 
   const getAuthHeaders = useCallback(async () => {
@@ -816,12 +822,27 @@ export default function App() {
         if (data) {
           if (data.alert_sensitivity) setAlertSensitivity(data.alert_sensitivity.toUpperCase() as any);
           if (data.execution_mode) setExecutionMode(data.execution_mode.toUpperCase() as any);
+          if (data.fcm_enabled !== undefined) setFcmEnabled(Boolean(data.fcm_enabled));
         }
       } catch (e) {
         console.warn("Profile load error:", e);
       }
     }
   }, []);
+
+  const toggleFcm = async (val: boolean) => {
+    setFcmEnabled(val);
+    if (val && typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        try {
+          await Notification.requestPermission();
+        } catch (e) {
+          console.warn("Notification permission request error:", e);
+        }
+      }
+    }
+    await updatePreference("fcm_enabled", val);
+  };
 
   const updatePreference = async (key: string, val: any) => {
     if (!user?.id) return;
@@ -1973,7 +1994,7 @@ export default function App() {
                       background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
                       color: C.cyan, borderRadius: 20, padding: "2px 8px", fontSize: 10, fontWeight: 800
                     }}>
-                      {watchlist.length} Tickers
+                      {watchlist.length} Stocks
                     </span>
                   </div>
                   <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
@@ -2035,7 +2056,7 @@ export default function App() {
                   }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 6px 6px" }}>
                       <span style={{ fontSize: 10, fontWeight: 800, color: C.cyan, letterSpacing: "0.5px" }}>
-                        SUGGESTED NSE STOCKS (CLICK TO ADD)
+                        SUGGESTED STOCKS (CLICK TO ADD)
                       </span>
                       <button
                         onClick={() => setTickerSuggestions([])}
@@ -2455,6 +2476,39 @@ export default function App() {
                           {mode === "HIGH" ? "🔥 High Impact" : mode === "ALL" ? "⚡ All Signals" : "📊 FII / Institutional"}
                         </button>
                       ))}
+                    </div>
+
+                    <div style={{ height: 1, background: C.border, margin: "6px 0" }} />
+
+                    {/* Push Notification Alerts Toggle (FCM / Web Push) */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Push Notification Alerts (FCM)</div>
+                        <div style={{ fontSize: 10.5, color: fcmEnabled ? C.cyan : C.gray2, marginTop: 2 }}>
+                          {fcmEnabled ? "Receive 5-min market hours push alerts on browser & device" : "Push notifications paused"}
+                        </div>
+                      </div>
+
+                      <label style={{ position: "relative", display: "inline-block", width: 44, height: 24, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={fcmEnabled}
+                          onChange={e => toggleFcm(e.target.checked)}
+                          style={{ opacity: 0, width: 0, height: 0 }}
+                        />
+                        <span style={{
+                          position: "absolute", inset: 0,
+                          background: fcmEnabled ? `linear-gradient(135deg, ${C.cyan}, ${C.violet})` : "rgba(255,255,255,0.12)",
+                          borderRadius: 24, transition: "0.25s all ease",
+                          border: `1px solid ${fcmEnabled ? C.borderCyan : C.border}`,
+                          boxShadow: fcmEnabled ? "0 0 10px rgba(6,182,212,0.4)" : "none"
+                        }}>
+                          <span style={{
+                            position: "absolute", content: '""', height: 18, width: 18, left: fcmEnabled ? 22 : 2, bottom: 2,
+                            background: "#FFFFFF", borderRadius: "50%", transition: "0.25s all ease",
+                          }} />
+                        </span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -3024,56 +3078,144 @@ export default function App() {
             }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 900, color: C.white, display: "flex", alignItems: "center", gap: 6 }}>
-                  <span>🔑</span> Change / Reset Password
+                  <span>🔑</span> {user?.id ? "Change Password" : "Reset Password"}
                 </div>
-                <button onClick={() => { setShowForgotModal(false); setForgotSent(false); }} style={{ background: "none", border: "none", color: C.gray1, fontSize: 18, cursor: "pointer" }}>✕</button>
+                <button
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setForgotSent(false);
+                    setNewPasswordDone(false);
+                    setNewPassword("");
+                    setNewPasswordError(null);
+                  }}
+                  style={{ background: "none", border: "none", color: C.gray1, fontSize: 18, cursor: "pointer" }}
+                >✕</button>
               </div>
 
-              {forgotSent ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div style={{
-                    background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.4)`,
-                    borderRadius: 14, padding: 16, textAlign: "center"
-                  }}>
-                    <div style={{ fontSize: 24, marginBottom: 4 }}>🎉</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: C.emerald }}>Password Reset Link Sent!</div>
-                    <div style={{ fontSize: 11, color: C.gray1, marginTop: 4, lineHeight: 1.4 }}>
-                      We have sent a secure password reset link to <b>{forgotEmail || user?.email || "your registered email"}</b>.
+              {/* Case 1: Authenticated in Settings -> Direct Password Update (Matches Mobile) */}
+              {user?.id ? (
+                newPasswordDone ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={{
+                      background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.4)`,
+                      borderRadius: 14, padding: 16, textAlign: "center"
+                    }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>✅</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: C.emerald }}>Password Changed Successfully!</div>
+                      <div style={{ fontSize: 11, color: C.gray1, marginTop: 4, lineHeight: 1.4 }}>
+                        Your new password is now active for all future logins.
+                      </div>
                     </div>
+                    <Btn variant="primary" onClick={() => {
+                      setShowForgotModal(false);
+                      setNewPasswordDone(false);
+                      setNewPassword("");
+                    }}>
+                      Done
+                    </Btn>
                   </div>
-                  <Btn variant="primary" onClick={() => { setShowForgotModal(false); setForgotSent(false); }}>
-                    Done
-                  </Btn>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div style={{ fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
-                    Enter your registered email address to receive an instant secure link to change your password.
-                  </div>
-                  <Input label="Registered Email Address" type="email" value={forgotEmail || user?.email || ""} onChange={setForgotEmail} placeholder="investor@gmail.com" />
-                  <Btn
-                    variant="primary"
-                    onClick={async () => {
-                      const target = forgotEmail || user?.email;
-                      if (!target) return;
-                      setForgotLoading(true);
-                      if (supabase) {
-                        try {
-                          await supabase.auth.resetPasswordForEmail(target, {
-                            redirectTo: window.location.origin
-                          });
-                        } catch (e) {
-                          console.warn("Reset password error:", e);
-                        }
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={{ fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
+                      Please enter your new password below (at least 6 characters):
+                    </div>
+                    {newPasswordError && (
+                      <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 10, padding: "8px 12px", color: C.rose, fontSize: 11, fontWeight: 700 }}>
+                        {newPasswordError}
+                      </div>
+                    )}
+                    <Input
+                      label="New Password"
+                      type={showNewPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={setNewPassword}
+                      placeholder="Enter at least 6 characters"
+                      rightAction={
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(v => !v)}
+                          style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                        >
+                          {showNewPassword ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                        </button>
                       }
-                      setForgotLoading(false);
-                      setForgotSent(true);
-                    }}
-                    disabled={forgotLoading || !(forgotEmail || user?.email)}
-                  >
-                    {forgotLoading ? "Sending Link…" : "⚡ Send Password Reset Link →"}
-                  </Btn>
-                </div>
+                    />
+                    <Btn
+                      variant="primary"
+                      onClick={async () => {
+                        const pass = newPassword.trim();
+                        if (pass.length < 6) {
+                          setNewPasswordError("Password must be at least 6 characters.");
+                          return;
+                        }
+                        setNewPasswordLoading(true);
+                        setNewPasswordError(null);
+                        try {
+                          if (supabase) {
+                            const { error } = await supabase.auth.updateUser({ password: pass });
+                            if (error) throw error;
+                          }
+                          setNewPasswordDone(true);
+                        } catch (err: any) {
+                          setNewPasswordError(err.message || "Failed to update password.");
+                        } finally {
+                          setNewPasswordLoading(false);
+                        }
+                      }}
+                      disabled={newPasswordLoading || newPassword.trim().length < 6}
+                    >
+                      {newPasswordLoading ? "Saving Password…" : "Save New Password →"}
+                    </Btn>
+                  </div>
+                )
+              ) : (
+                /* Case 2: Unauthenticated on Auth Screen -> Send Reset Link */
+                forgotSent ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={{
+                      background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.4)`,
+                      borderRadius: 14, padding: 16, textAlign: "center"
+                    }}>
+                      <div style={{ fontSize: 24, marginBottom: 4 }}>🎉</div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: C.emerald }}>Password Reset Link Sent!</div>
+                      <div style={{ fontSize: 11, color: C.gray1, marginTop: 4, lineHeight: 1.4 }}>
+                        We have sent a secure password reset link to <b>{forgotEmail || "your registered email"}</b>.
+                      </div>
+                    </div>
+                    <Btn variant="primary" onClick={() => { setShowForgotModal(false); setForgotSent(false); }}>
+                      Done
+                    </Btn>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={{ fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
+                      Enter your registered email address to receive an instant secure link to reset your password.
+                    </div>
+                    <Input label="Registered Email Address" type="email" value={forgotEmail} onChange={setForgotEmail} placeholder="investor@gmail.com" />
+                    <Btn
+                      variant="primary"
+                      onClick={async () => {
+                        const target = forgotEmail.trim();
+                        if (!target) return;
+                        setForgotLoading(true);
+                        if (supabase) {
+                          try {
+                            await supabase.auth.resetPasswordForEmail(target, {
+                              redirectTo: window.location.origin
+                            });
+                          } catch (e) {
+                            console.warn("Reset password error:", e);
+                          }
+                        }
+                        setForgotLoading(false);
+                        setForgotSent(true);
+                      }}
+                      disabled={forgotLoading || !forgotEmail.trim()}
+                    >
+                      {forgotLoading ? "Sending Link…" : "⚡ Send Password Reset Link →"}
+                    </Btn>
+                  </div>
+                )
               )}
             </div>
           </div>
