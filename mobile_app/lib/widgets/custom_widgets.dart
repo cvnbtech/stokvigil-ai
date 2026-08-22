@@ -82,6 +82,70 @@ class _GoogleLogoPainter extends CustomPainter {
 }
 
 // ─────────────────────────────────────────────
+// BLINKING PULSE LIVE DOT (MATCHES WEB PORTAL)
+// ─────────────────────────────────────────────
+class BlinkingLiveDot extends StatefulWidget {
+  final Color color;
+  final double size;
+
+  const BlinkingLiveDot({
+    super.key,
+    this.color = AppTheme.primaryEmerald,
+    this.size = 6.0,
+  });
+
+  @override
+  State<BlinkingLiveDot> createState() => _BlinkingLiveDotState();
+}
+
+class _BlinkingLiveDotState extends State<BlinkingLiveDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+    _animation = Tween<double>(begin: 0.25, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animation,
+      builder: (context, child) {
+        return Container(
+          width: widget.size,
+          height: widget.size,
+          decoration: BoxDecoration(
+            color: widget.color.withOpacity(_animation.value),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withOpacity(_animation.value * 0.8),
+                blurRadius: 5.0 * _animation.value,
+                spreadRadius: 1.2 * _animation.value,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
 // OFFICIAL STOKVIGIL BRAND HEADER
 // ─────────────────────────────────────────────
 class StokVigilBrandHeader extends StatelessWidget {
@@ -141,22 +205,15 @@ class StokVigilBrandHeader extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    FittedBox(
+                    const FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 5,
-                            height: 5,
-                            decoration: const BoxDecoration(
-                              color: AppTheme.primaryEmerald,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text(
+                          BlinkingLiveDot(size: 6),
+                          SizedBox(width: 5),
+                          Text(
                             "NSE LIVE 09:15–15:30",
                             style: TextStyle(
                               color: AppTheme.primaryEmerald,

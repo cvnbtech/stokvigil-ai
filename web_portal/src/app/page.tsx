@@ -636,6 +636,7 @@ export default function App() {
   const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("1180");
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
+  const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
 
   const getAuthHeaders = useCallback(async () => {
     let token = "";
@@ -1515,18 +1516,45 @@ export default function App() {
                 borderRadius: 22, padding: 20, position: "relative", overflow: "hidden",
                 boxShadow: "0 12px 36px rgba(6,182,212,0.1)",
               }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: C.gray1, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
-                  Demat Portfolio Value
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: C.gray1, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    Demat Portfolio Value
+                  </div>
+                  <button
+                    onClick={() => setIsPortfolioVisible(v => !v)}
+                    style={{
+                      background: "rgba(255,255,255,0.06)",
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 12,
+                      padding: "2px 8px",
+                      color: C.gray1,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4
+                    }}
+                  >
+                    <span>{isPortfolioVisible ? "👁️ Hide" : "👁️‍🗨️ Show"}</span>
+                  </button>
                 </div>
-                <div style={{ fontSize: 34, fontWeight: 900, color: C.white, letterSpacing: "-1px", lineHeight: 1 }}>
-                  ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div style={{ fontSize: 34, fontWeight: 900, color: C.white, letterSpacing: isPortfolioVisible ? "-1px" : "2px", lineHeight: 1 }}>
+                  {isPortfolioVisible
+                    ? `₹${totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : "₹ • • • • • •"}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
                   <span style={{ fontSize: 13, fontWeight: 800, color: totalPnl >= 0 ? C.emerald : C.rose }}>
-                    {totalPnl >= 0 ? "↑ +" : "↓ -"}₹{Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {isPortfolioVisible
+                      ? `${totalPnl >= 0 ? "↑ +" : "↓ -"}₹${Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "••••••"}
                   </span>
-                  <Badge label={`${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}%`} color={totalPnlPct >= 0 ? "emerald" : "rose"} />
+                  <Badge
+                    label={isPortfolioVisible ? `${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}%` : "••• %"}
+                    color={totalPnlPct >= 0 ? "emerald" : "rose"}
+                  />
                   <span style={{ fontSize: 11, color: C.gray2 }}>Real-Time Breeze</span>
                 </div>
 
@@ -1543,9 +1571,24 @@ export default function App() {
                 </svg>
 
                 <div style={{ display: "flex", gap: 16, marginTop: 4, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Invested</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹{totalInvested.toLocaleString('en-IN')}</div></div>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Holdings</div><div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{holdings.length} Stocks</div></div>
-                  <div><div style={{ fontSize: 10, color: C.gray2 }}>Broker API</div><div style={{ fontSize: 13, fontWeight: 800, color: hasCredentials ? C.emerald : C.amber }}>{hasCredentials ? "Connected" : "Key Needed"}</div></div>
+                  <div>
+                    <div style={{ fontSize: 10, color: C.gray2 }}>Invested</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>
+                      {isPortfolioVisible ? `₹${totalInvested.toLocaleString('en-IN')}` : "₹ ••••••"}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: C.gray2 }}>Holdings</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>
+                      {isPortfolioVisible ? `${holdings.length} Stocks` : "•• Stocks"}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, color: C.gray2 }}>Broker API</div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: hasCredentials ? C.emerald : C.amber }}>
+                      {hasCredentials ? "Connected" : "Key Needed"}
+                    </div>
+                  </div>
                 </div>
               </div>
 

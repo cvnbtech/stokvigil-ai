@@ -18,6 +18,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isLoading = true;
   bool _hasCredentials = false;
+  bool _isPortfolioVisible = false;
   double _totalValue = 0.0;
   double _totalPnl = 0.0;
   double _totalPnlPct = 0.0;
@@ -210,42 +211,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header Label
-                    const Text(
-                      "DEMAT PORTFOLIO VALUE",
-                      style: TextStyle(
-                        color: Color(0xFF94A3B8),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // Main Portfolio Value
+                    // Header Label with Eye Visibility Toggle Icon
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          "₹${_formatCurrency(_totalValue)}",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 34,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.6,
+                        const Text(
+                          "DEMAT PORTFOLIO VALUE",
+                          style: TextStyle(
+                            color: Color(0xFF94A3B8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
                           ),
                         ),
-                        Text(
-                          ".${_getDecimals(_totalValue)}",
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
+                        GestureDetector(
+                          onTap: () => setState(() => _isPortfolioVisible = !_isPortfolioVisible),
+                          behavior: HitTestBehavior.opaque,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.12),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _isPortfolioVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                                  color: const Color(0xFF94A3B8),
+                                  size: 15,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _isPortfolioVisible ? "Hide" : "Show",
+                                  style: const TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+
+                    // Main Portfolio Value (Masked / Unmasked)
+                    if (_isPortfolioVisible)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            "₹${_formatCurrency(_totalValue)}",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 34,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.6,
+                            ),
+                          ),
+                          Text(
+                            ".${_getDecimals(_totalValue)}",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      const Text(
+                        "₹ • • • • • •",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2.0,
+                        ),
+                      ),
                     const SizedBox(height: 10),
 
                     // Returns, Percentage Badge, All Time
@@ -255,7 +306,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       runSpacing: 6,
                       children: [
                         Text(
-                          "${isPositive ? '↑ +' : '↓ -'}₹${_formatCurrency(_totalPnl.abs())}",
+                          _isPortfolioVisible
+                              ? "${isPositive ? '↑ +' : '↓ -'}₹${_formatCurrency(_totalPnl.abs())}"
+                              : "••••••",
                           style: TextStyle(
                             color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                             fontWeight: FontWeight.w900,
@@ -273,7 +326,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ),
                           child: Text(
-                            "${isPositive ? '+' : '-'}${_totalPnlPct.abs().toStringAsFixed(2)}%",
+                            _isPortfolioVisible
+                                ? "${isPositive ? '+' : '-'}${_totalPnlPct.abs().toStringAsFixed(2)}%"
+                                : "••• %",
                             style: TextStyle(
                               color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                               fontWeight: FontWeight.w900,
@@ -321,7 +376,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              "₹${_formatCurrency((_totalValue - _totalPnl).clamp(0.0, double.infinity))}",
+                              _isPortfolioVisible
+                                  ? "₹${_formatCurrency((_totalValue - _totalPnl).clamp(0.0, double.infinity))}"
+                                  : "₹ ••••••",
                               style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
                             ),
                           ],
@@ -336,7 +393,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              "${_holdings.length} Stocks",
+                              _isPortfolioVisible
+                                  ? "${_holdings.length} Stocks"
+                                  : "•• Stocks",
                               style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
                             ),
                           ],
@@ -351,7 +410,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              "${isPositive ? '+₹' : '-₹'}${_formatCurrency((_totalPnl * 0.08).abs())}",
+                              _isPortfolioVisible
+                                  ? "${isPositive ? '+₹' : '-₹'}${_formatCurrency((_totalPnl * 0.08).abs())}"
+                                  : "••••••",
                               style: TextStyle(
                                 color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                                 fontSize: 14,
