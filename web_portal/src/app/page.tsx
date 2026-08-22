@@ -3504,7 +3504,7 @@ export default function App() {
                   background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)",
                   borderRadius: 12, padding: 12, fontSize: 11.5, color: C.gray1, display: "flex", flexDirection: "column", gap: 4
                 }}>
-                  <div>• All personal watchlists and synced tickers</div>
+                  <div>• All personal watchlists and synced stocks</div>
                   <div>• Encrypted ICICI Breeze API & Session keys</div>
                   <div>• Telegram bot bindings & device tokens</div>
                   <div style={{ color: C.rose, fontWeight: 800 }}>• Your login credentials and account identity</div>

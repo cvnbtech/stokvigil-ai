@@ -344,7 +344,7 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
         return {
             "is_valid": False,
             "symbol": sym,
-            "error": f"'{sym}' is too short. Please enter a valid stock ticker."
+            "error": f"'{sym}' is too short. Please enter a valid stock symbol."
         }
 
     # 1. Fast chart API validation

@@ -104,14 +104,23 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 ## 3. Database Architecture (Supabase PostgreSQL + RLS)
 
 ### Tables Definition
-1. **`profiles`**: Primary user identity, notification endpoints (FCM token, Telegram chat ID), alert sensitivity (`HIGH`, `ALL`, `FII`), and execution mode.
+1. **`profiles`**: Primary user identity, notification endpoints (FCM token, Telegram chat ID), alert sensitivity (`HIGH`, `ALL`, `FII`), execution mode (`INSTANT`, `CONFIRM`), and `demat_auto_sync` (BOOLEAN DEFAULT FALSE).
 2. **`user_credentials`**: Encrypted ICICI Breeze API credentials (AES-256 Fernet), restricted by RLS to `auth.uid() = user_id`.
-3. **`user_watchlists`**: Tracks Demat holdings (auto-synced) and manually added NSE symbols.
+3. **`user_watchlists`**: Tracks Demat holdings (`is_auto_synced: true`) and manually added stocks (`is_auto_synced: false`).
 4. **`stok_alerts`**: Persistent ledger of evaluated catalysts, tactical trade levels (Entry, Target 1, Target 2, Stop-Loss, R:R), metrics snapshots, and dispatch logs.
 
 ---
 
-## 3.1 Dynamic Stock Search & Exchange Validation Engine (Zero Hardcoding)
+## 3.1 Demat Auto-Sync Watchlist System
+- **Default State**: `DISABLED` (`false`). Custom stocks are isolated from broker holdings by default.
+- **Persistence**: Toggling the switch writes to `profiles.demat_auto_sync` in Supabase PostgreSQL and local storage.
+- **Dynamic Filtering**:
+  - `demat_auto_sync = true`: Real-time portfolio sync fetches active ICICI holdings with `📊 Demat Auto-Sync` badges.
+  - `demat_auto_sync = false`: Hides auto-synced holdings, showing only `📌 Custom` user-added stocks.
+
+---
+
+## 3.2 Dynamic Stock Search & Exchange Validation Engine (Zero Hardcoding)
 
 1. **Real-Time Autocomplete (`GET /api/stocks/search?q={query}`)**:
    - Queries live market exchanges for Indian equities (`.NS` for NSE, `.BO` for BSE) via multi-host gateway (`query1.finance.yahoo.com` & `query2.finance.yahoo.com`).
@@ -119,13 +128,30 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 2. **Dual-Stage Real-Time Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**:
    - **Stage 1 (Fast Market Tick)**: Queries live exchange metadata.
    - **Stage 2 (Historical Tick Book Verification)**: Downloads the live 1-day candle. If empty (as with dummy symbols `NE`, `ASDF`, `XYZ123`), strictly returns `is_valid: false`, protecting the database from fake entries.
-3. **In-App Session Token Auto-Capture (Flutter Mobile)**:
+3. **In-App Session Token Auto-Capture (Flutter Mobile & Web Portal)**:
    - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
+   - Material Design vector outline icons (`VisibilityOutlinedIcon` / `VisibilityOffOutlinedIcon`) provide clean visibility toggles on both key fields.
 
 ---
 
-## 4. Telegram Integration Flow
+## 4. Multi-Channel Notification Architecture
 
+### 4.1 Firebase Cloud Messaging (FCM Push) Pipeline
+1. **Lazy Admin SDK Initialization (`init_firebase` in `notifications.py`)**:
+   - Parses `FIREBASE_CREDENTIALS_JSON` environment variable safely on first dispatch.
+   - Gracefully runs in local dry-run simulation mode if credentials are unconfigured.
+2. **Automated Token Sync & Lifecycle (`fcm_service.dart` & `POST /api/auth/register-device`)**:
+   - The Flutter mobile client requests system notification permissions upon onboarding.
+   - Captures device token on startup and listens for token rotation via `FirebaseMessaging.instance.onTokenRefresh`.
+   - Synchronizes token with Supabase `profiles.fcm_device_token` and the `user_devices` table.
+3. **High-Priority Lock-Screen Dispatch Channel**:
+   - **Android Channel ID**: `stokvigil_high_priority_alerts`
+   - **Configuration**: `priority='high'`, `sound='default'`, custom icon `ic_notification_stokvigil`.
+   - **Data Payload**: Injects structured metadata (`symbol`, `action_bias`, `confluence_score`, `catalyst_type`) enabling instant deep-linking into stock trade calculators on tap.
+4. **Web Push Notification Support (PWA)**:
+   - Next.js 14 Service Worker handles background push events when the browser tab is closed.
+
+### 4.2 Multi-Tenant Telegram Bot Flow (`@StokVigilAi_bot`)
 1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=USER_ID`).
 2. **Account Linking**: The bot receives the `/start <USER_ID>` deep link payload via Webhook (`/api/telegram/webhook`).
 3. **Registration**: The FastAPI backend maps `chat_id` to the user's `profiles` record in Supabase and sets `telegram_enabled = true`.
@@ -149,7 +175,7 @@ G:\stokvigil-ai\
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   ├── auth.py                  <-- [NEW] Supabase JWT & IDOR Shield
+│   │   ├── auth.py                  <-- Supabase JWT & IDOR Shield
 │   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
 │   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR
 │   │   ├── flow_tracker.py          <-- Delivery %, F&O OI, Block deals
@@ -160,6 +186,7 @@ G:\stokvigil-ai\
 │   │   └── main.py                  <-- FastAPI Entrypoint & Endpoints
 │   ├── tests/
 │   │   └── test_institutional_engine.py
+│   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   ├── cloudrun.sh
@@ -171,15 +198,15 @@ G:\stokvigil-ai\
 │   │   └── app_icon.svg
 │   ├── android/
 │   │   └── app/
-│   │       ├── build.gradle         <-- [UPDATED] ProGuard / R8 Enabled
-│   │       └── proguard-rules.pro   <-- [NEW] Android Obfuscation Rules
+│   │       ├── build.gradle         <-- ProGuard / R8 Enabled
+│   │       └── proguard-rules.pro   <-- Android Obfuscation Rules
 │   └── lib/
 │       ├── main.dart
 │       ├── config/theme.dart
 │       ├── models/models.dart
 │       ├── services/
 │       │   ├── supabase_service.dart
-│       │   ├── api_service.dart     <-- [UPDATED] Injects JWT Bearer Tokens
+│       │   ├── api_service.dart     <-- Injects JWT Bearer Tokens
 │       │   └── fcm_service.dart
 │       ├── widgets/custom_widgets.dart
 │       └── screens/
@@ -189,7 +216,8 @@ G:\stokvigil-ai\
 │           ├── alerts_screen.dart
 │           ├── notification_settings_screen.dart
 │           ├── watchlist_screen.dart
-│           └── terms_conditions_modal.dart
+│           ├── terms_conditions_modal.dart
+│           └── onboarding_modal.dart
 ├── web_portal/
 │   ├── package.json
 │   ├── next.config.js
@@ -198,7 +226,7 @@ G:\stokvigil-ai\
 │   └── src/
 │       └── app/
 │           ├── layout.tsx
-│           ├── page.tsx             <-- [UPDATED] Injects JWT Bearer Tokens
+│           ├── page.tsx             <-- Injects JWT Bearer Tokens
 │           ├── globals.css
 │           ├── callback/page.tsx
 │           └── api/
@@ -206,13 +234,27 @@ G:\stokvigil-ai\
 │               └── icici/callback/route.ts
 └── .github/
     └── workflows/
-        ├── 5min_cron.yml            <-- [UPDATED] Pass X-Cron-Secret
+        ├── 5min_cron.yml            <-- Pass X-Cron-Secret
         └── build_apk.yml
 ```
 
 ---
 
 ## 6. REST API & Endpoint Security Specifications
+
+| Variable Key | Scope | Security Level | Purpose |
+| :--- | :--- | :---: | :--- |
+| `SUPABASE_URL` | Vercel, Flutter, Cloud Run, CI/CD | Public / Low | Supabase PostgreSQL API endpoint |
+| `SUPABASE_ANON_KEY` | Vercel, Flutter, Cloud Run, CI/CD | Public / Medium | Public client key for auth and RLS queries |
+| `STOKVIGIL_BACKEND_URL` | Vercel, Flutter, CI/CD | Public / Low | Base URL for FastAPI backend API |
+| `SUPABASE_SERVICE_ROLE_KEY` | Backend Server & CI/CD Only | 🚨 **High Secret** | Admin key for server operations (Never in client bundles) |
+| `ENCRYPTION_KEY` | Backend Server Only | 🚨 **High Secret** | 32-byte Fernet AES-256 base64 encryption key |
+| `GEMINI_API_KEY` | Backend Server Only | 🚨 **High Secret** | Google AI Studio key for Gemini 3.6 Flash reasoning |
+| `FIREBASE_CREDENTIALS_JSON` | Backend Server Only | 🚨 **High Secret** | Firebase Admin SDK service account credentials |
+| `TELEGRAM_BOT_TOKEN` | Backend Server Only | 🚨 **High Secret** | Telegram Bot API authentication token |
+| `CRON_SECRET_KEY` | Backend & GitHub Actions | 🚨 **High Secret** | Secret header (`X-Cron-Secret`) for 5-min market scanner |
+| `ALLOWED_ORIGINS` | Backend Server Only | Public / Low | Comma-separated CORS origin whitelist |
+| `ENVIRONMENT` | Backend Server Only | Public / Low | Deployment runtime environment (`production`/`development`) |
 
 | Endpoint | Method | Auth Scheme | Purpose |
 | :--- | :---: | :---: | :--- |
