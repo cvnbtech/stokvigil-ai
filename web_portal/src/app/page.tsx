@@ -698,13 +698,57 @@ export default function App() {
     let portfolioLoaded = false;
     let keysLoaded = false;
 
+    // Tier 1: Synchronous Local Cache prefill
+    if (typeof window !== "undefined") {
+      const localApp = localStorage.getItem("stokvigil_app_key");
+      const localSecret = localStorage.getItem("stokvigil_secret_key");
+      if (localApp) { setAppKey(localApp); keysLoaded = true; }
+      if (localSecret) { setSecretKey(localSecret); keysLoaded = true; }
+    }
+
+    // Tier 2: Direct Supabase Database Vault Fetch (Fastest & most direct)
+    if (supabase && uid) {
+      try {
+        const { data: cred } = await supabase
+          .from('user_credentials')
+          .select('token_date, encrypted_app_key, encrypted_secret_key')
+          .eq('user_id', uid)
+          .maybeSingle();
+
+        if (cred) {
+          const isTokenValidToday = Boolean(cred.token_date === todayStr);
+          if (isTokenValidToday) setHasCredentials(true);
+
+          if (cred.encrypted_app_key) {
+            const decodedAppKey = decodeSafeBase64(cred.encrypted_app_key);
+            if (decodedAppKey) {
+              setAppKey(decodedAppKey);
+              keysLoaded = true;
+              if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", decodedAppKey);
+            }
+          }
+          if (cred.encrypted_secret_key) {
+            const decodedSecretKey = decodeSafeBase64(cred.encrypted_secret_key);
+            if (decodedSecretKey) {
+              setSecretKey(decodedSecretKey);
+              keysLoaded = true;
+              if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", decodedSecretKey);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase credentials fetch error:", err);
+      }
+    }
+
+    // Tier 3: Backend API Service Call
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
       if (res.ok) {
         const data = await res.json();
         const isTokenValidToday = Boolean(data.has_credentials && data.token_date === todayStr);
-        setHasCredentials(isTokenValidToday);
+        if (isTokenValidToday) setHasCredentials(true);
         setTotalValue(data.total_portfolio_value || 0);
         setTotalInvested(data.total_investment_value || 0);
         setTotalPnl(data.total_pnl || 0);
@@ -728,39 +772,24 @@ export default function App() {
         }
       }
 
-      // Fetch decrypted App Key and Secret Key from Backend API
-      const credRes = await fetch(`${BACKEND_URL}/api/user/credentials?user_id=${uid}`, { headers });
-      if (credRes.ok) {
-        const credData = await credRes.json();
-        if (credData.has_credentials) {
-          if (credData.app_key) setAppKey(credData.app_key);
-          if (credData.secret_key) setSecretKey(credData.secret_key);
-          keysLoaded = true;
+      if (!keysLoaded) {
+        const credRes = await fetch(`${BACKEND_URL}/api/user/credentials?user_id=${uid}`, { headers });
+        if (credRes.ok) {
+          const credData = await credRes.json();
+          if (credData.has_credentials) {
+            if (credData.app_key) {
+              setAppKey(credData.app_key);
+              if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", credData.app_key);
+            }
+            if (credData.secret_key) {
+              setSecretKey(credData.secret_key);
+              if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", credData.secret_key);
+            }
+          }
         }
       }
     } catch (e) {
       console.warn("Portfolio fetch fallback:", e);
-    }
-
-    // Direct Supabase Fallback for prefilling keys & token status
-    if (supabase) {
-      try {
-        const { data: cred } = await supabase.from('user_credentials').select('token_date, encrypted_app_key, encrypted_secret_key').eq('user_id', uid).maybeSingle();
-        const isTokenValidToday = Boolean(cred && cred.token_date === todayStr);
-        if (isTokenValidToday) setHasCredentials(true);
-        if (cred) {
-          if (cred.encrypted_app_key && !keysLoaded) {
-            const decodedAppKey = decodeSafeBase64(cred.encrypted_app_key);
-            if (decodedAppKey) setAppKey(decodedAppKey);
-          }
-          if (cred.encrypted_secret_key && !keysLoaded) {
-            const decodedSecretKey = decodeSafeBase64(cred.encrypted_secret_key);
-            if (decodedSecretKey) setSecretKey(decodedSecretKey);
-          }
-        }
-      } catch (err) {
-        console.warn("Supabase credentials fetch error:", err);
-      }
     }
 
     if (!portfolioLoaded) {
@@ -903,16 +932,45 @@ export default function App() {
     }
   };
 
+  const openKeyModal = useCallback(async () => {
+    if (typeof window !== "undefined") {
+      const savedApp = localStorage.getItem("stokvigil_app_key");
+      const savedSecret = localStorage.getItem("stokvigil_secret_key");
+      if (savedApp) setAppKey(savedApp);
+      if (savedSecret) setSecretKey(savedSecret);
+    }
+    setShowKeyModal(true);
+    let uid = user?.id;
+    if (!uid && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        uid = session?.user?.id;
+      } catch (_) {}
+    }
+    if (uid) {
+      loadPortfolioData(uid);
+    }
+  }, [user?.id, loadPortfolioData]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedApp = localStorage.getItem("stokvigil_app_key");
+      const savedSecret = localStorage.getItem("stokvigil_secret_key");
+      if (savedApp) setAppKey(savedApp);
+      if (savedSecret) setSecretKey(savedSecret);
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const sessionParam = params.get("apisession");
       if (sessionParam) {
         setSessionTok(sessionParam);
-        setShowKeyModal(true);
+        openKeyModal();
       }
     }
-  }, []);
+  }, [openKeyModal]);
 
   useEffect(() => {
     if (showKeyModal && user?.id) {
@@ -1003,9 +1061,11 @@ export default function App() {
     }
 
     setTimeout(() => {
-      setUser({ name: name || (email.split("@")[0]) || "Investor", email: email || "investor@gmail.com" });
+      const fallbackId = "user_" + (email ? email.replace(/[^a-zA-Z0-9]/g, '_') : "investor");
+      setUser({ id: fallbackId, name: name || (email.split("@")[0]) || "Investor", email: email || "investor@gmail.com" });
       setScreen("app");
       setLoading(false);
+      loadPortfolioData(fallbackId);
     }, 900);
   };
 
@@ -1024,9 +1084,11 @@ export default function App() {
     }
     setLoading(true);
     setTimeout(() => {
-      setUser({ name: "Google Investor", email: "google.user@gmail.com" });
+      const fallbackId = "user_google_investor";
+      setUser({ id: fallbackId, name: "Google Investor", email: "google.user@gmail.com" });
       setScreen("app");
       setLoading(false);
+      loadPortfolioData(fallbackId);
     }, 900);
   };
 
@@ -1036,15 +1098,54 @@ export default function App() {
     const cleanSecretKey = secretKey.trim();
     const cleanSessionTok = sessionTok.trim();
 
-    if (user?.id) {
+    // 1. Immediate local persistence
+    if (typeof window !== "undefined") {
+      localStorage.setItem("stokvigil_app_key", cleanAppKey);
+      localStorage.setItem("stokvigil_secret_key", cleanSecretKey);
+    }
+
+    // 2. Resolve Active User ID
+    let currentUserId = user?.id;
+    if (!currentUserId && supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        currentUserId = session?.user?.id;
+      } catch (_) {}
+    }
+
+    if (currentUserId) {
       let saved = false;
+
+      // Tier 1: Supabase Direct Upsert
+      if (supabase) {
+        try {
+          const base64AppKey = encodeSafeBase64(cleanAppKey);
+          const base64SecretKey = encodeSafeBase64(cleanSecretKey);
+          const base64SessionToken = encodeSafeBase64(cleanSessionTok);
+
+          await supabase.from("user_credentials").upsert({
+            user_id: currentUserId,
+            encrypted_app_key: base64AppKey,
+            encrypted_secret_key: base64SecretKey,
+            encrypted_session_token: base64SessionToken,
+            token_date: new Date().toISOString().split("T")[0],
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id" });
+          saved = true;
+          setHasCredentials(true);
+        } catch (err) {
+          console.warn("Supabase direct save error:", err);
+        }
+      }
+
+      // Tier 2: Backend API Sync
       try {
         const headers = await getAuthHeaders();
         const res = await fetch(`${BACKEND_URL}/api/user/credentials`, {
           method: "POST",
           headers,
           body: JSON.stringify({
-            user_id: user.id,
+            user_id: currentUserId,
             app_key: cleanAppKey,
             secret_key: cleanSecretKey,
             session_token: cleanSessionTok
@@ -1053,34 +1154,14 @@ export default function App() {
         if (res.ok) {
           saved = true;
           setHasCredentials(true);
-          loadPortfolioData(user.id);
         }
       } catch (e) {
-        console.warn("Backend save key error, trying Supabase direct:", e);
+        console.warn("Backend save key error:", e);
       }
 
-      // Fallback: Direct Supabase Vault Save with onConflict
-      if (!saved && supabase) {
-        try {
-          const base64AppKey = encodeSafeBase64(cleanAppKey);
-          const base64SecretKey = encodeSafeBase64(cleanSecretKey);
-          const base64SessionToken = encodeSafeBase64(cleanSessionTok);
-
-          await supabase.from("user_credentials").upsert({
-            user_id: user.id,
-            encrypted_app_key: base64AppKey,
-            encrypted_secret_key: base64SecretKey,
-            encrypted_session_token: base64SessionToken,
-            token_date: new Date().toISOString().split("T")[0],
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "user_id" });
-          setHasCredentials(true);
-          loadPortfolioData(user.id);
-        } catch (err) {
-          console.warn("Supabase direct save error:", err);
-        }
-      }
+      loadPortfolioData(currentUserId);
     }
+
     setKeySaved(true);
     setKeySaving(false);
     setTimeout(() => { setShowKeyModal(false); setKeySaved(false); }, 1200);
@@ -1624,7 +1705,7 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }} style={{
+            <button onClick={openKeyModal} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 5,
@@ -1780,7 +1861,7 @@ export default function App() {
                     </div>
                     {!hasCredentials && (
                       <button
-                        onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }}
+                        onClick={openKeyModal}
                         style={{
                           background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
                           border: "none", borderRadius: 12, padding: "9px 18px",
@@ -2399,7 +2480,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }} style={{
+                    <button onClick={openKeyModal} style={{
                       background: `rgba(6,182,212,0.12)`, border: `1px solid ${C.borderCyan}`,
                       borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
                     }}>
