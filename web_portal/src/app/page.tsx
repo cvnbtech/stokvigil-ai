@@ -2,9 +2,42 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = process.env.BACKEND_URL || process.env.STOKVIGIL_BACKEND_URL || "https://stokvigil-backend-xxxx.a.run.app";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_STOKVIGIL_BACKEND_URL || process.env.BACKEND_URL || process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
+
+function decodeSafeBase64(str: string): string {
+  if (!str) return "";
+  if (str.startsWith("gAAAAA")) return "";
+  try {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return str;
+  }
+}
+
+function encodeSafeBase64(str: string): string {
+  if (!str) return "";
+  try {
+    const bytes = new TextEncoder().encode(str);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch {
+    return str;
+  }
+}
 
 const isSupabaseConfigured =
   typeof window !== "undefined" &&
@@ -717,10 +750,12 @@ export default function App() {
         if (isTokenValidToday) setHasCredentials(true);
         if (cred) {
           if (cred.encrypted_app_key && !keysLoaded) {
-            try { setAppKey(atob(cred.encrypted_app_key)); } catch { setAppKey(cred.encrypted_app_key); }
+            const decodedAppKey = decodeSafeBase64(cred.encrypted_app_key);
+            if (decodedAppKey) setAppKey(decodedAppKey);
           }
           if (cred.encrypted_secret_key && !keysLoaded) {
-            try { setSecretKey(atob(cred.encrypted_secret_key)); } catch { setSecretKey(cred.encrypted_secret_key); }
+            const decodedSecretKey = decodeSafeBase64(cred.encrypted_secret_key);
+            if (decodedSecretKey) setSecretKey(decodedSecretKey);
           }
         }
       } catch (err) {
@@ -880,6 +915,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (showKeyModal && user?.id) {
+      loadPortfolioData(user.id);
+    }
+  }, [showKeyModal, user?.id, loadPortfolioData]);
+
+  useEffect(() => {
     if (!supabase) return;
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1021,9 +1062,9 @@ export default function App() {
       // Fallback: Direct Supabase Vault Save with onConflict
       if (!saved && supabase) {
         try {
-          const base64AppKey = typeof window !== "undefined" ? btoa(cleanAppKey) : cleanAppKey;
-          const base64SecretKey = typeof window !== "undefined" ? btoa(cleanSecretKey) : cleanSecretKey;
-          const base64SessionToken = typeof window !== "undefined" ? btoa(cleanSessionTok) : cleanSessionTok;
+          const base64AppKey = encodeSafeBase64(cleanAppKey);
+          const base64SecretKey = encodeSafeBase64(cleanSecretKey);
+          const base64SessionToken = encodeSafeBase64(cleanSessionTok);
 
           await supabase.from("user_credentials").upsert({
             user_id: user.id,
