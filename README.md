@@ -8,13 +8,15 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 ## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
 - **No Unsolicited Automated Trades**: The application never executes trades without user confirmation.
 - **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts).
+- **Bank-Grade Security**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, whitelisted CORS origins, AES-256 Fernet vault key encryption, and Android ProGuard/R8 code obfuscation.
 
 ---
 
 ## 🏗️ Tech Stack (100% Free Tier Architecture)
-- **Mobile Frontend**: Flutter (Dart) for Android (`com.app.stokvigil`) & iOS.
-- **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled).
+- **Mobile Frontend**: Flutter (Dart) for Android (`com.app.stokvigil`) & iOS (with R8 ProGuard code obfuscation).
+- **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled, whitelisted CORS).
 - **Backend API**: Python 3.11 + FastAPI containerized for Google Cloud Run (2M free requests/mo) / Render.
+- **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC).
 - **AI Agent Engine**: `google-generativeai` powered by `gemini-3.6-flash` (Primary) with automated fallback to `gemini-2.5-flash`, `gemini-1.5-flash`, and an offline deterministic rule engine.
 - **Quantitative Engines**:
   - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), and RSI Divergence detection.
@@ -101,7 +103,7 @@ Users can permanently delete their account directly from the **Settings** page:
 2. Open the SQL Editor and execute the migration scripts in order:
    - `supabase/migrations/20260809_init_stokvigil.sql`
    - `supabase/migrations/20260822_enhance_stokalerts.sql`
-3. Copy your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
+3. Copy your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 2. Backend Deployment (FastAPI on Cloud Run / Local)
 1. Navigate to `backend/`:
@@ -114,10 +116,13 @@ Users can permanently delete their account directly from the **Settings** page:
    ```env
    ENVIRONMENT=production
    SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_ANON_KEY=your-supabase-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    ENCRYPTION_KEY=d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=
    GEMINI_API_KEY=your-gemini-api-key
    TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
+   ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
 3. Run test suite:
    ```bash
@@ -156,4 +161,4 @@ Users can permanently delete their account directly from the **Settings** page:
 ---
 
 ## ⏰ 5-Minute Indian Market Hours Cron
-The GitHub Action workflow (`.github/workflows/5min_cron.yml`) executes `POST /api/cron/multi-user-scan` every 5 minutes Monday–Friday from 09:15 AM to 03:30 PM IST (`03:45 UTC` to `10:00 UTC`).
+The GitHub Action workflow (`.github/workflows/5min_cron.yml`) executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"` every 5 minutes Monday–Friday from 09:15 AM to 03:30 PM IST (`03:45 UTC` to `10:00 UTC`).

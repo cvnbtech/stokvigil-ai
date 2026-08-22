@@ -13,36 +13,38 @@ StokVigil AI is an automated, unsleeping market surveillance watchtower operatin
 
 ---
 
-## 2. End-to-End System Data Flow
+## 2. End-to-End System Data Flow & Security Architecture
 
 ```mermaid
 flowchart TD
-    subgraph Clients["User Interaction Layer"]
-        A1["Flutter Mobile App (com.app.stokvigil)"]
-        A2["Next.js 14 Web PWA"]
+    subgraph Clients["User Interaction & Client Layer"]
+        A1["Flutter Mobile App (Bearer JWT + ProGuard R8)"]
+        A2["Next.js 14 Web PWA (Bearer JWT + CORS Filter)"]
         A3["Telegram Messenger (@StokVigilAi_bot)"]
+        A4["GitHub Actions 5-Min Cron (X-Cron-Secret)"]
     end
 
-    subgraph AuthVault["Authentication & Security Layer"]
-        B1["Supabase Auth (Email / Google OAuth)"]
-        B2["PostgreSQL RLS (Row Level Security)"]
-        B3["FastAPI Crypto Vault (AES-256 Fernet)"]
+    subgraph SecurityGate["FastAPI Security Gateway & Auth"]
+        B1["CORS Origin Filter (Whitelisted Domains in .env)"]
+        B2["auth.py (Supabase JWT Bearer Token Verification)"]
+        B3["verify_user_access (Zero IDOR / BOLA Shield)"]
+        B4["Cron Secret Header Validator (DoS & Quota Shield)"]
+        B5["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
     end
 
-    subgraph DataIntegrations["External Market Integrations"]
+    subgraph ExternalFeeds["External Market & Broker Integrations"]
         C1["ICICI Breeze Connect API (Holdings/Positions)"]
         C2["yfinance API (5m/15m/1D OHLCV, PE, Debt/Eq)"]
         C3["Google News RSS & Exchange Filings (Block Deals, Results)"]
         C4["Macro & Market Indices (^NSEI, ^INDIAVIX, Sectors)"]
     end
 
-    subgraph Engine["AI & Quantitative Surveillance Engine (FastAPI)"]
-        D1["5-Min Market Scheduler (GitHub Actions Cron)"]
-        D2["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Divergences)"]
-        D3["Flow Tracker (Delivery %, F&O Open Interest, Block Deals)"]
-        D4["Macro & Forensic Filter (India VIX, Sector Alignment, Debt Health)"]
-        D5["Gemini AI Evaluation Agent (3.6 Flash -> 2.5 Flash -> 1.5 Flash -> Rule Engine)"]
-        D6["Anti-Fatigue State Limiter (45-Min Cooldown & Tier-1 Bypass)"]
+    subgraph Engine["AI & Quantitative Surveillance Engine"]
+        D1["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Divergences)"]
+        D2["Flow Tracker (Delivery %, F&O Open Interest, Block Deals)"]
+        D3["Macro & Forensic Filter (India VIX, Sector Alignment, Debt Health)"]
+        D4["Gemini AI Evaluation Agent (3.6 Flash -> 2.5 Flash -> 1.5 Flash -> Rule Engine)"]
+        D5["Anti-Fatigue State Limiter (45-Min Cooldown & Tier-1 Bypass)"]
     end
 
     subgraph Dispatch["Multi-Channel Actionable Dispatcher"]
@@ -50,18 +52,21 @@ flowchart TD
         E2["Telegram Bot API (Rich HTML Cards + Inline TradingView/ICICI Buttons)"]
     end
 
-    A1 -->|OAuth & Session Token| B1
-    A2 -->|Login & Setup| B1
-    B1 -->|Retrieve Encrypted Keys| B3
-    D1 -->|Triggers /api/cron/multi-user-scan| D5
-    B3 -->|Decrypt App Key & Token| C1
-    D5 -->|Fetch Demat Holdings| C1
-    D5 -->|Compute Multi-Timeframe Signals| D2
-    D5 -->|Evaluate Institutional Flow| D3
-    D5 -->|Check Macro Regime & Forensics| D4
-    D2 & D3 & D4 --> D5
-    D5 -->|Calculate Confluence Score & Tactical Levels| D6
-    D6 -->|Dispatch Permitted| E1 & E2
+    A1 -->|HTTP + Bearer JWT| B1
+    A2 -->|HTTP + Bearer JWT| B1
+    A4 -->|HTTP + X-Cron-Secret| B1
+    B1 --> B2 & B4
+    B2 --> B3
+    B3 --> B5
+    B4 --> D4
+    B5 -->|Decrypt App Key & Token| C1
+    D4 -->|Fetch Demat Holdings| C1
+    D4 -->|Compute Multi-Timeframe Signals| D1
+    D4 -->|Evaluate Institutional Flow| D2
+    D4 -->|Check Macro Regime & Forensics| D3
+    D1 & D2 & D3 --> D4
+    D4 -->|Calculate Confluence Score & Tactical Levels| D5
+    D5 -->|Dispatch Permitted| E1 & E2
     E1 -->|Push Notification| A1
     E2 -->|Styled Alert Card| A3
 ```
@@ -131,14 +136,15 @@ G:\stokvigil-ai\
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   ├── vault.py
-│   │   ├── technical_engine.py
-│   │   ├── flow_tracker.py
-│   │   ├── macro_filter.py
-│   │   ├── alert_limiter.py
-│   │   ├── notifications.py
-│   │   ├── agent_runner.py
-│   │   └── main.py
+│   │   ├── auth.py                  <-- [NEW] Supabase JWT & IDOR Shield
+│   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
+│   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR
+│   │   ├── flow_tracker.py          <-- Delivery %, F&O OI, Block deals
+│   │   ├── macro_filter.py          <-- India VIX, Sector sync, Forensics
+│   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
+│   │   ├── notifications.py         <-- Telegram HTML + FCM Push
+│   │   ├── agent_runner.py          <-- Gemini 3.6/2.5/1.5 AI Confluence
+│   │   └── main.py                  <-- FastAPI Entrypoint & Endpoints
 │   ├── tests/
 │   │   └── test_institutional_engine.py
 │   ├── requirements.txt
@@ -151,13 +157,16 @@ G:\stokvigil-ai\
 │   │   ├── app_icon.png
 │   │   └── app_icon.svg
 │   ├── android/
+│   │   └── app/
+│   │       ├── build.gradle         <-- [UPDATED] ProGuard / R8 Enabled
+│   │       └── proguard-rules.pro   <-- [NEW] Android Obfuscation Rules
 │   └── lib/
 │       ├── main.dart
 │       ├── config/theme.dart
 │       ├── models/models.dart
 │       ├── services/
 │       │   ├── supabase_service.dart
-│       │   ├── api_service.dart
+│       │   ├── api_service.dart     <-- [UPDATED] Injects JWT Bearer Tokens
 │       │   └── fcm_service.dart
 │       ├── widgets/custom_widgets.dart
 │       └── screens/
@@ -176,7 +185,7 @@ G:\stokvigil-ai\
 │   └── src/
 │       └── app/
 │           ├── layout.tsx
-│           ├── page.tsx
+│           ├── page.tsx             <-- [UPDATED] Injects JWT Bearer Tokens
 │           ├── globals.css
 │           ├── callback/page.tsx
 │           └── api/
@@ -184,21 +193,22 @@ G:\stokvigil-ai\
 │               └── icici/callback/route.ts
 └── .github/
     └── workflows/
-        ├── 5min_cron.yml
+        ├── 5min_cron.yml            <-- [UPDATED] Pass X-Cron-Secret
         └── build_apk.yml
 ```
 
 ---
 
-## 6. REST API & Endpoint Specifications
+## 6. REST API & Endpoint Security Specifications
 
-| Endpoint | Method | Purpose |
-| :--- | :---: | :--- |
-| `/api/user/credentials` | `POST` | Stores AES-256 encrypted ICICI App Key, Secret Key, and Session Token |
-| `/api/user/portfolio` | `GET` | Returns live portfolio holdings, valuation, and P&L breakdown |
-| `/api/user/alerts` | `GET` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
-| `/api/user/delete-account` | `POST` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
-| `/api/auth/register-device` | `POST` | Registers FCM notification token and Telegram chat ID |
-| `/api/cron/multi-user-scan` | `POST` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |
-| `/api/telegram/webhook` | `POST` | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
-| `/api/v1/orders/place` | `POST` | Executes BUY / SELL trade orders via ICICI Direct Breeze API |
+| Endpoint | Method | Auth Scheme | Purpose |
+| :--- | :---: | :---: | :--- |
+| `/api/user/credentials` | `POST` | `Bearer <JWT>` | Stores AES-256 encrypted ICICI App Key, Secret Key, and Session Token |
+| `/api/user/profile` | `GET` | `Bearer <JWT>` | Retrieves user profile and notification preferences |
+| `/api/auth/register-device` | `POST` | `Bearer <JWT>` | Registers FCM notification token and Telegram chat ID |
+| `/api/user/portfolio` | `GET` | `Bearer <JWT>` | Returns live portfolio holdings, valuation, and P&L breakdown |
+| `/api/user/alerts` | `GET` | `Bearer <JWT>` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
+| `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
+| `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |
+| `/api/telegram/webhook` | `POST` | Public Webhook | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
+| `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API |
