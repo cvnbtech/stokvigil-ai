@@ -4,6 +4,7 @@ class UserProfile {
   final String? fcmDeviceToken;
   final String? telegramChatId;
   final bool telegramEnabled;
+  final bool dematAutoSync;
 
   UserProfile({
     required this.id,
@@ -11,6 +12,7 @@ class UserProfile {
     this.fcmDeviceToken,
     this.telegramChatId,
     required this.telegramEnabled,
+    this.dematAutoSync = false,
   });
 
   factory UserProfile.fromJson(Map<String, dynamic> json) {
@@ -20,6 +22,7 @@ class UserProfile {
       fcmDeviceToken: json['fcm_device_token'],
       telegramChatId: json['telegram_chat_id'],
       telegramEnabled: json['telegram_enabled'] ?? false,
+      dematAutoSync: json['demat_auto_sync'] ?? false,
     );
   }
 }

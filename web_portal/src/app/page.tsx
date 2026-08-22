@@ -709,6 +709,7 @@ export default function App() {
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
   const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
+  const [dematAutoSync, setDematAutoSync] = useState<boolean>(false);
   const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
 
   const getAuthHeaders = useCallback(async () => {
@@ -917,12 +918,21 @@ export default function App() {
           if (data.alert_sensitivity) setAlertSensitivity(data.alert_sensitivity.toUpperCase() as any);
           if (data.execution_mode) setExecutionMode(data.execution_mode.toUpperCase() as any);
           if (data.fcm_enabled !== undefined) setFcmEnabled(Boolean(data.fcm_enabled));
+          if (data.demat_auto_sync !== undefined) setDematAutoSync(Boolean(data.demat_auto_sync));
         }
       } catch (e) {
         console.warn("Profile load error:", e);
       }
     }
   }, []);
+
+  const toggleDematAutoSync = async (val: boolean) => {
+    setDematAutoSync(val);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("stokvigil_demat_auto_sync", String(val));
+    }
+    await updatePreference("demat_auto_sync", val);
+  };
 
   const toggleFcm = async (val: boolean) => {
     setFcmEnabled(val);
@@ -986,8 +996,10 @@ export default function App() {
     if (typeof window !== "undefined") {
       const savedApp = localStorage.getItem("stokvigil_app_key");
       const savedSecret = localStorage.getItem("stokvigil_secret_key");
+      const savedAutoSync = localStorage.getItem("stokvigil_demat_auto_sync");
       if (savedApp) setAppKey(savedApp);
       if (savedSecret) setSecretKey(savedSecret);
+      if (savedAutoSync !== null) setDematAutoSync(savedAutoSync === "true");
     }
   }, []);
 
@@ -2294,30 +2306,86 @@ export default function App() {
                 )}
               </div>
 
+              {/* DEMAT AUTO-SYNC WATCHLIST CARD */}
+              <div style={{
+                background: "linear-gradient(135deg, rgba(6,182,212,0.08) 0%, rgba(13,17,30,0.95) 100%)",
+                border: "1px solid rgba(6,182,212,0.25)",
+                borderRadius: 16,
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                boxShadow: "0 4px 20px rgba(0,0,0,0.3)"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{
+                    width: 36, height: 36, borderRadius: 10,
+                    background: "rgba(6,182,212,0.12)", border: "1px solid rgba(6,182,212,0.3)",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18
+                  }}>
+                    📊
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: C.white }}>Demat Auto-Sync Watchlist</div>
+                    <div style={{ fontSize: 11, color: C.gray2, marginTop: 2 }}>Automatically import & monitor active demat stocks</div>
+                  </div>
+                </div>
+                <label style={{ position: "relative", display: "inline-block", width: 44, height: 24, cursor: "pointer", flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={dematAutoSync}
+                    onChange={(e) => toggleDematAutoSync(e.target.checked)}
+                    style={{ opacity: 0, width: 0, height: 0 }}
+                  />
+                  <span style={{
+                    position: "absolute", cursor: "pointer", top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: dematAutoSync ? C.cyan : "rgba(255,255,255,0.12)",
+                    borderRadius: 24, transition: "0.25s",
+                    border: `1px solid ${dematAutoSync ? C.cyan : C.border}`
+                  }}>
+                    <span style={{
+                      position: "absolute", content: '""', height: 18, width: 18, left: dematAutoSync ? 22 : 3, bottom: 2,
+                      backgroundColor: "#fff", borderRadius: "50%", transition: "0.25s",
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.3)"
+                    }} />
+                  </span>
+                </label>
+              </div>
+
               {/* Watchlist Cards Stack */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {watchlist.length === 0 ? (
-                  <div style={{
-                    background: C.bgCard, border: `1px solid ${C.border}`,
-                    borderRadius: 18, padding: "36px 20px", textAlign: "center",
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-                  }}>
-                    <div style={{
-                      width: 52, height: 52, borderRadius: 16,
-                      background: "rgba(6,182,212,0.1)", border: `1px solid ${C.borderCyan}`,
-                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24
-                    }}>
-                      📌
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: C.white }}>No Stocks in Watchlist</div>
-                      <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4, maxWidth: 300 }}>
-                        Search and add any NSE stock symbol above to monitor high-impact catalysts and automated signals.
+                {(() => {
+                  const displayedWatchlist = dematAutoSync
+                    ? watchlist
+                    : watchlist.filter(item => !item.auto);
+
+                  if (displayedWatchlist.length === 0) {
+                    return (
+                      <div style={{
+                        background: C.bgCard, border: `1px solid ${C.border}`,
+                        borderRadius: 18, padding: "36px 20px", textAlign: "center",
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
+                      }}>
+                        <div style={{
+                          width: 52, height: 52, borderRadius: 16,
+                          background: "rgba(6,182,212,0.1)", border: `1px solid ${C.borderCyan}`,
+                          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24
+                        }}>
+                          📌
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: C.white }}>No Stocks in Watchlist</div>
+                          <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4, maxWidth: 300 }}>
+                            {dematAutoSync
+                              ? "Search and add any NSE stock symbol above to monitor high-impact catalysts and automated signals."
+                              : "Demat auto-sync is paused. Add custom stocks above or enable auto-sync to view demat holdings."}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ) : (
-                  watchlist.map(item => (
+                    );
+                  }
+
+                  return displayedWatchlist.map(item => (
                     <div key={item.id} style={{
                       background: "linear-gradient(145deg, #0D111E 0%, #12172A 100%)",
                       border: `1px solid ${C.border}`,
@@ -2425,8 +2493,8 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
           )}

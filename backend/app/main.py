@@ -52,6 +52,7 @@ class RegisterDeviceRequest(BaseModel):
     telegram_enabled: Optional[bool] = None
     alert_sensitivity: Optional[str] = None  # 'HIGH', 'ALL', 'FII'
     execution_mode: Optional[str] = None  # 'INSTANT', 'CONFIRM'
+    demat_auto_sync: Optional[bool] = None
     tnc_accepted: Optional[bool] = True
 
 class SaveCredentialsRequest(BaseModel):
@@ -135,6 +136,8 @@ def register_device(
         mode = req.execution_mode.upper()
         if mode in ["INSTANT", "CONFIRM"]:
             update_data["execution_mode"] = mode
+    if req.demat_auto_sync is not None:
+        update_data["demat_auto_sync"] = req.demat_auto_sync
     if req.tnc_accepted is not None:
         update_data["tnc_accepted"] = req.tnc_accepted
         update_data["tnc_accepted_at"] = "now()"

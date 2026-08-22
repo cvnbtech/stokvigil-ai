@@ -18,7 +18,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   List<Map<String, dynamic>> _watchlist = [];
   List<Map<String, dynamic>> _suggestions = [];
   bool _isLoading = true;
-  bool _autoSync = true;
+  bool _autoSync = false;
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
   Timer? _searchDebounce;
 
@@ -134,12 +134,33 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     }
 
     setState(() => _isLoading = true);
+    try {
+      final profile = await SupabaseService().fetchUserProfile();
+      if (profile != null) {
+        _autoSync = profile.dematAutoSync;
+      }
+    } catch (_) {}
+
     final data = await SupabaseService().fetchWatchlist();
     if (mounted) {
       setState(() {
         _watchlist = data;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _toggleAutoSync(bool val) async {
+    setState(() => _autoSync = val);
+    final user = SupabaseService().currentUser;
+    if (user != null) {
+      await SupabaseService().updateProfile({'demat_auto_sync': val});
+      ApiService().registerDeviceToken(
+        userId: user.id,
+        fcmToken: null,
+        alertSensitivity: null,
+        executionMode: null,
+      );
     }
   }
 
@@ -481,7 +502,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                   Switch(
                     value: _autoSync,
                     activeColor: AppTheme.cyan,
-                    onChanged: (val) => setState(() => _autoSync = val),
+                    onChanged: _toggleAutoSync,
                   ),
                 ],
               ),
@@ -492,37 +513,48 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           // ─────────────────────────────────────────────
           // WATCHLIST CARDS LIST
           // ─────────────────────────────────────────────
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.cyan))
-                : _watchlist.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32.0),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(Icons.format_list_bulleted_rounded, color: AppTheme.textSecondary, size: 56),
-                              SizedBox(height: 16),
-                              Text(
-                                "No Stocks in Watchlist",
-                                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          Builder(
+            builder: (context) {
+              final displayedList = _autoSync
+                  ? _watchlist
+                  : _watchlist.where((item) {
+                      final symbol = (item['symbol'] as String? ?? '').toUpperCase();
+                      final meta = _stockMeta[symbol] ?? {};
+                      final isAuto = item['is_auto_synced'] ?? meta['is_auto_synced'] ?? (symbol == 'RELIANCE' || symbol == 'TCS' || symbol == 'INFY');
+                      return isAuto != true;
+                    }).toList();
+
+              return Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator(color: AppTheme.cyan))
+                    : displayedList.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(32.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.format_list_bulleted_rounded, color: AppTheme.textSecondary, size: 56),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    "No Stocks in Watchlist",
+                                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    "Add NSE stock symbols above (e.g., RELIANCE, TCS, INFY) to monitor breakouts, earnings, and block deals.",
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                  ),
+                                ],
                               ),
-                              SizedBox(height: 8),
-                              Text(
-                                "Add NSE stock symbols above (e.g., RELIANCE, TCS, INFY) to monitor breakouts, earnings, and block deals.",
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        itemCount: _watchlist.length,
-                        itemBuilder: (context, index) {
-                          final item = _watchlist[index];
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            itemCount: displayedList.length,
+                            itemBuilder: (context, index) {
+                              final item = displayedList[index];
                           final symbol = (item['symbol'] as String? ?? '').toUpperCase();
                           final meta = _stockMeta[symbol] ?? {};
 

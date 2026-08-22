@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS fcm_enabled BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS alert_sensitivity TEXT DEFAULT 'HIGH';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'INSTANT';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS demat_auto_sync BOOLEAN DEFAULT FALSE;
 
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
