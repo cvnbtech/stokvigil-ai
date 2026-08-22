@@ -1,3 +1,4 @@
+import base64
 import logging
 from datetime import date
 from typing import Optional, List
@@ -149,6 +150,55 @@ def register_device(
         return {"status": "success", "profile": res.data[0] if res.data else update_data}
 
 
+@app.get("/api/user/credentials")
+def get_user_credentials(
+    user_id: str,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Retrieves decrypted App Key and Secret Key for pre-filling in the client UI.
+    Guarded by Supabase JWT verify_user_access (Zero IDOR).
+    """
+    verify_user_access(user_id, auth_user_id)
+    cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
+    if not cred_res.data:
+        return {"has_credentials": False, "app_key": "", "secret_key": "", "token_date": ""}
+
+    cred = cred_res.data[0]
+    app_key = ""
+    secret_key = ""
+
+    # Decrypt App Key
+    raw_app_key = cred.get("encrypted_app_key", "")
+    if raw_app_key:
+        try:
+            app_key = vault.decrypt(raw_app_key)
+        except Exception:
+            try:
+                app_key = base64.b64decode(raw_app_key).decode('utf-8')
+            except Exception:
+                app_key = raw_app_key
+
+    # Decrypt Secret Key
+    raw_secret_key = cred.get("encrypted_secret_key", "")
+    if raw_secret_key:
+        try:
+            secret_key = vault.decrypt(raw_secret_key)
+        except Exception:
+            try:
+                secret_key = base64.b64decode(raw_secret_key).decode('utf-8')
+            except Exception:
+                secret_key = raw_secret_key
+
+    return {
+        "has_credentials": True,
+        "app_key": app_key,
+        "secret_key": secret_key,
+        "token_date": cred.get("token_date", "")
+    }
+
+
 @app.post("/api/user/credentials")
 def save_user_credentials(
     req: SaveCredentialsRequest,
@@ -157,6 +207,7 @@ def save_user_credentials(
 ):
     """
     Encrypts user ICICI Breeze credentials (AES-256 Fernet) and stores them securely in Supabase.
+    Properly updates/upserts the record if it already exists for the user.
     """
     verify_user_access(req.user_id, auth_user_id)
     encrypted_app_key = vault.encrypt(req.app_key)
@@ -173,9 +224,11 @@ def save_user_credentials(
         "updated_at": "now()"
     }
 
-    res = db.table("user_credentials").upsert(payload, on_conflict="user_id").execute()
-    if not res.data:
-        raise HTTPException(status_code=500, detail="Failed to save encrypted credentials.")
+    try:
+        res = db.table("user_credentials").upsert(payload, on_conflict="user_id").execute()
+    except Exception as e:
+        logger.error(f"Error upserting credentials for user {req.user_id}: {e}")
+        res = db.table("user_credentials").update(payload).eq("user_id", req.user_id).execute()
 
     return {
         "status": "success",

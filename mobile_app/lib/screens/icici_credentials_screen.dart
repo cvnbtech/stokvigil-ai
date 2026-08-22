@@ -19,19 +19,44 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   final _appKeyController = TextEditingController();
   final _secretKeyController = TextEditingController();
   final _sessionTokenController = TextEditingController();
+  bool _showAppKey = false;
+  bool _showSecretKey = false;
   bool _isLoading = false;
   bool _isSuccess = false;
 
   @override
   void initState() {
     super.initState();
+    _appKeyController.addListener(_onFieldChanged);
+    _secretKeyController.addListener(_onFieldChanged);
+    _sessionTokenController.addListener(_onFieldChanged);
     _loadExistingCredentials();
   }
+
+  void _onFieldChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _isFormValid =>
+      _appKeyController.text.trim().isNotEmpty &&
+      _secretKeyController.text.trim().isNotEmpty &&
+      _sessionTokenController.text.trim().isNotEmpty;
 
   Future<void> _loadExistingCredentials() async {
     final user = SupabaseService().currentUser;
     if (user == null || !SupabaseService.isConfigured) return;
     try {
+      // 1. First try getting decrypted keys from backend API
+      final creds = await ApiService().fetchUserCredentials(user.id);
+      if (creds != null && creds['has_credentials'] == true && mounted) {
+        final appKeyVal = creds['app_key']?.toString() ?? '';
+        final secretKeyVal = creds['secret_key']?.toString() ?? '';
+        if (appKeyVal.isNotEmpty) _appKeyController.text = appKeyVal;
+        if (secretKeyVal.isNotEmpty) _secretKeyController.text = secretKeyVal;
+        return;
+      }
+
+      // 2. Fallback: Direct Supabase client
       final data = await SupabaseService().client
           .from('user_credentials')
           .select('encrypted_app_key, encrypted_secret_key')
@@ -42,14 +67,14 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
         final rawSecretKey = data['encrypted_secret_key']?.toString() ?? '';
         if (rawAppKey.isNotEmpty) {
           try {
-            _appKeyController.text = Uri.decodeComponent(rawAppKey);
+            _appKeyController.text = utf8.decode(base64Url.decode(rawAppKey));
           } catch (_) {
             _appKeyController.text = rawAppKey;
           }
         }
         if (rawSecretKey.isNotEmpty) {
           try {
-            _secretKeyController.text = Uri.decodeComponent(rawSecretKey);
+            _secretKeyController.text = utf8.decode(base64Url.decode(rawSecretKey));
           } catch (_) {
             _secretKeyController.text = rawSecretKey;
           }
@@ -62,6 +87,9 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
   @override
   void dispose() {
+    _appKeyController.removeListener(_onFieldChanged);
+    _secretKeyController.removeListener(_onFieldChanged);
+    _sessionTokenController.removeListener(_onFieldChanged);
     _appKeyController.dispose();
     _secretKeyController.dispose();
     _sessionTokenController.dispose();
@@ -112,7 +140,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // 1. Direct Supabase Encrypted Vault Save (Instant & 100% Reliable)
+      // 1. Direct Supabase Encrypted Vault Save (Instant & 100% Reliable Upsert)
       bool success = await SupabaseService().saveIciciCredentials(
         userId: user.id,
         appKey: appKey,
@@ -120,7 +148,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
         sessionToken: sessionToken,
       );
 
-      // 2. Also notify Backend API in the background
+      // 2. Also notify Backend API to store Fernet-encrypted credentials
       if (success) {
         ApiService().saveIciciCredentials(
           userId: user.id,
@@ -204,12 +232,24 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // App Key Input
-                _buildInput("APP KEY", _appKeyController, "Enter ICICI Breeze App Key", false),
+                // App Key Input with View Toggle
+                _buildInput(
+                  label: "APP KEY",
+                  controller: _appKeyController,
+                  hint: "Enter ICICI Breeze App Key",
+                  isObscure: !_showAppKey,
+                  onToggleVisibility: () => setState(() => _showAppKey = !_showAppKey),
+                ),
                 const SizedBox(height: 14),
 
-                // Secret Key Input
-                _buildInput("SECRET KEY", _secretKeyController, "Enter Secret Key", true),
+                // Secret Key Input with View Toggle
+                _buildInput(
+                  label: "SECRET KEY",
+                  controller: _secretKeyController,
+                  hint: "Enter Secret Key",
+                  isObscure: !_showSecretKey,
+                  onToggleVisibility: () => setState(() => _showSecretKey = !_showSecretKey),
+                ),
                 const SizedBox(height: 14),
 
                 // 1-Tap ICICI Web Login Button
@@ -233,51 +273,63 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 const SizedBox(height: 14),
 
                 // Session Token Input
-                _buildInput("SESSION TOKEN", _sessionTokenController, "Paste daily session token here", false),
+                _buildInput(
+                  label: "SESSION TOKEN",
+                  controller: _sessionTokenController,
+                  hint: "Paste daily session token here",
+                  isObscure: false,
+                ),
                 const SizedBox(height: 24),
 
-                // Encrypt & Save CTA Button (Matches User Screenshot)
+                // Encrypt & Save CTA Button (Enabled ONLY when form is valid)
                 Container(
                   width: double.infinity,
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [
-                        Color(0xFF00B4D8), // Vibrant Cyan
-                        Color(0xFF0284C7), // Sky Blue
-                        Color(0xFF6366F1), // Indigo
-                        Color(0xFF8B5CF6), // Violet Purple
-                      ],
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                    ),
+                    gradient: _isFormValid
+                        ? const LinearGradient(
+                            colors: [
+                              Color(0xFF00B4D8), // Vibrant Cyan
+                              Color(0xFF0284C7), // Sky Blue
+                              Color(0xFF6366F1), // Indigo
+                              Color(0xFF8B5CF6), // Violet Purple
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          )
+                        : null,
+                    color: _isFormValid ? null : Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x6606B6D4),
-                        blurRadius: 16,
-                        offset: Offset(0, 4),
-                      ),
-                    ],
+                    border: _isFormValid ? null : Border.all(color: Colors.white.withOpacity(0.1)),
+                    boxShadow: _isFormValid
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x6606B6D4),
+                              blurRadius: 16,
+                              offset: Offset(0, 4),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
+                      disabledBackgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       padding: EdgeInsets.zero,
                     ),
-                    onPressed: _isLoading ? null : _saveCredentials,
+                    onPressed: (_isFormValid && !_isLoading) ? _saveCredentials : null,
                     child: _isLoading
                         ? const SizedBox(
                             height: 22,
                             width: 22,
                             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
                           )
-                        : const Text(
+                        : Text(
                             "🔐 Encrypt & Save Key",
                             style: TextStyle(
-                              color: Colors.white,
+                              color: _isFormValid ? Colors.white : const Color(0xFF64748B),
                               fontWeight: FontWeight.w900,
                               fontSize: 15,
                               letterSpacing: -0.2,
@@ -293,11 +345,49 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
     );
   }
 
-  Widget _buildInput(String label, TextEditingController controller, String hint, bool isPassword) {
+  Widget _buildInput({
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    required bool isObscure,
+    VoidCallback? onToggleVisibility,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+            if (onToggleVisibility != null)
+              GestureDetector(
+                onTap: onToggleVisibility,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isObscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        color: AppTheme.cyan,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isObscure ? "Show" : "Hide",
+                        style: const TextStyle(
+                          color: AppTheme.cyan,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 6),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -308,7 +398,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
           ),
           child: TextField(
             controller: controller,
-            obscureText: isPassword,
+            obscureText: isObscure,
             style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
             decoration: InputDecoration(
               hintText: hint,

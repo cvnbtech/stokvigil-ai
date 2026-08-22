@@ -203,10 +203,11 @@ G:\stokvigil-ai\
 
 | Endpoint | Method | Auth Scheme | Purpose |
 | :--- | :---: | :---: | :--- |
-| `/api/user/credentials` | `POST` | `Bearer <JWT>` | Stores AES-256 encrypted ICICI App Key, Secret Key, and Session Token |
+| `/api/user/credentials` | `GET` | `Bearer <JWT>` | Retrieves decrypted App Key and Secret Key for pre-filling with eye toggles |
+| `/api/user/credentials` | `POST` | `Bearer <JWT>` | Encrypts (AES-256 Fernet) and upserts ICICI App Key, Secret Key, and Session Token |
 | `/api/user/profile` | `GET` | `Bearer <JWT>` | Retrieves user profile and notification preferences |
 | `/api/auth/register-device` | `POST` | `Bearer <JWT>` | Registers FCM notification token and Telegram chat ID |
-| `/api/user/portfolio` | `GET` | `Bearer <JWT>` | Returns live portfolio holdings, valuation, and P&L breakdown |
+| `/api/user/portfolio` | `GET` | `Bearer <JWT>` | Returns live portfolio holdings, valuation, and P&L (enforces daily token expiration) |
 | `/api/user/alerts` | `GET` | `Bearer <JWT>` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
 | `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
 | `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |

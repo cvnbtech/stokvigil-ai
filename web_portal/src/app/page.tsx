@@ -610,6 +610,8 @@ export default function App() {
   const [appKey, setAppKey]       = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [sessionTok, setSessionTok] = useState("");
+  const [showAppKey, setShowAppKey] = useState(false);
+  const [showSecretKey, setShowSecretKey] = useState(false);
   const [keySaved, setKeySaved]   = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [hasCredentials, setHasCredentials] = useState(false);
@@ -678,6 +680,16 @@ export default function App() {
             signal: h.pnl >= 0 ? "STRONG BUY" : "HOLD",
             signalType: h.pnl >= 0 ? "strong_buy" : "hold",
           })));
+        }
+      }
+
+      // Fetch decrypted App Key and Secret Key from Backend API
+      const credRes = await fetch(`${BACKEND_URL}/api/user/credentials?user_id=${uid}`, { headers });
+      if (credRes.ok) {
+        const credData = await credRes.json();
+        if (credData.has_credentials) {
+          if (credData.app_key) setAppKey(credData.app_key);
+          if (credData.secret_key) setSecretKey(credData.secret_key);
           return;
         }
       }
@@ -2545,8 +2557,38 @@ export default function App() {
               )}
 
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <Input label="App Key" value={appKey} onChange={setAppKey} placeholder="Enter App Key" />
-                <Input label="Secret Key" type="password" value={secretKey} onChange={setSecretKey} placeholder="Enter Secret Key" />
+                <Input
+                  label="App Key"
+                  type={showAppKey ? "text" : "password"}
+                  value={appKey}
+                  onChange={setAppKey}
+                  placeholder="Enter App Key"
+                  rightAction={
+                    <button
+                      type="button"
+                      onClick={() => setShowAppKey(v => !v)}
+                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {showAppKey ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                    </button>
+                  }
+                />
+                <Input
+                  label="Secret Key"
+                  type={showSecretKey ? "text" : "password"}
+                  value={secretKey}
+                  onChange={setSecretKey}
+                  placeholder="Enter Secret Key"
+                  rightAction={
+                    <button
+                      type="button"
+                      onClick={() => setShowSecretKey(v => !v)}
+                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {showSecretKey ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                    </button>
+                  }
+                />
 
                 <button onClick={() => window.open(`https://api.icicidirect.com/apiuser/login?api_key=${encodeURIComponent(appKey || "YOUR_KEY")}`, "_blank")} style={{
                   background: "transparent", border: `1.5px solid ${C.borderCyan}`,
@@ -2558,8 +2600,16 @@ export default function App() {
 
                 <Input label="Session Token" value={sessionTok} onChange={setSessionTok} placeholder="Paste session token here" />
 
-                <Btn variant="primary" onClick={saveKey} disabled={!appKey || !secretKey || !sessionTok}>
-                  🔐 Encrypt & Save Key
+                <Btn
+                  variant="primary"
+                  onClick={saveKey}
+                  disabled={!appKey.trim() || !secretKey.trim() || !sessionTok.trim() || keySaving}
+                  style={{
+                    opacity: (!appKey.trim() || !secretKey.trim() || !sessionTok.trim() || keySaving) ? 0.45 : 1,
+                    cursor: (!appKey.trim() || !secretKey.trim() || !sessionTok.trim() || keySaving) ? "not-allowed" : "pointer"
+                  }}
+                >
+                  {keySaving ? "⏳ Encrypting & Saving..." : "🔐 Encrypt & Save Key"}
                 </Btn>
               </div>
             </div>

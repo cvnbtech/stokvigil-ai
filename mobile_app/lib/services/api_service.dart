@@ -45,6 +45,23 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchUserCredentials(String userId) async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/api/user/credentials?user_id=$userId'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(const Duration(seconds: 6));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+    } catch (e) {
+      debugPrint("API Error fetching user credentials: $e");
+    }
+    return null;
+  }
+
   Future<bool> deleteUserAccount(String userId) async {
     try {
       final res = await http.post(

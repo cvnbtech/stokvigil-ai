@@ -70,17 +70,28 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 
 ---
 
-## 🔑 ICICI Direct Breeze API Authentication Workflow
+## 👁️ Demat Portfolio Privacy Masking & Live Indicator
+- **Demat Portfolio Privacy Masking**: Total Portfolio Value, Returns, P&L %, Invested value, and Holdings are masked by default (`₹ • • • • • •` / `••••••`). An interactive **`👁️ Show / Hide`** toggle allows 1-tap unmasking on Mobile & Web.
+- **Pulsing Live NSE Market Indicator**: Animated `BlinkingLiveDot` before `NSE LIVE 09:15–15:30` on mobile and CSS live glow on web.
 
-Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides an automated flow for both mobile and web:
+---
+
+## 🔑 ICICI Direct Breeze API Authentication & Key Vault Workflow
+
+Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides an automated, secure workflow for mobile and web:
 
 1. **Broker App Configuration**: In the [ICICI Direct Breeze Portal](https://api.icicidirect.com/apiuser/home), register your App with **Redirect URL** set to:
    - **Official URL**: `https://stokvigil-ai.vercel.app/api/auth/icici-callback`
-   - **Alternative**: `https://stokvigil-ai.vercel.app/callback`
-2. **1-Tap Web Login**: In the app or web portal, enter your `App Key` & `Secret Key` and tap **`🌐 Generate Daily Session Token`**.
-3. **Automated Token Capture**:
-   - `/api/auth/icici-callback` displays a 1-tap **`📋 Copy Session Token`** button.
-4. **Direct Supabase Encrypted Vault**: Tokens are encrypted via AES-256 Fernet and saved directly to the user's `user_credentials` table via Supabase RLS policies.
+2. **Permanent Key Pre-Fill & Decryption (`GET /api/user/credentials`)**:
+   - `App Key` and `Secret Key` are entered **only once** and encrypted in the vault.
+   - On subsequent days, opening the setup screen **automatically fetches and decrypts** the permanent keys.
+   - Includes **`👁️ Show / Hide`** privacy eye toggle buttons on both key inputs.
+3. **1-Tap Web Login & Token Capture**:
+   - Tap **`🌐 1-Tap ICICI Web Login`** $\rightarrow$ Log in with ICICI 2FA OTP.
+   - Callback page offers 1-tap **`📋 Copy Session Token`** or **`📱 1-Tap Open in StokVigil App`**.
+4. **Session Token Validation & Instant Upsert (`POST /api/user/credentials`)**:
+   - The **`🔐 Encrypt & Save Key`** button is enabled **only when a valid session token is provided**.
+   - Saving performs an authenticated, conflict-free database upsert, instantly syncing live Demat holdings.
 
 ---
 
