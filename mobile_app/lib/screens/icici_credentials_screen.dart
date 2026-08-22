@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 import '../config/theme.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
@@ -104,35 +103,22 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
       ErrorHandler.showErrorSnackBar(context, "Please enter your ICICI App Key above first before opening login.");
       return;
     }
-
-    // Open In-App Secure WebView for 100% Automatic Session Token Auto-Capture
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-        child: SizedBox(
-          height: MediaQuery.of(context).size.height * 0.90,
-          child: IciciLoginWebViewDialog(
-            appKey: appKey,
-            onSessionCaptured: (session) {
-              setState(() {
-                _sessionTokenController.text = session;
-              });
-              if (mounted) {
-                ErrorHandler.showSuccessSnackBar(context, "⚡ Session token auto-captured! Encrypting & saving...");
-              }
-              // Auto-save if secret key is also filled
-              if (_secretKeyController.text.trim().isNotEmpty) {
-                Future.delayed(const Duration(milliseconds: 400), _saveCredentials);
-              }
-            },
-          ),
-        ),
-      ),
-    );
+    final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey)}";
+    final url = Uri.parse(urlStr);
+    try {
+      final success = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!success) {
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      try {
+        await launchUrl(url, mode: LaunchMode.inAppBrowserView);
+      } catch (err) {
+        if (mounted) {
+          ErrorHandler.showErrorSnackBar(context, "Unable to open browser: $err");
+        }
+      }
+    }
   }
 
   Future<void> _saveCredentials() async {
@@ -275,7 +261,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // 1-Tap ICICI Web Login & Auto-Capture Button
+                // 1-Tap ICICI Web Login Button
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -288,15 +274,13 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                     child: InkWell(
                       onTap: _openIciciLogin,
                       borderRadius: BorderRadius.circular(14),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12, horizontal: 14),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.bolt, color: AppTheme.cyan, size: 18),
-                            SizedBox(width: 6),
+                          children: [
                             Text(
-                              "1-Tap Login & Auto-Capture Token",
+                              "🌐 1-Tap ICICI Web Login",
                               style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 13),
                             ),
                           ],
@@ -443,136 +427,6 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-// IN-APP SECURE ICICI LOGIN WEBVIEW WITH AUTO-CAPTURE
-// ─────────────────────────────────────────────
-class IciciLoginWebViewDialog extends StatefulWidget {
-  final String appKey;
-  final Function(String sessionToken) onSessionCaptured;
-
-  const IciciLoginWebViewDialog({
-    super.key,
-    required this.appKey,
-    required this.onSessionCaptured,
-  });
-
-  @override
-  State<IciciLoginWebViewDialog> createState() => _IciciLoginWebViewDialogState();
-}
-
-class _IciciLoginWebViewDialogState extends State<IciciLoginWebViewDialog> {
-  late final WebViewController _controller;
-  bool _isLoading = true;
-  double _progress = 0;
-  bool _hasCaptured = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final url = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(widget.appKey)}";
-
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF0B0E17))
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            if (mounted) setState(() => _progress = progress / 100.0);
-          },
-          onPageStarted: (String url) {
-            if (mounted) setState(() => _isLoading = true);
-            _checkUrlForSession(url);
-          },
-          onPageFinished: (String url) {
-            if (mounted) setState(() => _isLoading = false);
-            _checkUrlForSession(url);
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            final captured = _checkUrlForSession(request.url);
-            if (captured) {
-              return NavigationDecision.prevent;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(url));
-  }
-
-  bool _checkUrlForSession(String url) {
-    if (_hasCaptured) return true;
-    try {
-      final uri = Uri.parse(url);
-      // Look for ICICI Breeze session token in query parameters
-      final session = uri.queryParameters['apisession'] ??
-          uri.queryParameters['api_session'] ??
-          uri.queryParameters['session_token'] ??
-          uri.queryParameters['sessionToken'] ??
-          uri.queryParameters['token'];
-
-      if (session != null && session.trim().isNotEmpty) {
-        _hasCaptured = true;
-        widget.onSessionCaptured(session.trim());
-        Navigator.of(context).pop();
-        return true;
-      }
-
-      // Regex fallback if query parameter was formatted differently in redirect
-      final match = RegExp(r'[?&#](apisession|api_session|session_token)=([^&#]+)').firstMatch(url);
-      if (match != null && match.group(2) != null) {
-        final rawToken = Uri.decodeComponent(match.group(2)!);
-        if (rawToken.trim().isNotEmpty) {
-          _hasCaptured = true;
-          widget.onSessionCaptured(rawToken.trim());
-          Navigator.of(context).pop();
-          return true;
-        }
-      }
-    } catch (_) {}
-    return false;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B0E17),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0F172A),
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              "ICICI Direct Secure Login",
-              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
-            ),
-            Text(
-              "Session token will be auto-captured",
-              style: TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        bottom: _isLoading
-            ? PreferredSize(
-                preferredSize: const Size.fromHeight(2),
-                child: LinearProgressIndicator(
-                  value: _progress > 0 ? _progress : null,
-                  backgroundColor: Colors.transparent,
-                  color: AppTheme.cyan,
-                  minHeight: 2,
-                ),
-              )
-            : null,
-      ),
-      body: WebViewWidget(controller: _controller),
     );
   }
 }

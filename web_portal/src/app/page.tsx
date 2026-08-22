@@ -656,6 +656,9 @@ export default function App() {
 
   const loadPortfolioData = useCallback(async (uid: string) => {
     const todayStr = new Date().toISOString().split("T")[0];
+    let portfolioLoaded = false;
+    let keysLoaded = false;
+
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
@@ -682,6 +685,7 @@ export default function App() {
             signal: h.pnl >= 0 ? "STRONG BUY" : "HOLD",
             signalType: h.pnl >= 0 ? "strong_buy" : "hold",
           })));
+          portfolioLoaded = true;
         }
       }
 
@@ -692,32 +696,40 @@ export default function App() {
         if (credData.has_credentials) {
           if (credData.app_key) setAppKey(credData.app_key);
           if (credData.secret_key) setSecretKey(credData.secret_key);
-          return;
+          keysLoaded = true;
         }
       }
     } catch (e) {
       console.warn("Portfolio fetch fallback:", e);
     }
 
+    // Direct Supabase Fallback for prefilling keys & token status
     if (supabase) {
-      const { data: cred } = await supabase.from('user_credentials').select('token_date, encrypted_app_key, encrypted_secret_key').eq('user_id', uid).maybeSingle();
-      const isTokenValidToday = Boolean(cred && cred.token_date === todayStr);
-      setHasCredentials(isTokenValidToday);
-      if (cred) {
-        if (cred.encrypted_app_key) {
-          try { setAppKey(atob(cred.encrypted_app_key)); } catch { setAppKey(cred.encrypted_app_key); }
+      try {
+        const { data: cred } = await supabase.from('user_credentials').select('token_date, encrypted_app_key, encrypted_secret_key').eq('user_id', uid).maybeSingle();
+        const isTokenValidToday = Boolean(cred && cred.token_date === todayStr);
+        if (isTokenValidToday) setHasCredentials(true);
+        if (cred) {
+          if (cred.encrypted_app_key && !keysLoaded) {
+            try { setAppKey(atob(cred.encrypted_app_key)); } catch { setAppKey(cred.encrypted_app_key); }
+          }
+          if (cred.encrypted_secret_key && !keysLoaded) {
+            try { setSecretKey(atob(cred.encrypted_secret_key)); } catch { setSecretKey(cred.encrypted_secret_key); }
+          }
         }
-        if (cred.encrypted_secret_key) {
-          try { setSecretKey(atob(cred.encrypted_secret_key)); } catch { setSecretKey(cred.encrypted_secret_key); }
-        }
+      } catch (err) {
+        console.warn("Supabase credentials fetch error:", err);
       }
     }
-    setHoldings([]);
-    setTotalValue(0);
-    setTotalInvested(0);
-    setTotalPnl(0);
-    setTotalPnlPct(0);
-  }, []);
+
+    if (!portfolioLoaded) {
+      setHoldings([]);
+      setTotalValue(0);
+      setTotalInvested(0);
+      setTotalPnl(0);
+      setTotalPnlPct(0);
+    }
+  }, [getAuthHeaders]);
 
   const loadAlertsData = useCallback(async (uid: string) => {
     if (supabase) {
@@ -958,6 +970,10 @@ export default function App() {
 
   const saveKey = async () => {
     setKeySaving(true);
+    const cleanAppKey = appKey.trim();
+    const cleanSecretKey = secretKey.trim();
+    const cleanSessionTok = sessionTok.trim();
+
     if (user?.id) {
       let saved = false;
       try {
@@ -967,9 +983,9 @@ export default function App() {
           headers,
           body: JSON.stringify({
             user_id: user.id,
-            app_key: appKey,
-            secret_key: secretKey,
-            session_token: sessionTok
+            app_key: cleanAppKey,
+            secret_key: cleanSecretKey,
+            session_token: cleanSessionTok
           })
         });
         if (res.ok) {
@@ -981,12 +997,12 @@ export default function App() {
         console.warn("Backend save key error, trying Supabase direct:", e);
       }
 
-      // Fallback: Direct Supabase Vault Save
+      // Fallback: Direct Supabase Vault Save with onConflict
       if (!saved && supabase) {
         try {
-          const base64AppKey = typeof window !== "undefined" ? btoa(appKey) : appKey;
-          const base64SecretKey = typeof window !== "undefined" ? btoa(secretKey) : secretKey;
-          const base64SessionToken = typeof window !== "undefined" ? btoa(sessionTok) : sessionTok;
+          const base64AppKey = typeof window !== "undefined" ? btoa(cleanAppKey) : cleanAppKey;
+          const base64SecretKey = typeof window !== "undefined" ? btoa(cleanSecretKey) : cleanSecretKey;
+          const base64SessionToken = typeof window !== "undefined" ? btoa(cleanSessionTok) : cleanSessionTok;
 
           await supabase.from("user_credentials").upsert({
             user_id: user.id,
@@ -995,7 +1011,7 @@ export default function App() {
             encrypted_session_token: base64SessionToken,
             token_date: new Date().toISOString().split("T")[0],
             updated_at: new Date().toISOString(),
-          });
+          }, { onConflict: "user_id" });
           setHasCredentials(true);
           loadPortfolioData(user.id);
         } catch (err) {
@@ -1546,7 +1562,7 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => setShowKeyModal(true)} style={{
+            <button onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 5,
@@ -1702,7 +1718,7 @@ export default function App() {
                     </div>
                     {!hasCredentials && (
                       <button
-                        onClick={() => setShowKeyModal(true)}
+                        onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }}
                         style={{
                           background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
                           border: "none", borderRadius: 12, padding: "9px 18px",
@@ -2321,7 +2337,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <button onClick={() => setShowKeyModal(true)} style={{
+                    <button onClick={() => { if (user?.id) loadPortfolioData(user.id); setShowKeyModal(true); }} style={{
                       background: `rgba(6,182,212,0.12)`, border: `1px solid ${C.borderCyan}`,
                       borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
                     }}>
@@ -2730,11 +2746,21 @@ export default function App() {
                   }
                 />
 
-                <button onClick={() => window.open(`https://api.icicidirect.com/apiuser/login?api_key=${encodeURIComponent(appKey || "YOUR_KEY")}`, "_blank")} style={{
-                  background: "transparent", border: `1.5px solid ${C.borderCyan}`,
-                  borderRadius: 12, padding: "10px 16px", color: C.cyan, fontSize: 12, fontWeight: 800, cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!appKey.trim()) {
+                      alert("Please enter your ICICI App Key above first before opening login.");
+                      return;
+                    }
+                    window.open(`https://api.icicidirect.com/apiuser/login?api_key=${encodeURIComponent(appKey.trim())}`, "_blank");
+                  }}
+                  style={{
+                    background: "rgba(6,182,212,0.08)", border: `1.5px solid ${C.borderCyan}`,
+                    borderRadius: 12, padding: "10px 16px", color: C.cyan, fontSize: 12, fontWeight: 800, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  }}
+                >
                   🌐 1-Tap ICICI Web Login
                 </button>
 
