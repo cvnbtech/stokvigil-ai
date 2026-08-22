@@ -3,15 +3,20 @@ import logging
 import urllib.parse
 import feedparser
 import yfinance as yf
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
 from app.config import settings
 from app.vault import vault
-from app.notifications import send_fcm_notification, send_telegram_notification, format_telegram_alert
+from app.technical_engine import fetch_multi_timeframe_technicals
+from app.flow_tracker import fetch_delivery_and_fo_flow, fetch_bulk_and_block_deals
+from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health
+from app.alert_limiter import should_dispatch_alert
+from app.notifications import send_fcm_notification, send_telegram_notification, format_telegram_alert, build_telegram_inline_keyboard
 
 logger = logging.getLogger("stokvigil.agent_runner")
 
 # ==========================================
-# 1. AGENT TOOL INTEGRATIONS
+# 1. ICICI DEMAT PORTFOLIO INTEGRATION
 # ==========================================
 
 def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> List[Dict[str, Any]]:
@@ -90,7 +95,7 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
 def fetch_stock_news(symbol: str) -> List[Dict[str, str]]:
     """
     Parses real-time Google News RSS feeds targeting block/bulk deals, orders,
-    quarterly results, revenue, debt changes, and promoter activity.
+    quarterly results, revenue, debt changes, and promoter activity in the last 24 hours.
     """
     query_str = f'"{symbol}" AND (block deal OR bulk deal OR quarterly results OR Q1 OR Q2 OR Q3 OR Q4 OR revenue OR profit OR order OR debt OR expansion)'
     encoded_symbol = urllib.parse.quote(query_str)
@@ -99,7 +104,7 @@ def fetch_stock_news(symbol: str) -> List[Dict[str, str]]:
     headlines = []
     try:
         feed = feedparser.parse(rss_url)
-        for entry in feed.entries[:8]: # Top 8 latest headlines
+        for entry in feed.entries[:6]:
             headlines.append({
                 "title": entry.title,
                 "link": entry.link,
@@ -112,50 +117,115 @@ def fetch_stock_news(symbol: str) -> List[Dict[str, str]]:
 
 
 # ==========================================
-# 2. ANTIGRAVITY / GEMINI AI EVALUATION ENGINE
+# 2. SENIOR TRADING ANALYST AI ENGINE
 # ==========================================
 
-async def analyze_catalysts_with_gemini(symbol: str, financials: dict, news_items: list, holding_info: dict = None) -> dict:
+async def evaluate_stock_with_ai(
+    symbol: str,
+    technicals: Dict[str, Any],
+    flow_data: Dict[str, Any],
+    macro_data: Dict[str, Any],
+    forensics: Dict[str, Any],
+    financials: Dict[str, Any],
+    news_items: List[Dict[str, str]],
+    holding_info: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
-    Passes 360-degree market data to Gemini 3.6 Flash via Google AI Studio API.
-    Evaluates trajectory direction (UPWARD/DOWNWARD), order/deal impact, quarterly results surprise,
-    debt & valuation (P/E) shifts, current market context, and 12-month future growth drivers.
-    Guarantees non-advisory, pure factual data notifications.
+    Evaluates 360-degree quantitative data and triggers high-conviction actionable alerts.
+    Utilizes Gemini 3.6 / 2.5 / 1.5 Flash fallback chain, backed by a deterministic rule engine.
     """
+    current_price = technicals.get("current_price") or financials.get("price") or 100.0
+    atr_val = technicals.get("atr_14") or (current_price * 0.015)
+    
+    # Calculate Demat P&L
+    demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
+    if holding_info and holding_info.get("quantity", 0) > 0:
+        qty = holding_info.get("quantity", 0)
+        avg_price = holding_info.get("average_price", 0.0)
+        pnl_pct = round(((current_price - avg_price) / avg_price) * 100, 2) if avg_price > 0 else 0.0
+        demat_context = {
+            "is_in_portfolio": True,
+            "quantity": qty,
+            "average_buy_price": avg_price,
+            "current_market_price": current_price,
+            "unrealized_pnl_pct": pnl_pct
+        }
+
+    # Prompt Payload Construction
     prompt = f"""
-You are an expert financial market catalyst & trajectory analyzer for Indian stock exchange (NSE: {symbol}).
-Your task is to analyze real-time data and determine if there is a major price-moving event or trajectory shift.
+You are StokVigil AI, an Elite Senior Quantitative Trading Analyst and Market Intelligence Strategist specializing in Indian Stock Exchange (NSE/BSE) and ICICI Direct Demat surveillance.
 
-DEMAT HOLDING POSITION (ICICI DIRECT):
-{json.dumps(holding_info or {}, indent=2)}
+Evaluate the multi-factor data payload for #{symbol} (NSE) and determine if there is an actionable price trajectory shift, institutional catalyst, or portfolio risk event.
 
-FACTUAL FINANCIAL & VALUATION SNAPSHOT:
-{json.dumps(financials, indent=2)}
+============================================================
+1. ICICI DIRECT DEMAT POSITION:
+============================================================
+{json.dumps(demat_context, indent=2)}
 
-REAL-TIME MARKET NEWS HEADLINES:
+============================================================
+2. MULTI-TIMEFRAME TECHNICAL INDICATORS:
+============================================================
+• 5-Minute RSI: {technicals.get('rsi_5m')} | 15-Minute RSI: {technicals.get('rsi_15m')} | Daily RSI: {technicals.get('rsi_daily')}
+• RSI Divergence: {technicals.get('rsi_divergence')}
+• MACD (12, 26, 9): Trend={technicals.get('macd_trend')}, Histogram={technicals.get('macd_histogram')}
+• Intraday VWAP: ₹{technicals.get('vwap')} (Price vs VWAP: {technicals.get('price_vs_vwap_pct')}%)
+• EMAs: 20 EMA=₹{technicals.get('ema_20')}, 50 EMA=₹{technicals.get('ema_50')}, 200 EMA=₹{technicals.get('ema_200')} ({technicals.get('ma_trend')})
+• Volatility (14 ATR): ₹{atr_val}
+• Volume Multiple: {technicals.get('volume_multiple')}x vs 20 MA (Surge: {technicals.get('is_volume_surge')})
+
+============================================================
+3. INSTITUTIONAL FLOW & DERIVATIVES:
+============================================================
+• Estimated Delivery Volume: {flow_data.get('delivery_pct')}% (Accumulation: {flow_data.get('is_high_delivery')})
+• F&O Open Interest: {flow_data.get('fo_oi_status')} ({flow_data.get('flow_bias')})
+
+============================================================
+4. FUNDAMENTAL VALUATION & FORENSIC HEALTH:
+============================================================
+• Trailing P/E: {financials.get('pe_ratio')} | Forward P/E: {financials.get('forward_pe')}
+• Debt-to-Equity: {financials.get('debt_to_equity')}
+• Revenue Growth YoY: {financials.get('revenue_growth_pct')}% | Profit Margin: {financials.get('profit_margin_pct')}%
+• Forensic Red Flags: {json.dumps(forensics.get('red_flags', []))}
+
+============================================================
+5. MACRO REGIME & SECTOR:
+============================================================
+• NIFTY 50 Trend: {macro_data.get('nifty_trend')} ({macro_data.get('nifty_change_pct')}%)
+• India VIX: {macro_data.get('india_vix')} ({macro_data.get('vix_regime')})
+• Sector: {forensics.get('sector_name')}
+
+============================================================
+6. 24-HOUR REAL-TIME NEWS & FILINGS:
+============================================================
 {json.dumps(news_items, indent=2)}
 
-ANALYSIS CRITERIA:
-1. Trajectory Direction: Evaluate if data suggests an UPWARD, DOWNWARD, or NEUTRAL trajectory shift.
-2. Catalyst Triggers: Check for institutional Bulk/Block Deals, Large Commercial Orders, Quarterly Earnings (P&L/Revenue surprise), Debt reduction/addition, or Promoter buying/selling.
-3. Valuation Check: Compare Trailing P/E vs Forward P/E and Debt-to-Equity shift.
-4. Noise Filter: Ignore routine promotional news or minor daily fluctuations.
-5. Compliance: Do NOT give buy/sell recommendations or SEBI advice. All bullet points must be 100% factual.
+DIRECTIVES:
+1. Confluence Score (1-100): Technical (30%), Flow (25%), Fundamentals (25%), News/Catalysts (20%).
+2. Action Bias: "BUY_WATCH" (Score >= 75), "SELL_WATCH" (Score <= 35), "TRAILING_SL_ALERT" (User holds stock, profit > 5% & momentum stalling), "HOLD_NEUTRAL".
+3. Calculate strict tactical levels: Entry Range, Target 1 (1.5x ATR), Target 2 (2.5x ATR), Stop Loss (1.5x ATR), Risk-Reward Ratio (Min 1:2).
 
 Output ONLY valid JSON matching this exact structure:
 {{
   "symbol": "{symbol}",
-  "has_catalyst": true/false,
-  "trajectory_direction": "EXPECTED_UPWARD | EXPECTED_DOWNWARD | NEUTRAL_WATCH",
-  "alert_title": "Short descriptive title (e.g. RELIANCE: Q1 Profit Up 18% & Large Block Deal)",
-  "catalyst_type": "BLOCK_DEAL | EARNINGS_BEAT | DEBT_CHANGE | PRICE_BREAKOUT | NEWS_CATALYST",
-  "impact_score": 85,
-  "factual_reasons": [
-    "Fact 1: Q1 revenue grew 18.5% YoY with profit margin expanding to 14.2%",
-    "Fact 2: Block deal of 1.25M shares reported at ₹2,950",
-    "Fact 3: Debt-to-equity reduced from 0.45 to 0.38"
+  "has_actionable_signal": true/false,
+  "action_bias": "BUY_WATCH | SELL_WATCH | TRAILING_SL_ALERT | HOLD_NEUTRAL",
+  "confluence_score": 85,
+  "alert_title": "Descriptive concise headline",
+  "catalyst_category": "TECHNICAL_BREAKOUT | BLOCK_DEAL | EARNINGS_SURPRISE | DEBT_REDUCTION | VOLUME_SURGE | TRAILING_STOP_TRIGGER",
+  "confluence_drivers": [
+    "Factual driver 1",
+    "Factual driver 2",
+    "Factual driver 3"
   ],
-  "growth_outlook_summary": "12-month factual expansion & market context summary"
+  "tactical_levels": {{
+    "entry_range": "₹980.00 - ₹985.00",
+    "target_1": "₹1,005.00",
+    "target_2": "₹1,025.00",
+    "protective_stop_loss": "₹968.00",
+    "risk_reward_ratio": "1:2.3"
+  }},
+  "holding_guidance": "Recommended holding / trailing stop guidance for user's Demat position.",
+  "growth_outlook_summary": "12-month expansion summary."
 }}
 """
 
@@ -164,7 +234,6 @@ Output ONLY valid JSON matching this exact structure:
             import google.generativeai as genai
             genai.configure(api_key=settings.GEMINI_API_KEY)
             
-            # Try Gemini 3.6 Flash first (Primary Model), fallback to 2.5 Flash and 1.5 Flash
             for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
                 try:
                     model = genai.GenerativeModel(model_name)
@@ -173,67 +242,124 @@ Output ONLY valid JSON matching this exact structure:
                         generation_config={"response_mime_type": "application/json"}
                     )
                     parsed = json.loads(response.text)
-                    logger.info(f"Successfully evaluated catalyst using model '{model_name}'.")
+                    logger.info(f"Successfully evaluated {symbol} using AI model '{model_name}'.")
                     return parsed
                 except Exception as model_err:
-                    logger.warning(f"Model '{model_name}' execution attempt: {model_err}")
+                    logger.warning(f"Model '{model_name}' attempt failed for {symbol}: {model_err}")
                     continue
-
         except Exception as e:
-            logger.error(f"Gemini AI Studio API analysis failed: {e}. Falling back to deterministic rules.")
+            logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
 
-    # Rule-Based Fallback Engine if Gemini API Key not set
-    has_catalyst = False
-    impact_score = 30
-    catalyst_type = "NEWS_CATALYST"
-    alert_title = f"{symbol} Market Update"
-    factual_reasons = []
-
-    for news in news_items:
-        title_upper = news['title'].upper()
+    # ==========================================
+    # DETERMINISTIC QUANTITATIVE FALLBACK ENGINE
+    # ==========================================
+    tech_score = technicals.get("technical_score", 50)
+    flow_score = flow_data.get("flow_score", 50)
+    forensic_score = forensics.get("forensic_score", 60)
+    
+    # News Score
+    news_score = 50
+    catalyst_category = "TECHNICAL_BREAKOUT"
+    alert_title = f"{symbol}: Technical & Momentum Update"
+    confluence_drivers = []
+    
+    for item in news_items:
+        title_upper = item['title'].upper()
         if "BLOCK DEAL" in title_upper or "BULK DEAL" in title_upper:
-            has_catalyst = True
-            impact_score = 88
-            catalyst_type = "BLOCK_DEAL"
-            alert_title = f"{symbol}: Large Block/Bulk Deal Reported"
-            factual_reasons.append(f"Headline: {news['title']}")
+            news_score += 35
+            catalyst_category = "BLOCK_DEAL"
+            alert_title = f"{symbol}: Institutional Block/Bulk Deal Reported"
+            confluence_drivers.append(f"Exchange Filing: {item['title']}")
             break
-        elif "Q1" in title_upper or "Q2" in title_upper or "Q3" in title_upper or "Q4" in title_upper or "PROFIT" in title_upper:
-            has_catalyst = True
-            impact_score = 82
-            catalyst_type = "EARNINGS_BEAT"
-            alert_title = f"{symbol}: Quarterly Results & Earnings Update"
-            factual_reasons.append(f"Headline: {news['title']}")
+        elif "PROFIT" in title_upper or "REVENUE" in title_upper or "Q1" in title_upper or "Q2" in title_upper or "Q3" in title_upper or "Q4" in title_upper:
+            news_score += 30
+            catalyst_category = "EARNINGS_SURPRISE"
+            alert_title = f"{symbol}: Quarterly Earnings & Financial Catalyst"
+            confluence_drivers.append(f"Financial Disclosure: {item['title']}")
             break
 
-    if not factual_reasons and news_items:
-        factual_reasons.append(f"Recent headline: {news_items[0]['title']}")
+    # Calculate Multi-Factor Confluence Score (0-100)
+    confluence_score = int(round(
+        (tech_score * 0.30) +
+        (flow_score * 0.25) +
+        (forensic_score * 0.25) +
+        (min(95, news_score) * 0.20)
+    ))
 
-    if financials.get("price"):
-        factual_reasons.append(f"Current Market Price: ₹{financials['price']}")
+    # Determine Action Bias
+    action_bias = "HOLD_NEUTRAL"
+    has_actionable_signal = False
+    
+    # Check Trailing Stop-Loss for User Holding
+    if demat_context["is_in_portfolio"] and demat_context["unrealized_pnl_pct"] >= 5.0 and technicals.get("rsi_15m", 50) > 72:
+        action_bias = "TRAILING_SL_ALERT"
+        has_actionable_signal = True
+        catalyst_category = "TRAILING_STOP_TRIGGER"
+        alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{demat_context['unrealized_pnl_pct']}%)"
+        confluence_drivers.append(f"Position has gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {technicals.get('rsi_15m')} (Overbought zone).")
+    elif confluence_score >= 72:
+        action_bias = "BUY_WATCH"
+        has_actionable_signal = True
+    elif confluence_score <= 38:
+        action_bias = "SELL_WATCH"
+        has_actionable_signal = True
+
+    # Build Confluence Drivers
+    if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
+        confluence_drivers.append(f"15m MACD Bullish Crossover detected (Hist: {technicals.get('macd_histogram')}).")
+    if technicals.get("is_volume_surge"):
+        confluence_drivers.append(f"5m Volume is {technicals.get('volume_multiple')}x above 20 MA.")
+    if flow_data.get("is_high_delivery"):
+        confluence_drivers.append(f"Institutional delivery estimated at {flow_data.get('delivery_pct')}%.")
+    if technicals.get("price_vs_vwap_pct", 0) > 0:
+        confluence_drivers.append(f"Trading above Intraday VWAP (₹{technicals.get('vwap')}).")
+    if not confluence_drivers:
+        confluence_drivers.append(f"Current price: ₹{current_price} | 15m RSI: {technicals.get('rsi_15m')}")
+
+    # Compute Tactical Levels
+    entry_min = round(current_price * 0.995, 2)
+    entry_max = round(current_price * 1.005, 2)
+    target_1 = round(current_price + (1.5 * atr_val), 2)
+    target_2 = round(current_price + (2.5 * atr_val), 2)
+    stop_loss = round(current_price - (1.5 * atr_val), 2)
+    risk_val = current_price - stop_loss
+    reward_val = target_1 - current_price
+    rr_ratio = round(reward_val / risk_val, 1) if risk_val > 0 else 2.0
+
+    holding_guidance = "Monitor position with trailing SL." if demat_context["is_in_portfolio"] else "Track for optimal entry in tactical range."
 
     return {
         "symbol": symbol,
-        "has_catalyst": has_catalyst or (impact_score >= 60),
+        "has_actionable_signal": has_actionable_signal,
+        "action_bias": action_bias,
+        "confluence_score": confluence_score,
         "alert_title": alert_title,
-        "catalyst_type": catalyst_type,
-        "impact_score": impact_score,
-        "factual_reasons": factual_reasons
+        "catalyst_category": catalyst_category,
+        "confluence_drivers": confluence_drivers,
+        "tactical_levels": {
+            "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
+            "target_1": f"₹{target_1:,.2f}",
+            "target_2": f"₹{target_2:,.2f}",
+            "protective_stop_loss": f"₹{stop_loss:,.2f}",
+            "risk_reward_ratio": f"1:{rr_ratio}"
+        },
+        "holding_guidance": holding_guidance,
+        "growth_outlook_summary": f"Long term valuation: P/E {financials.get('pe_ratio', 'N/A')}, D/E {financials.get('debt_to_equity', 'N/A')}."
     }
 
 
 # ==========================================
-# 3. MULTI-USER PORTFOLIO EVALUATION ROUTINE
+# 3. 5-MINUTE MULTI-TENANT SURVEILLANCE RUNNER
 # ==========================================
 
 async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) -> List[dict]:
     """
     Evaluates all tracked stocks for a user across demat holdings and manual watchlists.
-    Dispatches FCM and Telegram notifications for high-impact catalysts (impact_score >= 60).
+    Dispatches FCM Push and rich Telegram notifications for high-conviction catalysts.
     """
     generated_alerts = []
     
-    # 1. Fetch user profile
+    # 1. Fetch user profile & notification settings
     profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
     if not profile_res.data:
         logger.warning(f"Profile not found for user {user_id}")
@@ -242,8 +368,6 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     profile = profile_res.data[0]
     fcm_token = profile.get("fcm_device_token")
     fcm_enabled = profile.get("fcm_enabled", False)
-    if fcm_enabled is None:
-        fcm_enabled = False
     telegram_chat_id = profile.get("telegram_chat_id")
     telegram_enabled = profile.get("telegram_enabled", False)
     alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()
@@ -252,7 +376,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
     symbols = set(item['symbol'] for item in (watchlist_res.data or []))
     
-    # 3. Check ICICI credentials and sync holdings
+    # 3. Check ICICI credentials and sync Demat holdings
+    holdings_map = {}
     cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if cred_res.data:
         cred = cred_res.data[0]
@@ -264,86 +389,145 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         for h in holdings:
             sym = h['symbol']
             symbols.add(sym)
+            holdings_map[sym] = h
             # Auto-upsert into user_watchlists
-            supabase_client.table("user_watchlists").upsert({
-                "user_id": user_id,
-                "symbol": sym,
-                "is_auto_synced": True
-            }, on_conflict="user_id,symbol").execute()
+            try:
+                supabase_client.table("user_watchlists").upsert({
+                    "user_id": user_id,
+                    "symbol": sym,
+                    "is_auto_synced": True
+                }, on_conflict="user_id,symbol").execute()
+            except Exception as e:
+                logger.error(f"Error syncing holding {sym} to watchlist: {e}")
 
-    # Map holdings by symbol for deep position-aware analysis
-    holdings_map = {h['symbol']: h for h in holdings} if 'holdings' in locals() else {}
+    # Ingest Macro Market Regime (NIFTY & India VIX)
+    macro_data = fetch_macro_market_regime()
 
     # 4. Evaluate each symbol
     for symbol in symbols:
-        financials = fetch_stock_financials(symbol)
-        news_items = fetch_stock_news(symbol)
-        holding_info = holdings_map.get(symbol, {})
-        
-        analysis = await analyze_catalysts_with_gemini(symbol, financials, news_items, holding_info)
-        
-        impact_score = analysis.get("impact_score", 0)
-        has_catalyst = analysis.get("has_catalyst", False)
-        alert_title = analysis.get("alert_title", f"{symbol} Alert")
-        catalyst_type = analysis.get("catalyst_type", "NEWS_CATALYST")
-        factual_reasons = analysis.get("factual_reasons", [])
-        
-        # Apply AI Alert Signal Frequency filter based on user profile preference:
-        should_alert = False
-        if alert_sensitivity == "HIGH":
-            # High impact: impact score >= 80
-            should_alert = impact_score >= 80
-        elif alert_sensitivity == "FII":
-            # Institutional & Block deals
-            is_fii_catalyst = (
-                catalyst_type in ("BLOCK_DEAL", "DEBT_CHANGE", "INSTITUTIONAL")
-                or "fii" in alert_title.lower()
-                or "deal" in alert_title.lower()
-                or "institutional" in alert_title.lower()
+        try:
+            technicals = fetch_multi_timeframe_technicals(symbol)
+            financials = fetch_stock_financials(symbol)
+            flow_data = fetch_delivery_and_fo_flow(symbol, technicals.get("price_vs_vwap_pct", 0.0))
+            forensics = evaluate_forensic_health(symbol, financials)
+            news_items = fetch_stock_news(symbol)
+            holding_info = holdings_map.get(symbol)
+            
+            analysis = await evaluate_stock_with_ai(
+                symbol=symbol,
+                technicals=technicals,
+                flow_data=flow_data,
+                macro_data=macro_data,
+                forensics=forensics,
+                financials=financials,
+                news_items=news_items,
+                holding_info=holding_info
             )
-            should_alert = is_fii_catalyst and (impact_score >= 60 or has_catalyst)
-        else:
-            # ALL signals: impact score >= 60 or detected catalyst
-            should_alert = has_catalyst or impact_score >= 60
+            
+            confluence_score = analysis.get("confluence_score", 50)
+            has_actionable = analysis.get("has_actionable_signal", False)
+            action_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
+            alert_title = analysis.get("alert_title", f"{symbol} Market Update")
+            catalyst_type = analysis.get("catalyst_category", "NEWS_CATALYST")
+            confluence_drivers = analysis.get("confluence_drivers", [])
+            tactical_levels = analysis.get("tactical_levels", {})
+            holding_guidance = analysis.get("holding_guidance")
+            
+            # Sensitivity Filter
+            should_dispatch = False
+            if alert_sensitivity == "HIGH":
+                should_dispatch = (confluence_score >= 80) or (action_bias == "TRAILING_SL_ALERT")
+            elif alert_sensitivity == "FII":
+                is_fii = (catalyst_type in ["BLOCK_DEAL", "DEBT_REDUCTION"] or flow_data.get("is_high_delivery"))
+                should_dispatch = is_fii and (confluence_score >= 65 or has_actionable)
+            else: # ALL
+                should_dispatch = has_actionable or (confluence_score >= 65)
 
-        if should_alert:
-            # Dispatch FCM Push Notification (if user enabled FCM)
+            if not should_dispatch:
+                continue
+
+            # Anti-Fatigue Cooldown Check
+            is_tier1 = (confluence_score >= 88 or action_bias == "TRAILING_SL_ALERT" or catalyst_type == "BLOCK_DEAL")
+            allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
+            
+            if not allowed:
+                logger.info(f"Skipping dispatch for {symbol}: {reason}")
+                continue
+
+            # Demat position snapshot for alert formatting
+            demat_pos = None
+            if holding_info:
+                curr_p = technicals.get("current_price") or financials.get("price") or 0.0
+                avg_p = holding_info.get("average_price", 0.0)
+                pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+                demat_pos = {
+                    "is_in_portfolio": True,
+                    "quantity": holding_info.get("quantity", 0),
+                    "average_buy_price": avg_p,
+                    "unrealized_pnl_pct": pnl_pct
+                }
+
+            # Dispatch FCM Lock-Screen Push Notification
             fcm_sent = False
             if fcm_token and fcm_enabled:
-                fcm_body = f"Impact: {impact_score}/100 | " + " ".join(factual_reasons[:1])
+                fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Target: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
                 fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
                     "symbol": symbol,
-                    "impact_score": str(impact_score),
+                    "action_bias": action_bias,
+                    "confluence_score": str(confluence_score),
                     "catalyst_type": catalyst_type
                 })
-                
-            # Dispatch Telegram Notification
+
+            # Dispatch Rich HTML Telegram Notification with Inline Buttons
             telegram_sent = False
             if telegram_enabled and telegram_chat_id:
                 formatted_msg = format_telegram_alert(
                     symbol=symbol,
                     alert_title=alert_title,
+                    action_bias=action_bias,
+                    confluence_score=confluence_score,
                     catalyst_type=catalyst_type,
-                    impact_score=impact_score,
-                    factual_reasons=factual_reasons,
-                    metrics_snapshot=financials
+                    confluence_drivers=confluence_drivers,
+                    tactical_levels=tactical_levels,
+                    demat_position=demat_pos,
+                    metrics_snapshot={
+                        "current_price": technicals.get("current_price"),
+                        "rsi_15m": technicals.get("rsi_15m"),
+                        "rsi_5m": technicals.get("rsi_5m"),
+                        "vwap": technicals.get("vwap"),
+                        "delivery_pct": flow_data.get("delivery_pct")
+                    },
+                    holding_guidance=holding_guidance
                 )
-                telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg)
-                
-            # Save Alert to Supabase Ledger
+                inline_buttons = build_telegram_inline_keyboard(symbol)
+                telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg, reply_markup=inline_buttons)
+
+            # Persist Alert in Supabase Ledger
             alert_record = {
                 "user_id": user_id,
                 "symbol": symbol,
                 "alert_title": alert_title,
-                "catalyst_type": catalyst_type,
-                "impact_score": impact_score,
-                "factual_reasons": factual_reasons,
-                "metrics_snapshot": financials,
+                "catalyst_type": catalyst_type if catalyst_type in ["BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", "NEWS_CATALYST"] else "NEWS_CATALYST",
+                "impact_score": confluence_score,
+                "factual_reasons": confluence_drivers,
+                "metrics_snapshot": {
+                    "action_bias": action_bias,
+                    "tactical_levels": tactical_levels,
+                    "technicals": technicals,
+                    "flow_data": flow_data,
+                    "financials": financials,
+                    "macro_data": macro_data,
+                    "demat_position": demat_pos
+                },
                 "sent_via_fcm": fcm_sent,
                 "sent_via_telegram": telegram_sent,
             }
             res = supabase_client.table("stok_alerts").insert(alert_record).execute()
             if res.data:
                 generated_alerts.append(res.data[0])
+
+        except Exception as stock_err:
+            logger.error(f"Error evaluating symbol {symbol} for user {user_id}: {stock_err}")
+            continue
 
     return generated_alerts

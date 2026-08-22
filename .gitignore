@@ -35,6 +35,7 @@ web_portal/out/
 web_portal/build/
 .npm
 *.log
+*.tsbuildinfo
 
 # Flutter / Mobile App
 mobile_app/.dart_tool/

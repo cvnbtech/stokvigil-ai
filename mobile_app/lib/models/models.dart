@@ -81,6 +81,15 @@ class StokAlert {
   final bool sentViaTelegram;
   final DateTime createdAt;
 
+  String get actionBias => metricsSnapshot['action_bias'] ?? 'HOLD_NEUTRAL';
+  Map<String, dynamic> get tacticalLevels => Map<String, dynamic>.from(metricsSnapshot['tactical_levels'] ?? {});
+  String? get entryRange => tacticalLevels['entry_range'];
+  String? get target1 => tacticalLevels['target_1'];
+  String? get target2 => tacticalLevels['target_2'];
+  String? get stopLoss => tacticalLevels['protective_stop_loss'];
+  String? get riskReward => tacticalLevels['risk_reward_ratio'];
+  Map<String, dynamic>? get dematPosition => metricsSnapshot['demat_position'] != null ? Map<String, dynamic>.from(metricsSnapshot['demat_position']) : null;
+
   StokAlert({
     required this.id,
     this.userId,

@@ -5,25 +5,33 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 
 ---
 
-## 🛡️ Pure Intelligence & Non-Advisory Guarantee
-- **No Trade Execution**: The application never executes automated trades or places unsolicited orders on demat accounts.
-- **No SEBI Advisory**: All alerts stick 100% to factual data (block/bulk deals, quarterly earnings surprises, debt-to-equity shifts, price breakouts).
+## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
+- **No Unsolicited Automated Trades**: The application never executes trades without user confirmation.
+- **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts).
 
 ---
 
 ## 🏗️ Tech Stack (100% Free Tier Architecture)
 - **Mobile Frontend**: Flutter (Dart) for Android (`com.app.stokvigil`) & iOS.
-- **Web Portal**: Next.js 14 (TypeScript) + Vanilla CSS (PWA Enabled).
+- **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled).
 - **Backend API**: Python 3.11 + FastAPI containerized for Google Cloud Run (2M free requests/mo) / Render.
-- **AI Agent Engine**: `google-generativeai` powered by `gemini-3.6-flash` (Primary) with automated fallback to `gemini-2.5-flash` and `gemini-1.5-flash`.
+- **AI Agent Engine**: `google-generativeai` powered by `gemini-3.6-flash` (Primary) with automated fallback to `gemini-2.5-flash`, `gemini-1.5-flash`, and an offline deterministic rule engine.
+- **Quantitative Engines**:
+  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), and RSI Divergence detection.
+  - `flow_tracker.py`: Delivery Volume % Estimation ($>50\%$ accumulation) and F&O Open Interest build-up dynamics.
+  - `macro_filter.py`: India VIX Volatility Regime (`^INDIAVIX`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, etc.), and Forensic Health checks.
+  - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
 - **Database & Vault**: Supabase PostgreSQL with Row-Level Security (RLS) & Fernet AES-256 encryption.
-- **Integrations**: `breeze-connect` (ICICI Demat holdings), `yfinance` (Valuation metrics), `feedparser` (Google News RSS).
-- **Alert Dispatch**: Firebase Cloud Messaging (FCM) + Multi-Tenant Telegram Bot API (`@StokVigilAi_bot`).
+- **Integrations**: `breeze-connect` (ICICI Demat holdings), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
+- **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Telegram Bot API (`@StokVigilAi_bot`).
 
 ---
 
-## 🧠 AI Agent Evaluation Engine & Models
-StokVigil AI evaluates your portfolio and watchlist every 5 minutes during NSE market hours (09:15–15:30 IST).
+## 🧠 AI Agent Evaluation Engine & Factor Weights
+
+Every 5 minutes during NSE market hours (09:15–15:30 IST), StokVigil AI compiles real-time portfolio holdings, technicals, institutional flows, and news into a multi-factor score:
+
+$$\text{Confluence Score} = (0.30 \times \text{Technical}) + (0.25 \times \text{Flow}) + (0.25 \times \text{Fundamental}) + (0.20 \times \text{News/Catalysts})$$
 
 ### Model Fallback Hierarchy
 ```python
@@ -36,11 +44,13 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 4. **Deterministic Rule Engine**: Offline fallback engine ensuring 100% continuous monitoring uptime if external APIs encounter rate limits.
 
 ### Multi-Dimensional Signal Classifications
-- **`⚡ Volume Surge`**: Institutional volume spikes and sudden volume-to-average breaks.
-- **`🔥 High Impact / Strong Buy`**: High-confidence catalysts ($\ge 80\%$) combining quarterly earnings beats and block deals.
+- **`🟢 ACCUMULATE / BUY WATCH`**: High-conviction setups ($\text{Score} \ge 75$) with bullish MACD, RSI, and Delivery accumulation above VWAP.
+- **`🔴 PROFIT BOOK / SELL WATCH`**: High-risk setups ($\text{Score} \le 35$) with bearish divergence or technical breakdown.
+- **`🟡 TRAILING STOP-LOSS TRIGGER`**: Position-aware trigger for Demat holdings when unrealized profit $>5\%$ and momentum stalls.
+- **`⚡ Volume Surge`**: Institutional volume spikes ($> 2.0\text{x}$ 20-period MA) with delivery accumulation.
 - **`📈 Earnings Beat`**: Revenue/P&L outperformance, EBITDA expansion, and positive quarterly surprises.
 - **`🚀 Price Breakout`**: Technical momentum breaks above key 52-week or moving-average resistance levels.
-- **`📊 FII Buying`**: Institutional bulk/block deals and institutional flow entries.
+- **`📊 FII / Block Deals`**: Institutional bulk/block deals and institutional flow entries.
 - **`⚪ Hold / Neutral`**: Moderate-impact events and maintenance signals.
 
 ---
@@ -48,54 +58,27 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 ## 📱 Push Notifications & Telegram Alerts Architecture
 
 ### 1. Firebase Cloud Messaging (FCM)
-- **OFF by default (`fcm_enabled = false`)**: Users have full control to toggle Push Notifications ON or OFF from the Settings screen.
-- **Automated Token Sync**: The Android app automatically retrieves the device token on startup, login, or token refresh (`onTokenRefresh`), and synchronizes `fcm_device_token` with Supabase `profiles` without overriding user preferences.
-- **CI/CD Integration**: GitHub Actions workflow (`build_apk.yml`) injects `GOOGLE_SERVICES_JSON` from GitHub Secrets directly into `mobile_app/android/app/google-services.json` before compilation.
+- **High-Priority Lock-Screen Channel**: `stokvigil_high_priority_alerts` with dedicated sound and vibration patterns.
+- **Automated Token Sync**: The Android app automatically retrieves the device token on startup, login, or token refresh (`onTokenRefresh`), and synchronizes `fcm_device_token` with Supabase `profiles`.
 
 ### 2. Multi-Tenant Telegram Bot (`@StokVigilAi_bot`)
-- **Single Central Bot Architecture**: A single bot handle (`@StokVigilAi_bot`) serves unlimited individual users with complete tenant isolation and private alert routing.
-- **1-Tap Deep Link Pairing**: Clicking **`Connect →`** opens `https://t.me/StokVigilAi_bot?start=<USER_ID>`.
-- **Private Webhook Routing**: The FastAPI webhook (`/api/telegram/webhook`) maps `chat_id` to the user's `profiles` record. Alerts for User A are delivered **only** to User A's private chat.
-
----
-
-## 🎨 Design System & Settings Screen Hierarchy (Option 2)
-
-```
-┌────────────────────────────────────────────────────────┐
-│ 🔔 REAL-TIME NOTIFICATIONS                             │
-│   • Telegram Bot Channel (@StokVigilAi_bot)  [Connect] │
-│   • AI Alert Frequency (High / All / FII)              │
-│   • Push Notification Alerts (FCM Toggle: OFF/ON)      │
-├────────────────────────────────────────────────────────┤
-│ 🔒 SECURITY & ACCESS                                   │
-│   • Change Password                                  → │
-├────────────────────────────────────────────────────────┤
-│ ⚠️ DANGER ZONE                                         │
-│   • Delete Account & Data                              │
-│   [ 🗑️ Delete My Account ] (2-Step Modal: Type DELETE) │
-├────────────────────────────────────────────────────────┤
-│ [ 🚪 Sign Out ] (Vibrant 4-Stop Brand Gradient Pill)   │
-└────────────────────────────────────────────────────────┘
-```
-
-- **Cancel & Delete Account Buttons**: Dark glass Cancel (`#131A2B`) + Dynamic Fiery Red Gradient Delete button (`#EF4444` $\rightarrow$ `#DC2626` $\rightarrow$ `#B91C1C`) activated when `DELETE` is typed.
-- **Sign Out CTA**: 4-Stop brand gradient pill button (`#00B4D8` $\rightarrow$ `#0284C7` $\rightarrow$ `#6366F1` $\rightarrow$ `#8B5CF6`) with glowing ambient shadow.
+- **Single Central Bot Architecture**: A single bot handle (`@StokVigilAi_bot`) serves unlimited individual users with complete tenant isolation.
+- **1-Tap Deep Link Pairing**: Clicking **`Connect Telegram →`** opens `https://t.me/StokVigilAi_bot?start=<USER_ID>`.
+- **Rich HTML Cards & Inline Buttons**: Every alert includes color-coded badges, Demat position snapshot, tactical levels (Entry, Target 1, Target 2, Stop-Loss, R:R), and interactive buttons (`TradingView Chart`, `ICICI Direct`).
 
 ---
 
 ## 🔑 ICICI Direct Breeze API Authentication Workflow
 
-Per SEBI regulations, broker session tokens expire daily at midnight IST. StokVigil AI provides an automated flow for both mobile and web:
+Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides an automated flow for both mobile and web:
 
 1. **Broker App Configuration**: In the [ICICI Direct Breeze Portal](https://api.icicidirect.com/apiuser/home), register your App with **Redirect URL** set to:
    - **Official URL**: `https://stokvigil-ai.vercel.app/api/auth/icici-callback`
    - **Alternative**: `https://stokvigil-ai.vercel.app/callback`
-2. **1-Tap Web Login**: In the app or web portal, enter your `App Key` & `Secret Key` and tap **`🌐 1-Tap ICICI Web Login`**.
+2. **1-Tap Web Login**: In the app or web portal, enter your `App Key` & `Secret Key` and tap **`🌐 Generate Daily Session Token`**.
 3. **Automated Token Capture**:
-   - `/api/auth/icici-callback` supports both `GET` query parameters and `POST` form data from ICICI Direct.
-   - Displays a 1-tap **`📋 Copy Session Token`** button, **`📱 1-Tap Open in StokVigil App →`** deep link (`stokvigil://breeze-callback`), and **`🌐 Open in StokVigil Web Portal →`**.
-4. **Direct Supabase Encrypted Vault**: Tokens are encrypted and saved directly to the user's `user_credentials` table via Supabase RLS policies.
+   - `/api/auth/icici-callback` displays a 1-tap **`📋 Copy Session Token`** button.
+4. **Direct Supabase Encrypted Vault**: Tokens are encrypted via AES-256 Fernet and saved directly to the user's `user_credentials` table via Supabase RLS policies.
 
 ---
 
@@ -106,7 +89,7 @@ Users can permanently delete their account directly from the **Settings** page:
 - **Cascade Deletion (`POST /api/user/delete-account`)**:
   - Wipes all encrypted ICICI Breeze session tokens & API keys from `user_credentials`.
   - Removes all custom watchlist entries from `user_watchlists`.
-  - Clears registered device push notification tokens and Telegram bindings from `user_devices`.
+  - Clears registered device push notification tokens and Telegram bindings.
   - Permanently deletes the authentication identity from Supabase Auth (`auth.admin.delete_user`).
 
 ---
@@ -115,21 +98,35 @@ Users can permanently delete their account directly from the **Settings** page:
 
 ### 1. Database Setup (Supabase PostgreSQL)
 1. Log into your [Supabase Dashboard](https://supabase.com).
-2. Open the SQL Editor and execute the migration script located at:
-   `backend/supabase_rls_setup.sql`
-3. Copy your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
+2. Open the SQL Editor and execute the migration scripts in order:
+   - `supabase/migrations/20260809_init_stokvigil.sql`
+   - `supabase/migrations/20260822_enhance_stokalerts.sql`
+3. Copy your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`.
 
-### 2. Backend Deployment (Google Cloud Run / Render)
+### 2. Backend Deployment (FastAPI on Cloud Run / Local)
 1. Navigate to `backend/`:
    ```bash
    cd backend
+   python -m venv .venv
+   .\.venv\Scripts\pip.exe install -r requirements.txt
    ```
-2. Copy `.env.example` to `.env` and fill in your keys:
+2. Set environment variables in `backend/.env`:
+   ```env
+   ENVIRONMENT=production
+   SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   ENCRYPTION_KEY=d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=
+   GEMINI_API_KEY=your-gemini-api-key
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   ```
+3. Run test suite:
    ```bash
-   cp ../.env.example .env
+   .\.venv\Scripts\python.exe tests/test_institutional_engine.py
    ```
-3. Set environment variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`.
-4. Deploy using `cloudrun.sh` or Render.
+4. Start backend server:
+   ```bash
+   .\.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
 
 ### 3. Telegram Bot Setup (@BotFather)
 1. Open Telegram and search for `@BotFather`.
@@ -140,16 +137,7 @@ Users can permanently delete their account directly from the **Settings** page:
    curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=<YOUR_BACKEND_URL>/api/telegram/webhook"
    ```
 
-### 4. Compiling the Flutter Android APK (`com.app.stokvigil`)
-1. In your GitHub Repository $\rightarrow$ **Settings** $\rightarrow$ **Secrets and variables** $\rightarrow$ **Actions**, set:
-   - `GOOGLE_SERVICES_JSON`: Content of your Android client `google-services.json` from Firebase Console.
-   - `SUPABASE_URL`: Your Supabase URL.
-   - `SUPABASE_ANON_KEY`: Your Supabase Anon Public Key.
-   - `STOKVIGIL_BACKEND_URL`: Your backend URL.
-2. Push to `main` branch or trigger **Build Flutter Android APK** workflow manually.
-3. Download the compiled release APK from GitHub Actions artifacts.
-
-### 5. Running the Web Portal (Next.js PWA)
+### 4. Running the Web Portal (Next.js PWA)
 1. Navigate to `web_portal/`:
    ```bash
    cd web_portal
@@ -157,6 +145,13 @@ Users can permanently delete their account directly from the **Settings** page:
    npm run dev
    ```
 2. Access the portal at `http://localhost:3000`.
+
+### 5. Running the Flutter Android App (`com.app.stokvigil`)
+1. Navigate to `mobile_app/`:
+   ```bash
+   cd mobile_app
+   flutter run
+   ```
 
 ---
 

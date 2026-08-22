@@ -685,27 +685,43 @@ export default function App() {
       try {
         const { data } = await supabase.from('stok_alerts').select('*').eq('user_id', uid).order('created_at', { ascending: false });
         if (data && data.length > 0) {
-          setAlerts(data.map((a: any) => ({
-            id: a.id,
-            symbol: a.symbol,
-            impact: a.impact_score || 80,
-            impactColor: a.impact_score >= 80 ? "emerald" : "amber",
-            catalyst: a.catalyst_type || "CATALYST",
-            category: a.catalyst_type?.toLowerCase() || "high",
-            signal: a.impact_score >= 80 ? "STRONG BUY" : "BUY",
-            signalType: a.impact_score >= 80 ? "strong_buy" : "buy",
-            targetPrice: `₹${((a.metrics_snapshot?.price || 1250) * 1.12).toFixed(0)}`,
-            stopLoss: `₹${((a.metrics_snapshot?.price || 1250) * 0.94).toFixed(0)}`,
-            title: a.alert_title,
-            reasons: a.factual_reasons || [],
-            metrics: {
-              price: `₹${a.metrics_snapshot?.price || 1250}`,
-              pe: a.metrics_snapshot?.pe_ratio?.toString() || "24.2",
-              debt: a.metrics_snapshot?.debt_to_equity?.toString() || "0.38",
-              roe: a.metrics_snapshot?.roe || "18.5%"
-            },
-            time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          })));
+          setAlerts(data.map((a: any) => {
+            const rawSnap = a.metrics_snapshot || {};
+            const livePrice = rawSnap.current_price || rawSnap.price || 1250;
+            const bias = rawSnap.action_bias || (a.impact_score >= 80 ? "STRONG BUY" : "BUY");
+            const tPrice = rawSnap.tactical_levels?.target_1 || `₹${(livePrice * 1.12).toFixed(0)}`;
+            const sLoss = rawSnap.tactical_levels?.protective_stop_loss || `₹${(livePrice * 0.94).toFixed(0)}`;
+            const peVal = rawSnap.financials?.pe_ratio?.toString() || rawSnap.pe_ratio?.toString() || "24.2";
+            const debtVal = rawSnap.financials?.debt_to_equity?.toString() || rawSnap.debt_to_equity?.toString() || "0.38";
+            const roeVal = rawSnap.financials?.roe_pct ? `${rawSnap.financials.roe_pct}%` : (rawSnap.roe || "18.5%");
+
+            let sigType = "buy";
+            if (bias.includes("SELL")) sigType = "sell";
+            else if (bias.includes("TRAILING")) sigType = "med";
+            else if (a.impact_score >= 80) sigType = "strong_buy";
+
+            return {
+              id: a.id,
+              symbol: a.symbol,
+              impact: a.impact_score || 80,
+              impactColor: a.impact_score >= 80 ? "emerald" : "amber",
+              catalyst: a.catalyst_type || "CATALYST",
+              category: a.catalyst_type?.toLowerCase() || "high",
+              signal: bias.replace("_", " "),
+              signalType: sigType,
+              targetPrice: tPrice,
+              stopLoss: sLoss,
+              title: a.alert_title,
+              reasons: a.factual_reasons || [],
+              metrics: {
+                price: `₹${livePrice}`,
+                pe: peVal,
+                debt: debtVal,
+                roe: roeVal
+              },
+              time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+          }));
           return;
         }
       } catch (e) {

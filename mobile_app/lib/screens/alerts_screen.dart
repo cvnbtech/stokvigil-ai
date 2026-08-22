@@ -65,23 +65,29 @@ class _AlertsScreenState extends State<AlertsScreen> {
   }
 
   String _getSignalLabel(StokAlert alert) {
+    final bias = alert.actionBias.toUpperCase();
+    if (bias.contains('BUY') || bias.contains('ACCUMULATE')) return 'ACCUMULATE / BUY';
+    if (bias.contains('SELL')) return 'PROFIT BOOK / SELL';
+    if (bias.contains('TRAILING')) return 'TRAILING SL TRIGGER';
+    
     final cat = alert.catalystType.toUpperCase();
     final title = alert.alertTitle.toUpperCase();
     if (cat.contains('VOLUME') || title.contains('VOLUME')) return 'VOLUME SURGE';
-    if (cat.contains('HOLD') || cat.contains('NEUTRAL') || title.contains('HOLD') || title.contains('NEUTRAL') || alert.impactScore < 70) return 'HOLD / NEUTRAL';
     if (cat.contains('BREAKOUT') || title.contains('BREAKOUT')) return 'BREAKOUT SIGNAL';
     if (cat.contains('EARNING') || title.contains('EARNING')) return 'EARNINGS BEAT';
     if (alert.impactScore >= 80) return 'STRONG BUY';
-    return 'BUY SIGNAL';
+    return 'WATCH SIGNAL';
   }
 
   String _getSignalType(StokAlert alert) {
+    final bias = alert.actionBias.toUpperCase();
+    if (bias.contains('BUY') || bias.contains('ACCUMULATE')) return 'strong_buy';
+    if (bias.contains('SELL')) return 'hold';
+    if (bias.contains('TRAILING')) return 'med';
+    
     final cat = alert.catalystType.toUpperCase();
-    final title = alert.alertTitle.toUpperCase();
-    if (cat.contains('VOLUME') || title.contains('VOLUME')) return 'volume';
-    if (cat.contains('HOLD') || cat.contains('NEUTRAL') || title.contains('HOLD') || title.contains('NEUTRAL') || alert.impactScore < 70) return 'hold';
-    if (cat.contains('BREAKOUT') || title.contains('BREAKOUT')) return 'breakout';
-    if (cat.contains('EARNING') || title.contains('EARNING')) return 'buy';
+    if (cat.contains('VOLUME')) return 'volume';
+    if (cat.contains('BREAKOUT')) return 'breakout';
     if (alert.impactScore >= 80) return 'strong_buy';
     return 'buy';
   }
@@ -112,12 +118,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
             a.alertTitle.toUpperCase().contains('DEAL') ||
             a.alertTitle.toUpperCase().contains('BLOCK');
       }
-      if (_selectedFilter == 'hold') {
-        return a.catalystType == 'HOLD' ||
-            a.catalystType == 'NEUTRAL' ||
-            a.impactScore < 75 ||
-            a.alertTitle.toUpperCase().contains('HOLD') ||
-            a.alertTitle.toUpperCase().contains('NEUTRAL');
+      if (_selectedFilter == 'trailing') {
+        return a.actionBias.contains('TRAILING') ||
+            a.alertTitle.toUpperCase().contains('TRAILING');
       }
       return true;
     }).toList();
@@ -137,7 +140,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
         color: AppTheme.cyan,
         child: Column(
           children: [
-            // Filter Chip Bar (Matches Web Portal)
+            // Filter Chip Bar
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -145,11 +148,11 @@ class _AlertsScreenState extends State<AlertsScreen> {
                 children: [
                   _buildFilterChip('all', '⚡ All Alerts'),
                   _buildFilterChip('high', '🔥 High Impact'),
+                  _buildFilterChip('trailing', '🟡 Trailing SL'),
                   _buildFilterChip('earnings', '📈 Earnings'),
                   _buildFilterChip('breakout', '🚀 Breakout'),
                   _buildFilterChip('volume', '⚡ Volume Surge'),
-                  _buildFilterChip('fii', '📊 FII Buying'),
-                  _buildFilterChip('hold', '⚪ Hold / Neutral'),
+                  _buildFilterChip('fii', '📊 FII / Deals'),
                 ],
               ),
             ),
@@ -169,7 +172,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                 Text("No High-Impact Catalysts Yet", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                                 SizedBox(height: 8),
                                 Text(
-                                  "StokVigil scans your portfolio every 5 mins during Indian market hours. Noise is filtered out automatically.",
+                                  "StokVigil scans your ICICI portfolio every 5 mins during Indian market hours. Noise is filtered out automatically.",
                                   textAlign: TextAlign.center,
                                   style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                                 ),
@@ -184,9 +187,12 @@ class _AlertsScreenState extends State<AlertsScreen> {
                             final alert = filteredList[index];
                             final isHigh = alert.impactScore >= 80;
                             final dateStr = DateFormat('dd MMM, hh:mm a').format(alert.createdAt);
-                            final priceVal = alert.metricsSnapshot['price'] ?? 1250.0;
+                            final priceVal = alert.metricsSnapshot['current_price'] ?? alert.metricsSnapshot['price'] ?? 1250.0;
                             final signalLabel = _getSignalLabel(alert);
                             final signalType = _getSignalType(alert);
+                            final targetStr = alert.target1 ?? "₹${((priceVal as num) * 1.08).toStringAsFixed(0)}";
+                            final slStr = alert.stopLoss ?? "₹${((priceVal as num) * 0.96).toStringAsFixed(0)}";
+                            final rrStr = alert.riskReward ?? "1:2.0";
 
                             return GlassCard(
                               margin: const EdgeInsets.only(bottom: 16),
@@ -209,7 +215,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                               type: signalType,
                                             ),
                                             SignalBadge(
-                                              label: "${alert.impactScore}% CONFIDENCE",
+                                              label: "${alert.impactScore}/100 SCORE",
                                               type: isHigh ? 'high' : 'med',
                                             ),
                                           ],
@@ -241,6 +247,31 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                   ),
                                   const SizedBox(height: 12),
 
+                                  // Demat Position Banner (if user holds stock)
+                                  if (alert.dematPosition != null) ...[
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.primaryEmerald.withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.account_balance_wallet, color: AppTheme.primaryEmerald, size: 16),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              "ICICI Demat: ${alert.dematPosition!['quantity']} Qty @ Avg ₹${alert.dematPosition!['average_buy_price']} (P&L: ${alert.dematPosition!['unrealized_pnl_pct']}%)",
+                                              style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+
                                   // Factual Catalyst Bullet Points
                                   ...alert.factualReasons.map((reason) => Padding(
                                         padding: const EdgeInsets.only(bottom: 6.0),
@@ -259,7 +290,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                       )),
                                   const SizedBox(height: 12),
 
-                                  // Target & Stop Loss Box
+                                  // Tactical Target & Stop Loss Box
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                     decoration: BoxDecoration(
@@ -272,8 +303,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                       runSpacing: 4,
                                       spacing: 12,
                                       children: [
-                                        Text("🎯 Target: ₹${(priceVal * 1.12).toStringAsFixed(0)}", style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 11, fontWeight: FontWeight.w900)),
-                                        Text("🛡️ Stop Loss: ₹${(priceVal * 0.94).toStringAsFixed(0)}", style: const TextStyle(color: AppTheme.dangerRose, fontSize: 11, fontWeight: FontWeight.w900)),
+                                        Text("🎯 Target 1: $targetStr", style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 11, fontWeight: FontWeight.w900)),
+                                        Text("🛡️ Stop Loss: $slStr", style: const TextStyle(color: AppTheme.dangerRose, fontSize: 11, fontWeight: FontWeight.w900)),
+                                        Text("⚖️ R:R: $rrStr", style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.bold)),
                                       ],
                                     ),
                                   ),
@@ -298,15 +330,18 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                           context,
                                           symbol: alert.symbol,
                                           currentPrice: (priceVal as num).toDouble(),
-                                          initialType: 'BUY',
-                                          targetPrice: "₹${(priceVal * 1.12).toStringAsFixed(0)}",
-                                          stopLoss: "₹${(priceVal * 0.94).toStringAsFixed(0)}",
+                                          initialType: alert.actionBias.contains('SELL') ? 'SELL' : 'BUY',
+                                          targetPrice: targetStr,
+                                          stopLoss: slStr,
                                         );
                                       },
-                                      child: const Row(
+                                      child: Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          Text("⚡ 1-Tap Trade Execution", style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 12)),
+                                          Text(
+                                            alert.actionBias.contains('SELL') ? "⚡ 1-Tap Profit Booking Order" : "⚡ 1-Tap ICICI Trade Execution",
+                                            style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 12),
+                                          ),
                                         ],
                                       ),
                                     ),

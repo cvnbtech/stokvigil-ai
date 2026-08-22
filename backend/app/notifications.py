@@ -1,7 +1,7 @@
 import json
 import logging
 import httpx
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from app.config import settings
 
 logger = logging.getLogger("stokvigil.notifications")
@@ -32,8 +32,7 @@ def init_firebase():
 
 async def send_fcm_notification(fcm_token: str, title: str, body: str, data_payload: Optional[dict] = None) -> bool:
     """
-    Sends Lock-Screen FCM Push Alert to Android/iOS devices.
-    Factual & Non-Advisory payload only.
+    Sends High-Priority Lock-Screen FCM Push Alert to Android/iOS devices.
     """
     if not fcm_token:
         logger.warning("No FCM token provided, skipping FCM push.")
@@ -69,10 +68,10 @@ async def send_fcm_notification(fcm_token: str, title: str, body: str, data_payl
         logger.error(f"Error sending FCM notification: {e}")
         return False
 
-async def send_telegram_notification(chat_id: str, formatted_markdown_text: str) -> bool:
+async def send_telegram_notification(chat_id: str, formatted_html_text: str, reply_markup: Optional[dict] = None) -> bool:
     """
-    Sends styled Markdown Telegram market intelligence alert straight to Telegram chat.
-    Uses Telegram Bot HTTP API.
+    Sends styled HTML Telegram market intelligence alert straight to Telegram chat.
+    Uses Telegram Bot HTTP API with optional inline keyboard buttons.
     """
     if not chat_id:
         logger.warning("No Telegram Chat ID provided, skipping Telegram alert.")
@@ -80,16 +79,18 @@ async def send_telegram_notification(chat_id: str, formatted_markdown_text: str)
         
     bot_token = settings.TELEGRAM_BOT_TOKEN
     if not bot_token:
-        logger.info(f"[DRY RUN - Telegram Alert to Chat {chat_id}] Message:\n{formatted_markdown_text}")
+        logger.info(f"[DRY RUN - Telegram Alert to Chat {chat_id}] Message:\n{formatted_html_text}")
         return True
         
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
         "chat_id": chat_id,
-        "text": formatted_markdown_text,
+        "text": formatted_html_text,
         "parse_mode": "HTML",
         "disable_web_page_preview": True
     }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -104,31 +105,97 @@ async def send_telegram_notification(chat_id: str, formatted_markdown_text: str)
         logger.error(f"Exception sending Telegram notification: {e}")
         return False
 
-def format_telegram_alert(symbol: str, alert_title: str, catalyst_type: str, impact_score: int, factual_reasons: list, metrics_snapshot: dict) -> str:
+def format_telegram_alert(
+    symbol: str,
+    alert_title: str,
+    action_bias: str,
+    confluence_score: int,
+    catalyst_type: str,
+    confluence_drivers: List[str],
+    tactical_levels: Optional[Dict[str, Any]] = None,
+    demat_position: Optional[Dict[str, Any]] = None,
+    metrics_snapshot: Optional[Dict[str, Any]] = None,
+    holding_guidance: Optional[str] = None
+) -> str:
     """
-    Formats factual market alert as clean HTML for Telegram Bot API.
+    Formats institutional-grade market alert as rich HTML for Telegram.
+    Includes Action Badges, Demat context, Technical Drivers, and Risk-Reward Levels.
     """
-    badge_emoji = "🟢" if impact_score >= 80 else ("🟡" if impact_score >= 60 else "🔴")
-    
-    html = f"⚡ <b>StokVigil AI Market Alert</b> ⚡\n\n"
-    html += f"<b>Ticker:</b> #{symbol}\n"
-    html += f"<b>Catalyst:</b> {catalyst_type.replace('_', ' ')}\n"
-    html += f"<b>Impact Score:</b> {badge_emoji} {impact_score}/100\n\n"
-    html += f"📌 <b>{alert_title}</b>\n\n"
-    
-    html += "🔍 <b>Factual Drivers:</b>\n"
-    for reason in factual_reasons:
-        html += f"• {reason}\n"
-        
-    html += "\n📊 <b>Key Financial Snapshot:</b>\n"
-    if "price" in metrics_snapshot:
-        html += f"• Live Price: ₹{metrics_snapshot['price']}\n"
-    if "pe_ratio" in metrics_snapshot and metrics_snapshot['pe_ratio']:
-        html += f"• Trailing P/E: {metrics_snapshot['pe_ratio']}\n"
-    if "debt_to_equity" in metrics_snapshot and metrics_snapshot['debt_to_equity']:
-        html += f"• Debt-to-Equity: {metrics_snapshot['debt_to_equity']}\n"
-    if "revenue_growth" in metrics_snapshot and metrics_snapshot['revenue_growth']:
-        html += f"• Revenue Growth (YoY): {metrics_snapshot['revenue_growth']}%\n"
+    bias_upper = (action_bias or "HOLD_NEUTRAL").upper()
+    if "BUY" in bias_upper or "ACCUMULATE" in bias_upper:
+        header_badge = "🟢 <b>STOKVIGIL SIGNAL: ACCUMULATE / BUY WATCH</b> 🟢"
+    elif "SELL" in bias_upper:
+        header_badge = "🔴 <b>STOKVIGIL SIGNAL: PROFIT BOOK / SELL WATCH</b> 🔴"
+    elif "TRAILING" in bias_upper:
+        header_badge = "🟡 <b>STOKVIGIL ALERT: TRAILING STOP-LOSS TRIGGER</b> 🟡"
+    else:
+        header_badge = "⚪ <b>STOKVIGIL UPDATE: MARKET WATCHTOWER</b> ⚪"
 
-    html += "\n<i>⚠️ Note: StokVigil AI provides factual data alerts only and does not provide financial advice.</i>"
+    html = f"{header_badge}\n"
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += f"📈 <b>Ticker:</b> #{symbol} (NSE)\n"
+    html += f"🎯 <b>Confluence Score:</b> <b>{confluence_score}/100</b>\n"
+    html += f"⚡ <b>Catalyst:</b> {catalyst_type.replace('_', ' ')}\n\n"
+    html += f"📌 <b>{alert_title}</b>\n\n"
+
+    # Demat Position Context (if held by user in ICICI Direct)
+    if demat_position and demat_position.get("is_in_portfolio"):
+        qty = demat_position.get("quantity", 0)
+        avg_p = demat_position.get("average_buy_price", 0.0)
+        pnl_pct = demat_position.get("unrealized_pnl_pct", 0.0)
+        pnl_badge = "🟢" if pnl_pct >= 0 else "🔴"
+        html += "💼 <b>Your ICICI Direct Demat Snapshot:</b>\n"
+        html += f"• Position: {qty} Qty @ Avg ₹{avg_p:,.2f}\n"
+        html += f"• Current P&L: {pnl_badge} {pnl_pct:+.2f}%\n"
+        if holding_guidance:
+            html += f"• <i>Guidance: {holding_guidance}</i>\n"
+        html += "\n"
+
+    # Factual Confluence Drivers
+    if confluence_drivers:
+        html += "🔍 <b>Multi-Factor Drivers:</b>\n"
+        for driver in confluence_drivers[:4]:
+            html += f"• {driver}\n"
+        html += "\n"
+
+    # Tactical Levels (Entry, Target, Stop-Loss, R:R)
+    if tactical_levels:
+        entry = tactical_levels.get("entry_range", "N/A")
+        t1 = tactical_levels.get("target_1", "N/A")
+        t2 = tactical_levels.get("target_2", "N/A")
+        sl = tactical_levels.get("protective_stop_loss", "N/A")
+        rr = tactical_levels.get("risk_reward_ratio", "N/A")
+        
+        html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
+        html += f"• <b>Entry Range:</b> {entry}\n"
+        html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
+        html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
+        html += f"• <b>Stop-Loss:</b> {sl} (R:R: {rr})\n\n"
+
+    # Technical Metrics Snapshot
+    if metrics_snapshot:
+        html += "📊 <b>Market Snapshot:</b>\n"
+        if "current_price" in metrics_snapshot or "price" in metrics_snapshot:
+            p = metrics_snapshot.get("current_price") or metrics_snapshot.get("price")
+            html += f"• LTP: ₹{p}\n"
+        if "rsi_15m" in metrics_snapshot:
+            html += f"• 15m RSI: {metrics_snapshot['rsi_15m']} | 5m RSI: {metrics_snapshot.get('rsi_5m', 'N/A')}\n"
+        if "vwap" in metrics_snapshot and metrics_snapshot['vwap'] > 0:
+            html += f"• VWAP: ₹{metrics_snapshot['vwap']}\n"
+        if "delivery_pct" in metrics_snapshot:
+            html += f"• Delivery: {metrics_snapshot['delivery_pct']}%\n"
+
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += "<i>⚠️ Factual quantitative intelligence alert. Non-advisory analytical tracking.</i>"
     return html
+
+def build_telegram_inline_keyboard(symbol: str) -> dict:
+    """Builds interactive inline buttons for Telegram alert."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📈 TradingView Chart", "url": f"https://in.tradingview.com/symbols/NSE-{symbol}/"},
+                {"text": "💼 ICICI Direct", "url": "https://secure.icicidirect.com"}
+            ]
+        ]
+    }
