@@ -111,6 +111,19 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 
 ---
 
+## 3.1 Dynamic Stock Search & Exchange Validation Engine (Zero Hardcoding)
+
+1. **Real-Time Autocomplete (`GET /api/stocks/search?q={query}`)**:
+   - Queries live market exchanges for Indian equities (`.NS` for NSE, `.BO` for BSE) via multi-host gateway (`query1.finance.yahoo.com` & `query2.finance.yahoo.com`).
+   - Dynamically parses Symbol, Company Name, Exchange, and Sector with sub-100ms response time.
+2. **Dual-Stage Real-Time Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**:
+   - **Stage 1 (Fast Market Tick)**: Queries live exchange metadata.
+   - **Stage 2 (Historical Tick Book Verification)**: Downloads the live 1-day candle. If empty (as with dummy symbols `NE`, `ASDF`, `XYZ123`), strictly returns `is_valid: false`, protecting the database from fake entries.
+3. **In-App Session Token Auto-Capture (Flutter Mobile)**:
+   - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
+
+---
+
 ## 4. Telegram Integration Flow
 
 1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=USER_ID`).

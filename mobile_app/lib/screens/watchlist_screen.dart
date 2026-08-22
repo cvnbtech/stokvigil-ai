@@ -146,7 +146,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   Future<void> _addSymbol(String symbol, [String? displayName]) async {
     final sym = symbol.trim().toUpperCase();
     if (sym.isEmpty) {
-      ErrorHandler.showErrorSnackBar(context, "Please enter an NSE/BSE ticker symbol.");
+      ErrorHandler.showErrorSnackBar(context, "Please enter an NSE/BSE stock symbol.");
       return;
     }
 
@@ -247,7 +247,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                         border: Border.all(color: AppTheme.borderCyan),
                       ),
                       child: Text(
-                        "${_watchlist.length} Tickers",
+                        "${_watchlist.length} Stocks",
                         style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900),
                       ),
                     ),

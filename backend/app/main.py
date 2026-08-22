@@ -254,50 +254,59 @@ def search_stocks(q: str = Query(..., min_length=1)):
     results = []
     seen_symbols = set()
 
-    try:
-        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(query)}&quotesCount=10&newsCount=0"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=4) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            for item in data.get("quotes", []):
-                sym = item.get("symbol", "")
-                quote_type = item.get("quoteType", "")
-                if quote_type != "EQUITY":
-                    continue
+    search_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
 
-                clean_sym = sym
-                exchange = "NSE"
-                if sym.endswith(".NS"):
-                    clean_sym = sym[:-3]
+    for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
+        try:
+            url = f"https://{host}/v1/finance/search?q={urllib.parse.quote(query)}&quotesCount=10&newsCount=0"
+            req = urllib.request.Request(url, headers=search_headers)
+            with urllib.request.urlopen(req, timeout=4) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                for item in data.get("quotes", []):
+                    sym = item.get("symbol", "")
+                    quote_type = item.get("quoteType", "")
+                    if quote_type != "EQUITY":
+                        continue
+
+                    clean_sym = sym
                     exchange = "NSE"
-                elif sym.endswith(".BO"):
-                    clean_sym = sym[:-3]
-                    exchange = "BSE"
-                elif item.get("exchange") in ["NSI", "NSE"]:
-                    exchange = "NSE"
-                elif item.get("exchange") in ["BOM", "BSE"]:
-                    exchange = "BSE"
-                else:
-                    continue
+                    if sym.endswith(".NS"):
+                        clean_sym = sym[:-3]
+                        exchange = "NSE"
+                    elif sym.endswith(".BO"):
+                        clean_sym = sym[:-3]
+                        exchange = "BSE"
+                    elif item.get("exchange") in ["NSI", "NSE"]:
+                        exchange = "NSE"
+                    elif item.get("exchange") in ["BOM", "BSE"]:
+                        exchange = "BSE"
+                    else:
+                        continue
 
-                if clean_sym in seen_symbols:
-                    continue
-                seen_symbols.add(clean_sym)
+                    if clean_sym in seen_symbols or clean_sym.startswith("0P"):
+                        continue
+                    seen_symbols.add(clean_sym)
 
-                name = item.get("longname") or item.get("shortname") or clean_sym
-                sector = item.get("sector") or item.get("industry") or f"{exchange} Listed"
+                    name = item.get("longname") or item.get("shortname") or clean_sym
+                    sector = item.get("sector") or item.get("industry") or f"{exchange} Listed"
 
-                results.append({
-                    "symbol": clean_sym,
-                    "name": name,
-                    "exchange": exchange,
-                    "full_symbol": sym,
-                    "sector": sector
-                })
-                if len(results) >= 5:
-                    break
-    except Exception as e:
-        logger.warning(f"Live stock search failed for query '{query}': {e}")
+                    results.append({
+                        "symbol": clean_sym,
+                        "name": name,
+                        "exchange": exchange,
+                        "full_symbol": sym,
+                        "sector": sector
+                    })
+                    if len(results) >= 5:
+                        break
+            if results:
+                break
+        except Exception as e:
+            logger.warning(f"Live stock search on {host} failed for '{query}': {e}")
 
     # Fallback to direct yfinance validation if search query was exact symbol
     if not results and len(query) >= 2:
@@ -325,16 +334,50 @@ def search_stocks(q: str = Query(..., min_length=1)):
 def validate_stock(symbol: str = Query(..., min_length=1)):
     """
     Dynamically validates in real-time whether a ticker exists on NSE or BSE.
+    Strictly returns is_valid: False for dummy or non-traded symbols (e.g. NE, ASDF).
     """
     sym = symbol.strip().upper()
+    if len(sym) < 2:
+        return {
+            "is_valid": False,
+            "symbol": sym,
+            "error": f"'{sym}' is too short. Please enter a valid stock ticker."
+        }
+
+    # 1. Fast chart API validation
     for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
         try:
-            t = yf.Ticker(f"{sym}{suffix}")
-            price = t.fast_info.last_price
-            if price is not None and price > 0:
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                res_list = data.get("chart", {}).get("result")
+                if res_list and len(res_list) > 0:
+                    meta = res_list[0].get("meta", {})
+                    price = meta.get("regularMarketPrice")
+                    if price is not None and price > 0:
+                        name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
+                        return {
+                            "is_valid": True,
+                            "symbol": sym,
+                            "name": name,
+                            "exchange": exch,
+                            "price": price,
+                            "full_symbol": f"{sym}{suffix}"
+                        }
+        except Exception:
+            pass
+
+    # 2. Historical tick confirmation fallback
+    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+        try:
+            df = yf.download(f"{sym}{suffix}", period="1d", progress=False)
+            if not df.empty and len(df) > 0:
+                price = float(df['Close'].iloc[-1])
                 return {
                     "is_valid": True,
                     "symbol": sym,
+                    "name": f"{sym} ({exch})",
                     "exchange": exch,
                     "price": price,
                     "full_symbol": f"{sym}{suffix}"

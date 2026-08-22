@@ -72,7 +72,14 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 
 ## 👁️ Demat Portfolio Privacy Masking & Live Indicator
 - **Demat Portfolio Privacy Masking**: Total Portfolio Value, Returns, P&L %, Invested value, and Holdings are masked by default (`₹ • • • • • •` / `••••••`). An interactive **`👁️ Show / Hide`** toggle allows 1-tap unmasking on Mobile & Web.
-- **Pulsing Live NSE Market Indicator**: Animated `BlinkingLiveDot` before `NSE LIVE 09:15–15:30` on mobile and CSS live glow on web.
+- **Pulsing Live NSE/BSE Market Indicator**: Animated `BlinkingLiveDot` with synchronized blinking `NSE/BSE LIVE 09:15–15:30` on mobile and CSS live glow on web.
+
+---
+
+## 🔍 Dynamic Stock Search & Exchange Validation (Zero Hardcoding)
+- **Live Autocomplete (`GET /api/stocks/search?q={query}`)**: As users type, the system queries live NSE (`.NS`) and BSE (`.BO`) exchange feeds in real-time, displaying verified company names, symbols, and sectors.
+- **Dual-Stage Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**: Every custom stock is checked against live market tick data before being saved. Dummy, non-existent, or misspelled tickers (e.g. `NE`, `ASDFGH`) are blocked and rejected from entering the database.
+- **Demat Auto-Sync**: Automatically imports active ICICI Demat holdings into personal watchlists with one click.
 
 ---
 
@@ -86,12 +93,13 @@ Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides 
    - `App Key` and `Secret Key` are entered **only once** and encrypted in the vault.
    - On subsequent days, opening the setup screen **automatically fetches and decrypts** the permanent keys.
    - Includes **`👁️ Show / Hide`** privacy eye toggle buttons on both key inputs.
-3. **1-Tap Web Login & Token Capture**:
-   - Tap **`🌐 1-Tap ICICI Web Login`** $\rightarrow$ Log in with ICICI 2FA OTP.
-   - Callback page offers 1-tap **`📋 Copy Session Token`** or **`📱 1-Tap Open in StokVigil App`**.
+3. **1-Tap In-App Login & Session Auto-Capture (Mobile)**:
+   - Tap **`⚡ 1-Tap Login & Auto-Capture Token`** $\rightarrow$ Secure In-App WebView sheet opens.
+   - User logs in with ICICI credentials & TOTP OTP.
+   - App intercepts the `apisession` query parameter instantly, closes the webview, auto-populates the session token, and triggers AES-256 encrypted auto-save.
 4. **Session Token Validation & Instant Upsert (`POST /api/user/credentials`)**:
    - The **`🔐 Encrypt & Save Key`** button is enabled **only when a valid session token is provided**.
-   - Saving performs an authenticated, conflict-free database upsert, instantly syncing live Demat holdings.
+   - Saving performs an authenticated, conflict-free database upsert (`onConflict: 'user_id'`), instantly syncing live Demat holdings.
 
 ---
 

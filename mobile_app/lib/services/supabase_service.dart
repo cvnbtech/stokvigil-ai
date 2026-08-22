@@ -245,7 +245,7 @@ class SupabaseService {
         'encrypted_session_token': base64SessionToken,
         'token_date': DateTime.now().toIso8601String().split('T')[0],
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      }, onConflict: 'user_id');
       return true;
     } catch (e) {
       debugPrint("Supabase direct save credentials error: $e");

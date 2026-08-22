@@ -81,10 +81,14 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> validateStock(String symbol) async {
+    final sym = symbol.trim().toUpperCase();
+    if (sym.length < 2) {
+      return {"is_valid": false, "symbol": sym, "error": "Symbol too short."};
+    }
     try {
-      final sym = Uri.encodeComponent(symbol.trim().toUpperCase());
+      final q = Uri.encodeComponent(sym);
       final res = await http
-          .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$sym'))
+          .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$q'))
           .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
@@ -92,7 +96,7 @@ class ApiService {
     } catch (e) {
       debugPrint("API Error validating stock: $e");
     }
-    return {"is_valid": true, "symbol": symbol.toUpperCase(), "exchange": "NSE"};
+    return {"is_valid": false, "symbol": sym, "error": "Could not verify '$sym' on NSE/BSE."};
   }
 
   Future<bool> deleteUserAccount(String userId) async {

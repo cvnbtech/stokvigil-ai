@@ -1063,22 +1063,28 @@ export default function App() {
     let stockName = explicitName || `${raw} India`;
     let exchange = "NSE";
 
+    if (raw.length < 2) {
+      alert(`⚠️ '${raw}' is too short. Please enter a valid NSE or BSE stock symbol.`);
+      return;
+    }
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`);
       if (res.ok) {
         const valData = await res.json();
-        if (valData.is_valid) {
+        if (valData.is_valid === true) {
           isValid = true;
           exchange = valData.exchange || "NSE";
+          if (valData.name) stockName = valData.name;
         }
       }
     } catch (e) {
       console.warn("Stock validation error:", e);
-      isValid = true; // Fallback gracefully if API is offline
+      isValid = false;
     }
 
     if (!isValid) {
-      alert(`⚠️ '${raw}' is not a recognized or traded stock on NSE or BSE.\n\nPlease select from the live search suggestions.`);
+      alert(`⚠️ '${raw}' is not a recognized or actively traded stock on NSE or BSE.\n\nPlease select from the live search suggestions.`);
       return;
     }
 
@@ -1532,9 +1538,9 @@ export default function App() {
               <div style={{ fontWeight: 900, fontSize: 15, color: C.white, letterSpacing: "-0.3px" }}>
                 StokVigil <span style={{ background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>AI</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 1 }}>
-                <div className="pulse-live" style={{ width: 6, height: 6, borderRadius: "50%", background: C.emerald }} />
-                <span style={{ fontSize: 10, color: C.emerald, fontWeight: 700 }}>NSE LIVE 09:15–15:30</span>
+              <div className="pulse-live" style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 1 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: C.emerald, boxShadow: `0 0 8px ${C.emerald}` }} />
+                <span style={{ fontSize: 10, color: C.emerald, fontWeight: 800, letterSpacing: "0.2px" }}>NSE/BSE LIVE 09:15–15:30</span>
               </div>
             </div>
           </div>

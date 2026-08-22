@@ -87,11 +87,13 @@ class _GoogleLogoPainter extends CustomPainter {
 class BlinkingLiveDot extends StatefulWidget {
   final Color color;
   final double size;
+  final String? label;
 
   const BlinkingLiveDot({
     super.key,
     this.color = AppTheme.primaryEmerald,
     this.size = 6.0,
+    this.label,
   });
 
   @override
@@ -109,7 +111,7 @@ class _BlinkingLiveDotState extends State<BlinkingLiveDot> with SingleTickerProv
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.25, end: 1.0).animate(
+    _animation = Tween<double>(begin: 0.30, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
   }
@@ -125,18 +127,38 @@ class _BlinkingLiveDotState extends State<BlinkingLiveDot> with SingleTickerProv
     return AnimatedBuilder(
       animation: _animation,
       builder: (context, child) {
-        return Container(
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: widget.color.withOpacity(_animation.value),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withOpacity(_animation.value * 0.8),
-                blurRadius: 5.0 * _animation.value,
-                spreadRadius: 1.2 * _animation.value,
+        return Opacity(
+          opacity: _animation.value,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  color: widget.color,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withOpacity(_animation.value * 0.9),
+                      blurRadius: 6.0 * _animation.value,
+                      spreadRadius: 1.5 * _animation.value,
+                    ),
+                  ],
+                ),
               ),
+              if (widget.label != null) ...[
+                const SizedBox(width: 5),
+                Text(
+                  widget.label!,
+                  style: TextStyle(
+                    color: widget.color,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
             ],
           ),
         );
@@ -162,14 +184,14 @@ class StokVigilBrandHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
+        GestureDetector(
+          onTap: () {},
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               TradingAILogo(size: logoSize),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Flexible(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,25 +226,12 @@ class StokVigilBrandHeader extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 2),
                     const FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          BlinkingLiveDot(size: 6),
-                          SizedBox(width: 5),
-                          Text(
-                            "NSE LIVE 09:15–15:30",
-                            style: TextStyle(
-                              color: AppTheme.primaryEmerald,
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
+                      child: BlinkingLiveDot(
+                        size: 6,
+                        label: "NSE/BSE LIVE 09:15–15:30",
                       ),
                     ),
                   ],
