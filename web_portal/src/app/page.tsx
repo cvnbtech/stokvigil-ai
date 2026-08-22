@@ -651,12 +651,14 @@ export default function App() {
   }, []);
 
   const loadPortfolioData = useCallback(async (uid: string) => {
+    const todayStr = new Date().toISOString().split("T")[0];
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
       if (res.ok) {
         const data = await res.json();
-        setHasCredentials(data.has_credentials || false);
+        const isTokenValidToday = Boolean(data.has_credentials && data.token_date === todayStr);
+        setHasCredentials(isTokenValidToday);
         setTotalValue(data.total_portfolio_value || 0);
         setTotalInvested(data.total_investment_value || 0);
         setTotalPnl(data.total_pnl || 0);
@@ -684,8 +686,17 @@ export default function App() {
     }
 
     if (supabase) {
-      const { data: cred } = await supabase.from('user_credentials').select('token_date').eq('user_id', uid).maybeSingle();
-      setHasCredentials(!!cred);
+      const { data: cred } = await supabase.from('user_credentials').select('token_date, encrypted_app_key, encrypted_secret_key').eq('user_id', uid).maybeSingle();
+      const isTokenValidToday = Boolean(cred && cred.token_date === todayStr);
+      setHasCredentials(isTokenValidToday);
+      if (cred) {
+        if (cred.encrypted_app_key) {
+          try { setAppKey(atob(cred.encrypted_app_key)); } catch { setAppKey(cred.encrypted_app_key); }
+        }
+        if (cred.encrypted_secret_key) {
+          try { setSecretKey(atob(cred.encrypted_secret_key)); } catch { setSecretKey(cred.encrypted_secret_key); }
+        }
+      }
     }
     setHoldings([]);
     setTotalValue(0);

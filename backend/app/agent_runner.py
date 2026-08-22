@@ -381,24 +381,30 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if cred_res.data:
         cred = cred_res.data[0]
-        app_key = vault.decrypt(cred.get("encrypted_app_key"))
-        secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-        session_token = vault.decrypt(cred.get("encrypted_session_token"))
-        
-        holdings = fetch_user_portfolio(app_key, secret_key, session_token)
-        for h in holdings:
-            sym = h['symbol']
-            symbols.add(sym)
-            holdings_map[sym] = h
-            # Auto-upsert into user_watchlists
-            try:
-                supabase_client.table("user_watchlists").upsert({
-                    "user_id": user_id,
-                    "symbol": sym,
-                    "is_auto_synced": True
-                }, on_conflict="user_id,symbol").execute()
-            except Exception as e:
-                logger.error(f"Error syncing holding {sym} to watchlist: {e}")
+        today_str = str(date.today())
+        token_date = str(cred.get("token_date", ""))
+
+        if token_date == today_str:
+            app_key = vault.decrypt(cred.get("encrypted_app_key"))
+            secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
+            session_token = vault.decrypt(cred.get("encrypted_session_token"))
+            
+            holdings = fetch_user_portfolio(app_key, secret_key, session_token)
+            for h in holdings:
+                sym = h['symbol']
+                symbols.add(sym)
+                holdings_map[sym] = h
+                # Auto-upsert into user_watchlists
+                try:
+                    supabase_client.table("user_watchlists").upsert({
+                        "user_id": user_id,
+                        "symbol": sym,
+                        "is_auto_synced": True
+                    }, on_conflict="user_id,symbol").execute()
+                except Exception as e:
+                    logger.error(f"Error syncing holding {sym} to watchlist: {e}")
+        else:
+            logger.info(f"ICICI Session Token for user {user_id} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
     # Ingest Macro Market Regime (NIFTY & India VIX)
     macro_data = fetch_macro_market_regime()

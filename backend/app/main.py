@@ -246,9 +246,26 @@ def get_user_portfolio(
     verify_user_access(user_id, auth_user_id)
     cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if not cred_res.data:
-        return {"has_credentials": False, "holdings": [], "total_portfolio_value": 0.0}
+        return {"has_credentials": False, "is_expired": False, "holdings": [], "total_portfolio_value": 0.0}
 
     cred = cred_res.data[0]
+    today_str = str(date.today())
+    token_date = str(cred.get("token_date", ""))
+
+    # Check if session token was generated TODAY (SEBI Daily Expiration Compliance)
+    if token_date != today_str:
+        logger.info(f"ICICI Session Token expired for user {user_id}. Token date: {token_date}, Today: {today_str}")
+        return {
+            "has_credentials": False,
+            "is_expired": True,
+            "token_date": token_date,
+            "total_portfolio_value": 0.0,
+            "total_investment_value": 0.0,
+            "total_pnl": 0.0,
+            "total_pnl_percent": 0.0,
+            "holdings": []
+        }
+
     app_key = vault.decrypt(cred.get("encrypted_app_key"))
     secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
     session_token = vault.decrypt(cred.get("encrypted_session_token"))

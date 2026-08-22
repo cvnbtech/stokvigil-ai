@@ -48,8 +48,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final data = await ApiService().fetchPortfolioSummary(user.id);
     
     if (mounted) {
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+      final tokenDate = data['token_date']?.toString();
+      final isTokenValidToday = (data['has_credentials'] == true) && (tokenDate == todayStr);
+
       setState(() {
-        _hasCredentials = data['has_credentials'] ?? false;
+        _hasCredentials = isTokenValidToday;
         _totalValue = (data['total_portfolio_value'] ?? 0.0).toDouble();
         _totalPnl = (data['total_pnl'] ?? 0.0).toDouble();
         _totalPnlPct = (data['total_pnl_percent'] ?? 0.0).toDouble();

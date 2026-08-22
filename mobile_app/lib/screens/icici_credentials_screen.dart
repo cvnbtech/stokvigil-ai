@@ -23,6 +23,44 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   bool _isSuccess = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadExistingCredentials();
+  }
+
+  Future<void> _loadExistingCredentials() async {
+    final user = SupabaseService().currentUser;
+    if (user == null || !SupabaseService().isConfigured) return;
+    try {
+      final data = await SupabaseService().client
+          .from('user_credentials')
+          .select('encrypted_app_key, encrypted_secret_key')
+          .eq('user_id', user.id)
+          .maybeSingle();
+      if (data != null && mounted) {
+        final rawAppKey = data['encrypted_app_key']?.toString() ?? '';
+        final rawSecretKey = data['encrypted_secret_key']?.toString() ?? '';
+        if (rawAppKey.isNotEmpty) {
+          try {
+            _appKeyController.text = Uri.decodeComponent(rawAppKey);
+          } catch (_) {
+            _appKeyController.text = rawAppKey;
+          }
+        }
+        if (rawSecretKey.isNotEmpty) {
+          try {
+            _secretKeyController.text = Uri.decodeComponent(rawSecretKey);
+          } catch (_) {
+            _secretKeyController.text = rawSecretKey;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Could not pre-fill saved keys: $e");
+    }
+  }
+
+  @override
   void dispose() {
     _appKeyController.dispose();
     _secretKeyController.dispose();

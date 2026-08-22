@@ -209,7 +209,16 @@ class SupabaseService {
           .select('token_date, updated_at')
           .eq('user_id', user.id)
           .maybeSingle();
-      return data;
+      if (data == null) return null;
+
+      final todayStr = DateTime.now().toIso8601String().split('T')[0];
+      final tokenDate = data['token_date']?.toString();
+      final isValidToday = tokenDate == todayStr;
+
+      return {
+        ...data,
+        'is_valid_today': isValidToday,
+      };
     } catch (e) {
       debugPrint("Error checking credentials: $e");
       return null;
