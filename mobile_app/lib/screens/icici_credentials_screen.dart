@@ -30,7 +30,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
   Future<void> _loadExistingCredentials() async {
     final user = SupabaseService().currentUser;
-    if (user == null || !SupabaseService().isConfigured) return;
+    if (user == null || !SupabaseService.isConfigured) return;
     try {
       final data = await SupabaseService().client
           .from('user_credentials')
