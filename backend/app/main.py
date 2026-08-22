@@ -1,11 +1,15 @@
 import base64
+import json
 import logging
+import urllib.parse
+import urllib.request
 from datetime import date
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from supabase import create_client, Client
+import yfinance as yf
 
 from app.config import settings
 from app.vault import vault
@@ -234,6 +238,114 @@ def save_user_credentials(
         "status": "success",
         "message": "ICICI Breeze Session Token saved & encrypted successfully.",
         "token_date": today_str
+    }
+
+
+@app.get("/api/stocks/search")
+def search_stocks(q: str = Query(..., min_length=1)):
+    """
+    Dynamically searches live NSE & BSE Indian stocks via Yahoo Finance API.
+    Zero hardcoded stock names. Returns verified matching equities in real-time.
+    """
+    query = q.strip()
+    if not query:
+        return {"stocks": []}
+
+    results = []
+    seen_symbols = set()
+
+    try:
+        url = f"https://query2.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(query)}&quotesCount=10&newsCount=0"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=4) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            for item in data.get("quotes", []):
+                sym = item.get("symbol", "")
+                quote_type = item.get("quoteType", "")
+                if quote_type != "EQUITY":
+                    continue
+
+                clean_sym = sym
+                exchange = "NSE"
+                if sym.endswith(".NS"):
+                    clean_sym = sym[:-3]
+                    exchange = "NSE"
+                elif sym.endswith(".BO"):
+                    clean_sym = sym[:-3]
+                    exchange = "BSE"
+                elif item.get("exchange") in ["NSI", "NSE"]:
+                    exchange = "NSE"
+                elif item.get("exchange") in ["BOM", "BSE"]:
+                    exchange = "BSE"
+                else:
+                    continue
+
+                if clean_sym in seen_symbols:
+                    continue
+                seen_symbols.add(clean_sym)
+
+                name = item.get("longname") or item.get("shortname") or clean_sym
+                sector = item.get("sector") or item.get("industry") or f"{exchange} Listed"
+
+                results.append({
+                    "symbol": clean_sym,
+                    "name": name,
+                    "exchange": exchange,
+                    "full_symbol": sym,
+                    "sector": sector
+                })
+                if len(results) >= 5:
+                    break
+    except Exception as e:
+        logger.warning(f"Live stock search failed for query '{query}': {e}")
+
+    # Fallback to direct yfinance validation if search query was exact symbol
+    if not results and len(query) >= 2:
+        for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+            try:
+                t = yf.Ticker(f"{query.upper()}{suffix}")
+                fast = t.fast_info
+                price = getattr(fast, "last_price", None)
+                if price is not None and price > 0:
+                    results.append({
+                        "symbol": query.upper(),
+                        "name": f"{query.upper()} ({exch})",
+                        "exchange": exch,
+                        "full_symbol": f"{query.upper()}{suffix}",
+                        "sector": f"{exch} Listed"
+                    })
+                    break
+            except Exception:
+                continue
+
+    return {"stocks": results[:5]}
+
+
+@app.get("/api/stocks/validate")
+def validate_stock(symbol: str = Query(..., min_length=1)):
+    """
+    Dynamically validates in real-time whether a ticker exists on NSE or BSE.
+    """
+    sym = symbol.strip().upper()
+    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+        try:
+            t = yf.Ticker(f"{sym}{suffix}")
+            price = t.fast_info.last_price
+            if price is not None and price > 0:
+                return {
+                    "is_valid": True,
+                    "symbol": sym,
+                    "exchange": exch,
+                    "price": price,
+                    "full_symbol": f"{sym}{suffix}"
+                }
+        except Exception:
+            continue
+
+    return {
+        "is_valid": False,
+        "symbol": sym,
+        "error": f"'{sym}' is not a valid listed stock on NSE or BSE."
     }
 
 

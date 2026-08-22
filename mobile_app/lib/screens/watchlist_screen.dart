@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
@@ -15,9 +16,11 @@ class WatchlistScreen extends StatefulWidget {
 class _WatchlistScreenState extends State<WatchlistScreen> {
   final _searchController = TextEditingController();
   List<Map<String, dynamic>> _watchlist = [];
+  List<Map<String, String>> _suggestions = [];
   bool _isLoading = true;
   bool _autoSync = true;
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
+  Timer? _searchDebounce;
 
   static final Map<String, Map<String, dynamic>> _stockMeta = {
     'RELIANCE': {
@@ -70,12 +73,41 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
     _loadWatchlist();
     _subscribeToWatchlist();
   }
 
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      _searchDebounce?.cancel();
+      if (_suggestions.isNotEmpty) {
+        setState(() => _suggestions = []);
+      }
+      return;
+    }
+
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final results = await ApiService().searchStocks(query);
+      if (mounted && _searchController.text.trim().isNotEmpty) {
+        setState(() {
+          _suggestions = results.map((r) => {
+            'symbol': r['symbol']?.toString() ?? '',
+            'name': r['name']?.toString() ?? '',
+            'sector': r['sector']?.toString() ?? (r['exchange'] ?? 'NSE'),
+            'exchange': r['exchange']?.toString() ?? 'NSE',
+          }).toList();
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
     _watchlistSub?.cancel();
     _searchController.dispose();
     super.dispose();
@@ -111,19 +143,38 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     }
   }
 
-  Future<void> _addSymbol(String symbol) async {
-    if (symbol.trim().isEmpty) {
-      ErrorHandler.showErrorSnackBar(context, "Please enter a valid NSE ticker symbol.");
+  Future<void> _addSymbol(String symbol, [String? displayName]) async {
+    final sym = symbol.trim().toUpperCase();
+    if (sym.isEmpty) {
+      ErrorHandler.showErrorSnackBar(context, "Please enter an NSE/BSE ticker symbol.");
       return;
     }
-    final sym = symbol.trim().toUpperCase();
+
+    // Real-time dynamic validation against exchange quote
+    final validation = await ApiService().validateStock(sym);
+    if (validation['is_valid'] != true) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(
+          context,
+          "⚠️ '$sym' is not a recognized or traded stock on NSE or BSE.",
+        );
+      }
+      return;
+    }
+
+    final exchange = validation['exchange'] ?? 'NSE';
+    final name = displayName ?? validation['name'] ?? "$sym ($exchange)";
+
+    // Clear suggestions immediately
+    setState(() => _suggestions = []);
+    _searchController.clear();
 
     final user = SupabaseService().currentUser;
     if (user != null) {
       final ok = await SupabaseService().addToWatchlist(sym);
       if (ok) {
         if (mounted) {
-          ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
+          ErrorHandler.showSuccessSnackBar(context, "✅ $sym ($name) added to watchlist!");
         }
       } else {
         if (mounted) {
@@ -133,15 +184,14 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     } else {
       setState(() {
         if (!_watchlist.any((item) => item['symbol']?.toString().toUpperCase() == sym)) {
-          _watchlist.insert(0, {'symbol': sym, 'is_auto_synced': false});
+          _watchlist.insert(0, {'symbol': sym, 'is_auto_synced': false, 'name': name});
         }
       });
       if (mounted) {
-        ErrorHandler.showSuccessSnackBar(context, "$sym added to watchlist!");
+        ErrorHandler.showSuccessSnackBar(context, "✅ $sym added to watchlist!");
       }
     }
     _loadWatchlist();
-    _searchController.clear();
   }
 
   Future<void> _removeSymbol(dynamic id, String symbol) async {
@@ -231,7 +281,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
-                        hintText: "ADD NSE TICKER (E.G. BAJAJFINSV)",
+                        hintText: "SEARCH NSE STOCK (E.G. TATA, RELIANCE)",
                         hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -268,11 +318,135 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               ],
             ),
           ),
+
           // ─────────────────────────────────────────────
-          // DEMAT AUTO-SYNC WATCHLIST CARD
+          // SEARCH SUGGESTIONS DROPDOWN (UP TO 3 OPTIONS)
           // ─────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+          if (_suggestions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D111E),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppTheme.borderCyan.withOpacity(0.6)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppTheme.cyan.withOpacity(0.15),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "SUGGESTED NSE STOCKS (TAP TO ADD)",
+                            style: TextStyle(
+                              color: AppTheme.cyan,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => setState(() => _suggestions = []),
+                            child: const Icon(Icons.close, size: 14, color: AppTheme.textMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: Color(0x33334155), height: 1),
+                    ..._suggestions.map((item) {
+                      final sym = item['symbol'] ?? '';
+                      final name = item['name'] ?? '';
+                      final sector = item['sector'] ?? 'NSE';
+                      return InkWell(
+                        onTap: () => _addSymbol(sym),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.cyan.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: AppTheme.borderCyan),
+                                ),
+                                child: Text(
+                                  sym,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    Text(
+                                      sector,
+                                      style: const TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 10.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  gradient: AppTheme.logoGradient,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add, color: Colors.white, size: 12),
+                                    SizedBox(width: 2),
+                                    Text(
+                                      "Add",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+            ),
             child: GlassCard(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               child: Row(

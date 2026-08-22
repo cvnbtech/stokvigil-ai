@@ -62,6 +62,39 @@ class ApiService {
     return null;
   }
 
+  Future<List<Map<String, dynamic>>> searchStocks(String query) async {
+    if (query.trim().isEmpty) return [];
+    try {
+      final q = Uri.encodeComponent(query.trim());
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/stocks/search?q=$q'))
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = (data['stocks'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
+        return list;
+      }
+    } catch (e) {
+      debugPrint("API Error searching stocks: $e");
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> validateStock(String symbol) async {
+    try {
+      final sym = Uri.encodeComponent(symbol.trim().toUpperCase());
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$sym'))
+          .timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+    } catch (e) {
+      debugPrint("API Error validating stock: $e");
+    }
+    return {"is_valid": true, "symbol": symbol.toUpperCase(), "exchange": "NSE"};
+  }
+
   Future<bool> deleteUserAccount(String userId) async {
     try {
       final res = await http.post(

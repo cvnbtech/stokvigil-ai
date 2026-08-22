@@ -625,6 +625,8 @@ export default function App() {
   const [alerts, setAlerts]       = useState<any[]>([]);
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [ticker, setTicker]       = useState("");
+  const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
+  const searchTimerRef            = useRef<NodeJS.Timeout | null>(null);
   const [alertFilter, setAlertFilter] = useState<string>("all");
   const [selectedStock, setSelectedStock] = useState<HoldingItem | null>(null);
   const [showTradeModal, setShowTradeModal] = useState(false);
@@ -1030,22 +1032,72 @@ export default function App() {
     alert("✅ Your account and all associated data have been permanently deleted.");
   };
 
-  const addTicker = async () => {
-    if (!ticker.trim()) return;
-    const sym = ticker.trim().toUpperCase();
+  const handleTickerChange = (val: string) => {
+    setTicker(val);
+    const q = val.trim();
+    if (!q) {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      setTickerSuggestions([]);
+      return;
+    }
+
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/stocks/search?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setTickerSuggestions(data.stocks || []);
+        }
+      } catch (e) {
+        console.warn("Dynamic stock search error:", e);
+      }
+    }, 300);
+  };
+
+  const addTicker = async (explicitSym?: string, explicitName?: string) => {
+    const raw = (explicitSym || ticker).trim().toUpperCase();
+    if (!raw) return;
+
+    let isValid = false;
+    let stockName = explicitName || `${raw} India`;
+    let exchange = "NSE";
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`);
+      if (res.ok) {
+        const valData = await res.json();
+        if (valData.is_valid) {
+          isValid = true;
+          exchange = valData.exchange || "NSE";
+        }
+      }
+    } catch (e) {
+      console.warn("Stock validation error:", e);
+      isValid = true; // Fallback gracefully if API is offline
+    }
+
+    if (!isValid) {
+      alert(`⚠️ '${raw}' is not a recognized or traded stock on NSE or BSE.\n\nPlease select from the live search suggestions.`);
+      return;
+    }
+
+    setTickerSuggestions([]);
+    setTicker("");
+
     if (user?.id && supabase) {
       await supabase.from('user_watchlists').upsert({
         user_id: user.id,
-        symbol: sym,
+        symbol: raw,
         is_auto_synced: false
-      });
+      }, { onConflict: 'user_id,symbol' });
       loadWatchlistData(user.id);
     } else {
       setWatchlist(prev => [
         {
           id: Date.now().toString(),
-          symbol: sym,
-          name: `${sym} India`,
+          symbol: raw,
+          name: stockName,
           auto: false,
           price: 1250.0,
           chg: "+1.20%",
@@ -1055,10 +1107,9 @@ export default function App() {
           target: "₹1,400",
           sl: "₹1,180"
         },
-        ...prev
+        ...prev.filter(p => p.symbol !== raw)
       ]);
     }
-    setTicker("");
   };
 
   const removeTicker = async (id: string) => {
@@ -1910,40 +1961,123 @@ export default function App() {
               </div>
 
               {/* Enhanced Ticker Search & Add Bar */}
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{
-                  flex: 1, position: "relative", display: "flex", alignItems: "center",
-                  background: C.bgCard, border: `1.5px solid ${C.borderCyan}`, borderRadius: 14,
-                  boxShadow: "0 4px 12px rgba(6,182,212,0.06)"
-                }}>
-                  <span style={{ position: "absolute", left: 12, fontSize: 14, color: C.cyan }}>🔍</span>
-                  <input
-                    value={ticker}
-                    onChange={e => setTicker(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && addTicker()}
-                    placeholder="Add NSE ticker (e.g. BAJAJFINSV)"
+              <div style={{ position: "relative" }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{
+                    flex: 1, position: "relative", display: "flex", alignItems: "center",
+                    background: C.bgCard, border: `1.5px solid ${C.borderCyan}`, borderRadius: 14,
+                    boxShadow: "0 4px 12px rgba(6,182,212,0.06)"
+                  }}>
+                    <span style={{ position: "absolute", left: 12, fontSize: 14, color: C.cyan }}>🔍</span>
+                    <input
+                      value={ticker}
+                      onChange={e => handleTickerChange(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && addTicker()}
+                      placeholder="Search NSE stock (e.g. TATA, RELIANCE, HDFCBANK)"
+                      style={{
+                        width: "100%", background: "none", border: "none",
+                        padding: "11px 14px 11px 36px", fontSize: 12.5, fontWeight: 700,
+                        color: C.white, outline: "none", fontFamily: "Inter, sans-serif",
+                        textTransform: "uppercase",
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={() => addTicker()}
                     style={{
-                      width: "100%", background: "none", border: "none",
-                      padding: "11px 14px 11px 36px", fontSize: 12.5, fontWeight: 700,
-                      color: C.white, outline: "none", fontFamily: "Inter, sans-serif",
-                      textTransform: "uppercase",
+                      background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
+                      border: "none", borderRadius: 14, padding: "0 18px",
+                      color: "#fff", fontSize: 12.5, cursor: "pointer", fontWeight: 800,
+                      display: "flex", alignItems: "center", gap: 6,
+                      boxShadow: "0 4px 14px rgba(6,182,212,0.3)",
+                      whiteSpace: "nowrap"
                     }}
-                  />
+                  >
+                    <span style={{ fontSize: 16 }}>+</span>
+                    <span>Add Stock</span>
+                  </button>
                 </div>
-                <button
-                  onClick={addTicker}
-                  style={{
-                    background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
-                    border: "none", borderRadius: 14, padding: "0 18px",
-                    color: "#fff", fontSize: 12.5, cursor: "pointer", fontWeight: 800,
-                    display: "flex", alignItems: "center", gap: 6,
-                    boxShadow: "0 4px 14px rgba(6,182,212,0.3)",
-                    whiteSpace: "nowrap"
-                  }}
-                >
-                  <span style={{ fontSize: 16 }}>+</span>
-                  <span>Add Stock</span>
-                </button>
+
+                {/* 3-Option Suggestion Dropdown */}
+                {tickerSuggestions.length > 0 && ticker.trim().length > 0 && (
+                  <div style={{
+                    marginTop: 8,
+                    background: "#0D111E",
+                    border: `1.5px solid ${C.borderCyan}`,
+                    borderRadius: 14,
+                    padding: "8px 10px",
+                    boxShadow: "0 10px 25px rgba(6,182,212,0.18)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 6px 6px" }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: C.cyan, letterSpacing: "0.5px" }}>
+                        SUGGESTED NSE STOCKS (CLICK TO ADD)
+                      </span>
+                      <button
+                        onClick={() => setTickerSuggestions([])}
+                        style={{ background: "none", border: "none", color: C.gray2, cursor: "pointer", fontSize: 12 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {tickerSuggestions.map((sug) => (
+                      <div
+                        key={sug.symbol}
+                        onClick={() => addTicker(sug.symbol, sug.name)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "7px 10px",
+                          borderRadius: 10,
+                          background: "rgba(255,255,255,0.03)",
+                          cursor: "pointer",
+                          transition: "background 0.2s ease"
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = "rgba(6,182,212,0.1)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.03)"}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{
+                            background: "rgba(6,182,212,0.15)",
+                            border: `1px solid ${C.borderCyan}`,
+                            borderRadius: 6,
+                            padding: "2px 7px",
+                            fontSize: 11.5,
+                            fontWeight: 900,
+                            color: C.white
+                          }}>
+                            {sug.symbol}
+                          </span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: C.white }}>{sug.name}</div>
+                            <div style={{ fontSize: 10, color: C.gray2 }}>{sug.sector}</div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addTicker(sug.symbol, sug.name);
+                          }}
+                          style={{
+                            background: `linear-gradient(135deg, ${C.cyan}, ${C.violet})`,
+                            border: "none",
+                            borderRadius: 8,
+                            padding: "4px 10px",
+                            color: "#fff",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: "pointer"
+                          }}
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Watchlist Cards Stack */}

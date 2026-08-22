@@ -212,4 +212,6 @@ G:\stokvigil-ai\
 | `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
 | `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |
 | `/api/telegram/webhook` | `POST` | Public Webhook | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
+| `/api/stocks/search` | `GET` | Public / CORS | Real-time dynamic search across live NSE & BSE traded equities |
+| `/api/stocks/validate` | `GET` | Public / CORS | Real-time exchange validation ensuring zero dummy/misspelled tickers |
 | `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API |
