@@ -452,6 +452,9 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         day_high = meta.get("regularMarketDayHigh") or (p * 1.02)
                         day_low = meta.get("regularMarketDayLow") or (p * 0.98)
 
+                        signal = "STRONG BUY" if chg_pct >= 1.5 else ("BUY" if chg_pct >= 0.0 else ("HOLD" if chg_pct > -1.5 else ("TAKE PROFIT" if chg_pct > -2.5 else "SELL")))
+                        signal_type = "strong_buy" if chg_pct >= 1.5 else ("buy" if chg_pct >= 0.0 else ("hold" if chg_pct > -1.5 else ("med" if chg_pct > -2.5 else "sell")))
+
                         return {
                             "symbol": sym,
                             "name": name,
@@ -463,8 +466,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             "day_low": round(float(day_low), 2),
                             "target": round(float(p) * 1.12, 2),
                             "stop_loss": round(float(p) * 0.94, 2),
-                            "signal": "STRONG BUY" if chg_pct >= 1.5 else ("BUY" if chg_pct >= 0 else "HOLD"),
-                            "signal_type": "strong_buy" if chg_pct >= 1.5 else ("buy" if chg_pct >= 0 else "hold")
+                            "signal": signal,
+                            "signal_type": signal_type
                         }
         except Exception:
             continue
