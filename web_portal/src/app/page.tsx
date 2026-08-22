@@ -128,6 +128,22 @@ function TradingAILogo({ size = 48 }: { size?: number }) {
   );
 }
 
+function VisibilityOutlinedIcon({ size = 15, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 4.5C7 4.5 2.73 7.61 1 12C2.73 16.39 7 19.5 12 19.5C17 19.5 21.27 16.39 23 12C21.27 7.61 17 4.5 12 4.5ZM12 17C9.24 17 7 14.76 7 12C7 9.24 9.24 7 12 7C14.76 7 17 9.24 17 12C17 14.76 14.76 17 12 17ZM12 9C10.34 9 9 10.34 9 12C9 13.66 10.34 15 12 15C13.66 15 15 13.66 15 12C15 10.34 13.66 9 12 9Z" fill={color}/>
+    </svg>
+  );
+}
+
+function VisibilityOffOutlinedIcon({ size = 15, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 7C14.76 7 17 9.24 17 12C17 12.65 16.87 13.26 16.64 13.83L19.56 16.75C21.07 15.49 22.26 13.86 23 12C21.27 7.61 17 4.5 12 4.5C10.6 4.5 9.26 4.75 8.02 5.2L10.18 7.36C10.74 7.13 11.35 7 12 7ZM2 4.27L4.28 6.55L4.74 7.01C3.08 8.3 1.78 10.02 1 12C2.73 16.39 7 19.5 12 19.5C13.55 19.5 15.03 19.2 16.38 18.66L16.8 19.08L19.73 22L21 20.73L3.27 3L2 4.27ZM7.53 9.8L9.08 11.35C9.03 11.56 9 11.78 9 12C9 13.66 10.34 15 12 15C12.22 15 12.44 14.97 12.65 14.92L14.2 16.47C13.53 16.8 12.79 17 12 17C9.24 17 7 14.76 7 12C7 11.21 7.2 10.47 7.53 9.8ZM11.84 9.02L14.99 12.17C14.98 12.01 15 11.85 15 11.7C15 10.04 13.66 8.7 12 8.7C11.85 8.7 11.69 8.72 11.53 8.73L11.84 9.02Z" fill={color}/>
+    </svg>
+  );
+}
+
 // ─────────────────────────────────────────────
 // REUSABLE COMPONENTS
 // ─────────────────────────────────────────────
@@ -622,6 +638,7 @@ export default function App() {
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
   const [name, setName]  = useState("");
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -1428,10 +1445,26 @@ export default function App() {
               <Input label="Email Address" type="email" value={email} onChange={setEmail} placeholder="" />
               <Input
                 label="Password"
-                type="password"
+                type={showAuthPassword ? "text" : "password"}
                 value={password}
                 onChange={setPassword}
                 placeholder=""
+                rightAction={
+                  <button
+                    type="button"
+                    onClick={() => setShowAuthPassword(v => !v)}
+                    style={{
+                      background: "none", border: "none", color: C.cyan,
+                      fontSize: 10.5, fontWeight: 800, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 4, padding: 0
+                    }}
+                  >
+                    {showAuthPassword
+                      ? <VisibilityOffOutlinedIcon size={14} color={C.cyan} />
+                      : <VisibilityOutlinedIcon size={14} color={C.cyan} />}
+                    <span>{showAuthPassword ? "Hide" : "Show"}</span>
+                  </button>
+                }
               />
               {authTab === "signin" && (
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -6 }}>
@@ -1763,11 +1796,11 @@ export default function App() {
                     onClick={() => setIsPortfolioVisible(v => !v)}
                     style={{
                       background: "rgba(255,255,255,0.06)",
-                      border: `1px solid ${C.border}`,
+                      border: `1px solid rgba(255,255,255,0.12)`,
                       borderRadius: 12,
-                      padding: "2px 8px",
-                      color: C.gray1,
-                      fontSize: 11,
+                      padding: "3px 9px",
+                      color: "#94A3B8",
+                      fontSize: 10.5,
                       fontWeight: 700,
                       cursor: "pointer",
                       display: "flex",
@@ -1775,7 +1808,10 @@ export default function App() {
                       gap: 4
                     }}
                   >
-                    <span>{isPortfolioVisible ? "👁️ Hide" : "👁️‍🗨️ Show"}</span>
+                    {isPortfolioVisible
+                      ? <VisibilityOutlinedIcon size={14} color="#94A3B8" />
+                      : <VisibilityOffOutlinedIcon size={14} color="#94A3B8" />}
+                    <span>{isPortfolioVisible ? "Hide" : "Show"}</span>
                   </button>
                 </div>
                 <div style={{ fontSize: 34, fontWeight: 900, color: C.white, letterSpacing: isPortfolioVisible ? "-1px" : "2px", lineHeight: 1 }}>
@@ -2899,9 +2935,12 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowAppKey(v => !v)}
-                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 10.5, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, padding: 0 }}
                     >
-                      {showAppKey ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                      {showAppKey
+                        ? <VisibilityOffOutlinedIcon size={14} color={C.cyan} />
+                        : <VisibilityOutlinedIcon size={14} color={C.cyan} />}
+                      <span>{showAppKey ? "Hide" : "Show"}</span>
                     </button>
                   }
                 />
@@ -2915,9 +2954,12 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowSecretKey(v => !v)}
-                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                      style={{ background: "none", border: "none", color: C.cyan, fontSize: 10.5, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, padding: 0 }}
                     >
-                      {showSecretKey ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                      {showSecretKey
+                        ? <VisibilityOffOutlinedIcon size={14} color={C.cyan} />
+                        : <VisibilityOutlinedIcon size={14} color={C.cyan} />}
+                      <span>{showSecretKey ? "Hide" : "Show"}</span>
                     </button>
                   }
                 />
@@ -3256,9 +3298,12 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => setShowNewPassword(v => !v)}
-                          style={{ background: "none", border: "none", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+                          style={{ background: "none", border: "none", color: C.cyan, fontSize: 10.5, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, padding: 0 }}
                         >
-                          {showNewPassword ? "👁️ Hide" : "👁️‍🗨️ Show"}
+                          {showNewPassword
+                            ? <VisibilityOffOutlinedIcon size={14} color={C.cyan} />
+                            : <VisibilityOutlinedIcon size={14} color={C.cyan} />}
+                          <span>{showNewPassword ? "Hide" : "Show"}</span>
                         </button>
                       }
                     />
