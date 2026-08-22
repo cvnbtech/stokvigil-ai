@@ -637,9 +637,22 @@ export default function App() {
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
 
+  const getAuthHeaders = useCallback(async () => {
+    let token = "";
+    if (supabase) {
+      const { data } = await supabase.auth.getSession();
+      token = data?.session?.access_token || "";
+    }
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    };
+  }, []);
+
   const loadPortfolioData = useCallback(async (uid: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setHasCredentials(data.has_credentials || false);
@@ -782,9 +795,10 @@ export default function App() {
       }
     }
     try {
+      const headers = await getAuthHeaders();
       await fetch(`${BACKEND_URL}/api/auth/register-device`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           user_id: user.id,
           [key]: val,
@@ -921,9 +935,10 @@ export default function App() {
     if (user?.id) {
       let saved = false;
       try {
+        const headers = await getAuthHeaders();
         const res = await fetch(`${BACKEND_URL}/api/user/credentials`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             user_id: user.id,
             app_key: appKey,
@@ -971,9 +986,10 @@ export default function App() {
     if (deleteConfirmText.trim() !== "DELETE" || !user?.id) return;
     setIsDeletingAccount(true);
     try {
+      const headers = await getAuthHeaders();
       await fetch(`${BACKEND_URL}/api/user/delete-account`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ user_id: user.id })
       });
       if (supabase) {
@@ -1035,9 +1051,10 @@ export default function App() {
     setOrderSending(true);
     if (user?.id) {
       try {
+        const headers = await getAuthHeaders();
         await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             user_id: user.id,
             symbol: tradeData.symbol,

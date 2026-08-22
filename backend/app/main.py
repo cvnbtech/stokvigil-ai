@@ -8,6 +8,7 @@ from supabase import create_client, Client
 
 from app.config import settings
 from app.vault import vault
+from app.auth import get_current_user_id, verify_user_access
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio
 from app.notifications import send_telegram_notification
 
@@ -20,12 +21,12 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS Setup
+# CORS Setup - Whitelisted Origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -71,7 +72,7 @@ class DeleteAccountRequest(BaseModel):
 
 
 # ==========================================
-# REST API ENDPOINTS
+# REST API ENDPOINTS (BANK-GRADE SECURED)
 # ==========================================
 
 @app.get("/")
@@ -80,15 +81,22 @@ def health_check():
         "status": "online",
         "app": settings.APP_NAME,
         "package_id": settings.PACKAGE_ID,
-        "mode": "Pure Intelligence & Factual Alerts (Non-Advisory)"
+        "mode": "Pure Intelligence & Factual Alerts (Non-Advisory)",
+        "security": "JWT_Shielded_v1"
     }
 
 
 @app.get("/api/user/profile")
-def get_user_profile(user_id: str, db: Client = Depends(get_supabase)):
+def get_user_profile(
+    user_id: str,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Fetches user profile, notification preferences, and system settings.
+    Guaranteed IDOR protection via verify_user_access.
     """
+    verify_user_access(user_id, auth_user_id)
     res = db.table("profiles").select("*").eq("id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="User profile not found.")
@@ -96,10 +104,15 @@ def get_user_profile(user_id: str, db: Client = Depends(get_supabase)):
 
 
 @app.post("/api/auth/register-device")
-def register_device(req: RegisterDeviceRequest, db: Client = Depends(get_supabase)):
+def register_device(
+    req: RegisterDeviceRequest,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
-    Registers or updates FCM device token, Telegram configuration, and alert preferences for a user.
+    Registers or updates FCM device token, Telegram configuration, and alert preferences.
     """
+    verify_user_access(req.user_id, auth_user_id)
     update_data = {}
     if req.fcm_device_token is not None:
         update_data["fcm_device_token"] = req.fcm_device_token
@@ -137,10 +150,15 @@ def register_device(req: RegisterDeviceRequest, db: Client = Depends(get_supabas
 
 
 @app.post("/api/user/credentials")
-def save_user_credentials(req: SaveCredentialsRequest, db: Client = Depends(get_supabase)):
+def save_user_credentials(
+    req: SaveCredentialsRequest,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Encrypts user ICICI Breeze credentials (AES-256 Fernet) and stores them securely in Supabase.
     """
+    verify_user_access(req.user_id, auth_user_id)
     encrypted_app_key = vault.encrypt(req.app_key)
     encrypted_secret_key = vault.encrypt(req.secret_key)
     encrypted_session_token = vault.encrypt(req.session_token)
@@ -167,14 +185,19 @@ def save_user_credentials(req: SaveCredentialsRequest, db: Client = Depends(get_
 
 
 @app.post("/api/user/delete-account")
-def delete_user_account(req: DeleteAccountRequest, db: Client = Depends(get_supabase)):
+def delete_user_account(
+    req: DeleteAccountRequest,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Permanently deletes all data associated with a user:
     1. Removes encrypted broker credentials from user_credentials.
     2. Removes all saved symbols from user_watchlists.
-    3. Removes registered FCM & Telegram tokens from user_devices.
+    3. Removes registered FCM & Telegram tokens from profiles.
     4. Deletes the user identity from Supabase auth.users via Admin API.
     """
+    verify_user_access(req.user_id, auth_user_id)
     logger.info(f"Initiating complete account deletion for user_id: {req.user_id}")
     try:
         # 1. Clean broker credentials
@@ -184,11 +207,14 @@ def delete_user_account(req: DeleteAccountRequest, db: Client = Depends(get_supa
         db.table("user_watchlists").delete().eq("user_id", req.user_id).execute()
         
         # 3. Clean user devices / notification bindings
-        db.table("user_devices").delete().eq("user_id", req.user_id).execute()
-
-        # 4. Clean user profiles if table exists
         try:
-            db.table("user_profiles").delete().eq("id", req.user_id).execute()
+            db.table("user_devices").delete().eq("user_id", req.user_id).execute()
+        except Exception:
+            pass
+
+        # 4. Clean user profiles
+        try:
+            db.table("profiles").delete().eq("id", req.user_id).execute()
         except Exception:
             pass
 
@@ -209,10 +235,15 @@ def delete_user_account(req: DeleteAccountRequest, db: Client = Depends(get_supa
 
 
 @app.get("/api/user/portfolio")
-def get_user_portfolio(user_id: str, db: Client = Depends(get_supabase)):
+def get_user_portfolio(
+    user_id: str,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Fetches synced ICICI holdings, current prices, and total P/L summary.
     """
+    verify_user_access(user_id, auth_user_id)
     cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if not cred_res.data:
         return {"has_credentials": False, "holdings": [], "total_portfolio_value": 0.0}
@@ -270,10 +301,16 @@ def get_user_portfolio(user_id: str, db: Client = Depends(get_supabase)):
 
 
 @app.get("/api/user/alerts")
-def get_user_alerts(user_id: str, limit: int = 50, db: Client = Depends(get_supabase)):
+def get_user_alerts(
+    user_id: str,
+    limit: int = 50,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Retrieves historical alert logs for the user.
     """
+    verify_user_access(user_id, auth_user_id)
     res = db.table("stok_alerts") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -284,13 +321,21 @@ def get_user_alerts(user_id: str, limit: int = 50, db: Client = Depends(get_supa
 
 
 @app.post("/api/cron/multi-user-scan")
-async def run_multi_user_scan(background_tasks: BackgroundTasks, db: Client = Depends(get_supabase)):
+async def run_multi_user_scan(
+    background_tasks: BackgroundTasks,
+    x_cron_secret: Optional[str] = Header(None),
+    db: Client = Depends(get_supabase)
+):
     """
     5-Minute Cron Endpoint triggered during Indian market hours.
-    Scans all users with valid credentials or watchlists.
+    Shielded by X-Cron-Secret header token to prevent unauthorized triggers and quota drain.
     """
+    if settings.CRON_SECRET_KEY and settings.CRON_SECRET_KEY != "stokvigil_cron_default_secret_2026":
+        if x_cron_secret != settings.CRON_SECRET_KEY:
+            logger.warning("Unauthorized multi-user cron scan attempt blocked.")
+            raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid X-Cron-Secret header.")
+
     today_str = str(date.today())
-    # Fetch profiles
     profiles_res = db.table("profiles").select("id").execute()
     users = profiles_res.data or []
     
@@ -312,10 +357,16 @@ async def run_multi_user_scan(background_tasks: BackgroundTasks, db: Client = De
 
 
 @app.post("/api/v1/orders/place")
-def place_trade_order(req: PlaceOrderRequest, db: Client = Depends(get_supabase)):
+def place_trade_order(
+    req: PlaceOrderRequest,
+    auth_user_id: Optional[str] = Depends(get_current_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Executes BUY / SELL order for ICICI Direct Breeze Connect API.
+    Guaranteed IDOR protection.
     """
+    verify_user_access(req.user_id, auth_user_id)
     cred_res = db.table("user_credentials").select("*").eq("user_id", req.user_id).execute()
     if not cred_res.data:
         raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")

@@ -13,6 +13,14 @@ class ApiService {
     ),
   );
 
+  Map<String, String> _getAuthHeaders() {
+    final token = SupabaseService().client.auth.currentSession?.accessToken;
+    return {
+      'Content-Type': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
+
   Future<bool> saveIciciCredentials({
     required String userId,
     required String appKey,
@@ -22,7 +30,7 @@ class ApiService {
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/api/user/credentials'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _getAuthHeaders(),
         body: jsonEncode({
           'user_id': userId,
           'app_key': appKey,
@@ -41,7 +49,7 @@ class ApiService {
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/api/user/delete-account'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _getAuthHeaders(),
         body: jsonEncode({'user_id': userId}),
       ).timeout(const Duration(seconds: 10));
       return res.statusCode == 200;
@@ -54,7 +62,10 @@ class ApiService {
   Future<Map<String, dynamic>> fetchPortfolioSummary(String userId) async {
     try {
       final res = await http
-          .get(Uri.parse('$baseUrl/api/user/portfolio?user_id=$userId'))
+          .get(
+            Uri.parse('$baseUrl/api/user/portfolio?user_id=$userId'),
+            headers: _getAuthHeaders(),
+          )
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
@@ -79,7 +90,10 @@ class ApiService {
   Future<List<StokAlert>> fetchAlerts(String userId) async {
     try {
       final res = await http
-          .get(Uri.parse('$baseUrl/api/user/alerts?user_id=$userId'))
+          .get(
+            Uri.parse('$baseUrl/api/user/alerts?user_id=$userId'),
+            headers: _getAuthHeaders(),
+          )
           .timeout(const Duration(seconds: 6));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -121,7 +135,7 @@ class ApiService {
     try {
       final res = await http.post(
         Uri.parse('$baseUrl/api/auth/register-device'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _getAuthHeaders(),
         body: jsonEncode({
           'user_id': userId,
           if (fcmToken != null) 'fcm_device_token': fcmToken,

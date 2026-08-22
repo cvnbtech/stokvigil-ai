@@ -1,13 +1,21 @@
 import base64
+import logging
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from app.config import settings
 
+logger = logging.getLogger("stokvigil.vault")
+
 class CryptoVault:
     def __init__(self, raw_secret_key: str = None):
         key_source = raw_secret_key or settings.ENCRYPTION_KEY
         
+        # Production Environment Key Audit
+        if settings.ENVIRONMENT == "production":
+            if not key_source or key_source.startswith("d3d3d3"):
+                logger.warning("SECURITY WARNING: Using default/weak ENCRYPTION_KEY in production mode. Set a strong custom key!")
+
         # Ensure valid 32-byte urlsafe base64 key for Fernet
         if len(key_source) != 44 or not key_source.endswith('='):
             kdf = PBKDF2HMAC(

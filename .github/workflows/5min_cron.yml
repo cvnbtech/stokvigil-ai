@@ -12,7 +12,8 @@ jobs:
     steps:
       - name: Trigger StokVigil AI Multi-User Portfolio Scan
         run: |
-          echo "🚀 Triggering 5-Minute Market Intelligence Scan..."
+          echo "🚀 Triggering Bank-Grade Shielded 5-Minute Market Intelligence Scan..."
           RESPONSE=$(curl -s -X POST "${{ secrets.STOKVIGIL_BACKEND_URL }}/api/cron/multi-user-scan" \
-            -H "Content-Type: application/json")
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY || 'stokvigil_cron_default_secret_2026' }}")
           echo "Scan Response: $RESPONSE"
