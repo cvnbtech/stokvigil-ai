@@ -8,8 +8,12 @@ const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000"
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
+  const trimmed = str.trim();
+  if (trimmed.startsWith("gAAAAA") && trimmed.length > 50) {
+    return "";
+  }
   try {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
     while (base64.length % 4 !== 0) {
       base64 += '=';
     }
@@ -19,12 +23,18 @@ function decodeSafeBase64(str: string): string {
       bytes[i] = binary.charCodeAt(i);
     }
     const decoded = new TextDecoder().decode(bytes);
-    if (/^[\x20-\x7E\s]+$/.test(decoded)) {
+    if (/^[\x20-\x7E\s]+$/.test(decoded) && !decoded.startsWith("gAAAAA")) {
       return decoded;
     }
-    return str;
+    if (/^[a-zA-Z0-9_\-~^@#*!]+$/.test(trimmed) && trimmed.length <= 64 && !trimmed.startsWith("gAAAAA")) {
+      return trimmed;
+    }
+    return "";
   } catch {
-    return str;
+    if (/^[a-zA-Z0-9_\-~^@#*!]+$/.test(trimmed) && trimmed.length <= 64 && !trimmed.startsWith("gAAAAA")) {
+      return trimmed;
+    }
+    return "";
   }
 }
 
@@ -665,18 +675,8 @@ export default function App() {
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [appKey, setAppKey] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("stokvigil_app_key") || "";
-    }
-    return "";
-  });
-  const [secretKey, setSecretKey] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("stokvigil_secret_key") || "";
-    }
-    return "";
-  });
+  const [appKey, setAppKey] = useState<string>("");
+  const [secretKey, setSecretKey] = useState<string>("");
   const [sessionTok, setSessionTok] = useState("");
   const [showAppKey, setShowAppKey] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
@@ -729,15 +729,7 @@ export default function App() {
     let portfolioLoaded = false;
     let keysLoaded = false;
 
-    // Tier 1: Synchronous Local Cache prefill
-    if (typeof window !== "undefined") {
-      const localApp = localStorage.getItem("stokvigil_app_key");
-      const localSecret = localStorage.getItem("stokvigil_secret_key");
-      if (localApp) { setAppKey(localApp); keysLoaded = true; }
-      if (localSecret) { setSecretKey(localSecret); keysLoaded = true; }
-    }
-
-    // Tier 2: Direct Supabase Database Vault Fetch (Fastest & most direct)
+    // Tier 1: Direct Supabase Database Vault Fetch (Fastest & most direct)
     if (supabase && uid) {
       try {
         const { data: cred } = await supabase
@@ -755,7 +747,6 @@ export default function App() {
             if (decodedAppKey) {
               setAppKey(decodedAppKey);
               keysLoaded = true;
-              if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", decodedAppKey);
             }
           }
           if (cred.encrypted_secret_key) {
@@ -763,7 +754,6 @@ export default function App() {
             if (decodedSecretKey) {
               setSecretKey(decodedSecretKey);
               keysLoaded = true;
-              if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", decodedSecretKey);
             }
           }
         }
@@ -772,7 +762,7 @@ export default function App() {
       }
     }
 
-    // Tier 3: Backend API Service Call
+    // Tier 2: Backend API Service Call
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
@@ -825,12 +815,12 @@ export default function App() {
           const credData = await credRes.json();
           if (credData.has_credentials) {
             if (credData.app_key) {
-              setAppKey(credData.app_key);
-              if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", credData.app_key);
+              const decodedApp = decodeSafeBase64(credData.app_key);
+              if (decodedApp) setAppKey(decodedApp);
             }
             if (credData.secret_key) {
-              setSecretKey(credData.secret_key);
-              if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", credData.secret_key);
+              const decodedSecret = decodeSafeBase64(credData.secret_key);
+              if (decodedSecret) setSecretKey(decodedSecret);
             }
           }
         }
@@ -1017,12 +1007,6 @@ export default function App() {
   };
 
   const openKeyModal = useCallback(async () => {
-    if (typeof window !== "undefined") {
-      const savedApp = localStorage.getItem("stokvigil_app_key");
-      const savedSecret = localStorage.getItem("stokvigil_secret_key");
-      if (savedApp) setAppKey(savedApp);
-      if (savedSecret) setSecretKey(savedSecret);
-    }
     setShowKeyModal(true);
     let uid = user?.id;
     if (!uid && supabase) {
@@ -1038,11 +1022,7 @@ export default function App() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedApp = localStorage.getItem("stokvigil_app_key");
-      const savedSecret = localStorage.getItem("stokvigil_secret_key");
       const savedAutoSync = localStorage.getItem("stokvigil_demat_auto_sync");
-      if (savedApp) setAppKey(savedApp);
-      if (savedSecret) setSecretKey(savedSecret);
       if (savedAutoSync !== null) setDematAutoSync(savedAutoSync === "true");
     }
   }, []);
@@ -1184,13 +1164,7 @@ export default function App() {
     const cleanSecretKey = secretKey.trim();
     const cleanSessionTok = sessionTok.trim();
 
-    // 1. Immediate local persistence
-    if (typeof window !== "undefined") {
-      localStorage.setItem("stokvigil_app_key", cleanAppKey);
-      localStorage.setItem("stokvigil_secret_key", cleanSecretKey);
-    }
-
-    // 2. Resolve Active User ID
+    // 1. Resolve Active User ID
     let currentUserId = user?.id;
     if (!currentUserId && supabase) {
       try {
@@ -3095,10 +3069,7 @@ export default function App() {
                   label="App Key"
                   type={showAppKey ? "text" : "password"}
                   value={appKey}
-                  onChange={(val) => {
-                    setAppKey(val);
-                    if (typeof window !== "undefined") localStorage.setItem("stokvigil_app_key", val.trim());
-                  }}
+                  onChange={(val) => setAppKey(val)}
                   placeholder="Enter App Key"
                   rightAction={
                     <button
@@ -3117,10 +3088,7 @@ export default function App() {
                   label="Secret Key"
                   type={showSecretKey ? "text" : "password"}
                   value={secretKey}
-                  onChange={(val) => {
-                    setSecretKey(val);
-                    if (typeof window !== "undefined") localStorage.setItem("stokvigil_secret_key", val.trim());
-                  }}
+                  onChange={(val) => setSecretKey(val)}
                   placeholder="Enter Secret Key"
                   rightAction={
                     <button

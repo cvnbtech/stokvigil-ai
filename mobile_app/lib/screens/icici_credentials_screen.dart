@@ -43,42 +43,87 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
       _secretKeyController.text.trim().isNotEmpty &&
       _sessionTokenController.text.trim().isNotEmpty;
 
+  bool _isEncryptedBlob(String val) {
+    if (val.isEmpty) return false;
+    // Fernet AES-256 tokens start with "gAAAAA" and are over 50 chars
+    if (val.startsWith("gAAAAA") && val.length > 50) return true;
+    return false;
+  }
+
+  String _decodeDatabaseValue(String raw) {
+    if (raw.isEmpty) return "";
+    final trimmed = raw.trim();
+
+    if (_isEncryptedBlob(trimmed)) {
+      // Fernet ciphertext blob cannot be decoded without backend decryption key
+      return "";
+    }
+
+    // 1. Try URL-Safe Base64 Decode
+    try {
+      String normalized = trimmed.replaceAll('-', '+').replaceAll('_', '/');
+      while (normalized.length % 4 != 0) {
+        normalized += '=';
+      }
+      final decoded = utf8.decode(base64.decode(normalized));
+      if (decoded.isNotEmpty && RegExp(r'^[\x20-\x7E]+$').hasMatch(decoded) && !_isEncryptedBlob(decoded)) {
+        return decoded;
+      }
+    } catch (_) {}
+
+    // 2. Try Standard Base64 Decode
+    try {
+      final decoded = utf8.decode(base64.decode(base64.normalize(trimmed)));
+      if (decoded.isNotEmpty && RegExp(r'^[\x20-\x7E]+$').hasMatch(decoded) && !_isEncryptedBlob(decoded)) {
+        return decoded;
+      }
+    } catch (_) {}
+
+    // 3. If raw string is already plain text (alphanumeric ICICI key)
+    if (!_isEncryptedBlob(trimmed) && RegExp(r'^[a-zA-Z0-9_\-~^@#*!]+$').hasMatch(trimmed) && trimmed.length <= 64) {
+      return trimmed;
+    }
+
+    return "";
+  }
+
   Future<void> _loadExistingCredentials() async {
     final user = SupabaseService().currentUser;
-    if (user == null || !SupabaseService.isConfigured) return;
+    if (user == null) return;
     try {
-      // 1. First try getting decrypted keys from backend API
+      // 1. First try getting decrypted keys from backend API (Backend Fernet Vault)
       final creds = await ApiService().fetchUserCredentials(user.id);
       if (creds != null && creds['has_credentials'] == true && mounted) {
         final appKeyVal = creds['app_key']?.toString() ?? '';
         final secretKeyVal = creds['secret_key']?.toString() ?? '';
-        if (appKeyVal.isNotEmpty) _appKeyController.text = appKeyVal;
-        if (secretKeyVal.isNotEmpty) _secretKeyController.text = secretKeyVal;
-        return;
+        
+        final decryptedApp = _decodeDatabaseValue(appKeyVal);
+        final decryptedSecret = _decodeDatabaseValue(secretKeyVal);
+
+        if (decryptedApp.isNotEmpty) _appKeyController.text = decryptedApp;
+        if (decryptedSecret.isNotEmpty) _secretKeyController.text = decryptedSecret;
+
+        if (_appKeyController.text.isNotEmpty && _secretKeyController.text.isNotEmpty) {
+          return;
+        }
       }
 
-      // 2. Fallback: Direct Supabase client
-      final data = await SupabaseService().client
-          .from('user_credentials')
-          .select('encrypted_app_key, encrypted_secret_key')
-          .eq('user_id', user.id)
-          .maybeSingle();
-      if (data != null && mounted) {
-        final rawAppKey = data['encrypted_app_key']?.toString() ?? '';
-        final rawSecretKey = data['encrypted_secret_key']?.toString() ?? '';
-        if (rawAppKey.isNotEmpty) {
-          try {
-            _appKeyController.text = utf8.decode(base64Url.decode(rawAppKey));
-          } catch (_) {
-            _appKeyController.text = rawAppKey;
-          }
-        }
-        if (rawSecretKey.isNotEmpty) {
-          try {
-            _secretKeyController.text = utf8.decode(base64Url.decode(rawSecretKey));
-          } catch (_) {
-            _secretKeyController.text = rawSecretKey;
-          }
+      // 2. Fallback: Query Supabase user_credentials table directly & decode
+      if (SupabaseService.isConfigured) {
+        final data = await SupabaseService().client
+            .from('user_credentials')
+            .select('encrypted_app_key, encrypted_secret_key')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        if (data != null && mounted) {
+          final rawAppKey = data['encrypted_app_key']?.toString() ?? '';
+          final rawSecretKey = data['encrypted_secret_key']?.toString() ?? '';
+
+          final decodedApp = _decodeDatabaseValue(rawAppKey);
+          final decodedSecret = _decodeDatabaseValue(rawSecretKey);
+
+          if (decodedApp.isNotEmpty) _appKeyController.text = decodedApp;
+          if (decodedSecret.isNotEmpty) _secretKeyController.text = decodedSecret;
         }
       }
     } catch (e) {
@@ -101,6 +146,10 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
     final appKey = _appKeyController.text.trim();
     if (appKey.isEmpty) {
       ErrorHandler.showErrorSnackBar(context, "Please enter your ICICI App Key above first before opening login.");
+      return;
+    }
+    if (_isEncryptedBlob(appKey)) {
+      ErrorHandler.showErrorSnackBar(context, "Encrypted key detected. Please paste your plain ICICI Breeze App Key from api.icicidirect.com");
       return;
     }
     final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey)}";
@@ -128,6 +177,11 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
     if (appKey.isEmpty || secretKey.isEmpty || sessionToken.isEmpty) {
       ErrorHandler.showErrorSnackBar(context, "Please fill in all 3 credentials fields (App Key, Secret Key, Session Token).");
+      return;
+    }
+
+    if (_isEncryptedBlob(appKey) || _isEncryptedBlob(secretKey)) {
+      ErrorHandler.showErrorSnackBar(context, "Please enter your plain API keys, not encrypted strings.");
       return;
     }
 
