@@ -189,12 +189,23 @@ class SupabaseService {
     try {
       if (id != null && id.toString().isNotEmpty) {
         await client.from('user_watchlists').delete().eq('id', id);
-      } else if (symbol != null && symbol.isNotEmpty) {
+        return true;
+      }
+      if (symbol != null && symbol.isNotEmpty) {
         await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', symbol.toUpperCase());
+        return true;
       }
       return true;
     } catch (e) {
-      debugPrint("Error removing from watchlist: $e");
+      debugPrint("Error removing from watchlist by ID: $e");
+      if (symbol != null && symbol.isNotEmpty) {
+        try {
+          await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', symbol.toUpperCase());
+          return true;
+        } catch (e2) {
+          debugPrint("Fallback error removing from watchlist by symbol: $e2");
+        }
+      }
       return false;
     }
   }

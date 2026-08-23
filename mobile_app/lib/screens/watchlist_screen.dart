@@ -847,7 +847,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                         Material(
                                           color: Colors.transparent,
                                           child: InkWell(
-                                            onTap: () => _removeSymbol(item['id'], symbol),
+                                            onTap: () => _removeSymbol(symbol, item['id']),
                                             borderRadius: BorderRadius.circular(8),
                                             child: Ink(
                                               padding: const EdgeInsets.all(7),
