@@ -4,6 +4,7 @@ import logging
 import re
 import urllib.parse
 import urllib.request
+import concurrent.futures
 from collections import OrderedDict
 from datetime import date
 from typing import Optional, List, Dict, Any
@@ -627,14 +628,11 @@ def get_user_portfolio(
 
     raw_holdings = fetch_user_portfolio(app_key, secret_key, session_token)
     
-    total_val = 0.0
-    total_investment = 0.0
-    detailed_holdings = []
-
-    for h in raw_holdings:
+    # High-Speed Parallel Financials & Market Pricing for 100+ stocks
+    def _price_single_holding(h: Dict[str, Any]) -> Dict[str, Any]:
         sym = h['symbol']
         fin = fetch_stock_financials(sym)
-        live_price = fin.get('price') or h.get('current_market_price') or h.get('average_price')
+        live_price = fin.get('price') or h.get('current_market_price') or h.get('average_price') or 0.0
         qty = h.get('quantity', 0)
         avg_price = h.get('average_price', 0)
         
@@ -643,10 +641,7 @@ def get_user_portfolio(
         pnl = current_val - investment_val
         pnl_pct = ((pnl / investment_val) * 100) if investment_val > 0 else 0.0
 
-        total_val += current_val
-        total_investment += investment_val
-
-        detailed_holdings.append({
+        return {
             "symbol": sym,
             "quantity": qty,
             "avg_price": avg_price,
@@ -655,22 +650,36 @@ def get_user_portfolio(
             "pnl": round(pnl, 2),
             "pnl_percent": round(pnl_pct, 2),
             "pe_ratio": fin.get("pe_ratio"),
-            "debt_to_equity": fin.get("debt_to_equity")
-        })
+            "debt_to_equity": fin.get("debt_to_equity"),
+            "_curr_val": current_val,
+            "_inv_val": investment_val,
+        }
+
+    detailed_holdings = []
+    total_val = 0.0
+    total_investment = 0.0
+
+    if raw_holdings:
+        max_workers = min(25, max(1, len(raw_holdings)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            priced_items = list(pool.map(_price_single_holding, raw_holdings))
+
+        for item in priced_items:
+            total_val += item.pop("_curr_val", 0.0)
+            total_investment += item.pop("_inv_val", 0.0)
+            detailed_holdings.append(item)
 
     total_pnl = total_val - total_investment
     total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
 
-    # Auto-sync Demat holdings to user_watchlists table
+    # Auto-sync Demat holdings to user_watchlists table in batches
     if detailed_holdings:
         try:
-            for h in detailed_holdings:
-                stock_sym = h['symbol'].upper()
-                db.table("user_watchlists").upsert({
-                    "user_id": user_id,
-                    "symbol": stock_sym,
-                    "is_auto_synced": True
-                }, on_conflict="user_id,symbol").execute()
+            sync_payload = [
+                {"user_id": user_id, "symbol": h['symbol'].upper(), "is_auto_synced": True}
+                for h in detailed_holdings
+            ]
+            db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
             logger.info(f"Auto-synced {len(detailed_holdings)} Demat holdings to user_watchlists for user {user_id}")
         except Exception as sync_err:
             logger.warning(f"Note on auto-syncing Demat holdings to watchlists: {sync_err}")
