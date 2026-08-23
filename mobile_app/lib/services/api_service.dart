@@ -10,7 +10,7 @@ class ApiService {
     'BACKEND_URL',
     defaultValue: String.fromEnvironment(
       'STOKVIGIL_BACKEND_URL',
-      defaultValue: "https://stokvigil-ai.vercel.app",
+      defaultValue: "https://stokvigil-backend-xxxx.a.run.app",
     ),
   );
 
@@ -64,61 +64,20 @@ class ApiService {
   }
 
   Future<List<Map<String, dynamic>>> searchStocks(String query) async {
-    final cleanQuery = query.trim();
-    if (cleanQuery.isEmpty) return [];
-
-    // 1. Try StokVigil API (Vercel Serverless / Cloud Run)
+    if (query.trim().isEmpty) return [];
     try {
-      final q = Uri.encodeComponent(cleanQuery);
+      final q = Uri.encodeComponent(query.trim());
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/search?q=$q'))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['stocks'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
-        if (list.isNotEmpty) return list;
+        return list;
       }
     } catch (e) {
-      debugPrint("Backend search unavailable, attempting direct exchange search: $e");
+      debugPrint("API Error searching stocks: $e");
     }
-
-    // 2. Direct Exchange Fallback (Zero-Auth Public Search)
-    try {
-      final q = Uri.encodeComponent(cleanQuery);
-      final yRes = await http.get(
-        Uri.parse('https://query1.finance.yahoo.com/v1/finance/search?q=$q&quotesCount=8&newsCount=0'),
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*',
-        },
-      ).timeout(const Duration(seconds: 8));
-
-      if (yRes.statusCode == 200) {
-        final data = jsonDecode(yRes.body);
-        final quotes = (data['quotes'] as List? ?? []);
-        final results = <Map<String, dynamic>>[];
-        for (final item in quotes) {
-          final rawSym = (item['symbol'] ?? '').toString();
-          if (rawSym.endsWith('.NS') || rawSym.endsWith('.BO')) {
-            final cleanSym = rawSym.replaceAll('.NS', '').replaceAll('.BO', '').toUpperCase();
-            final name = (item['shortname'] ?? item['longname'] ?? cleanSym).toString();
-            final exch = rawSym.endsWith('.NS') ? 'NSE' : 'BSE';
-            final sector = (item['sector'] ?? item['industry'] ?? exch).toString();
-            results.add({
-              'symbol': cleanSym,
-              'name': name,
-              'exchange': exch,
-              'sector': sector,
-              'full_symbol': rawSym,
-            });
-          }
-        }
-        if (results.isNotEmpty) return results;
-      }
-    } catch (e) {
-      debugPrint("Direct exchange search failed: $e");
-    }
-
     return [];
   }
 
@@ -127,125 +86,44 @@ class ApiService {
     if (sym.length < 2) {
       return {"is_valid": false, "symbol": sym, "error": "Symbol too short."};
     }
-
-    // 1. Try StokVigil API (Vercel Serverless / Cloud Run)
     try {
       final q = Uri.encodeComponent(sym);
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$q'))
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['is_valid'] == true) {
-          return data;
-        }
+        return jsonDecode(res.body);
       }
+    } on TimeoutException {
+      debugPrint("API Timeout validating stock '$sym'");
+      return {
+        "is_valid": false,
+        "symbol": sym,
+        "is_timeout": true,
+        "error": "Exchange connection timed out."
+      };
     } catch (e) {
-      debugPrint("Backend unavailable, attempting direct exchange lookup for '$sym': $e");
+      debugPrint("API Error validating stock: $e");
     }
-
-    // 2. Direct Exchange Validation Fallback (Zero-Auth Chart API for NSE and BSE)
-    try {
-      for (final suffix in ['.NS', '.BO']) {
-        final exch = suffix == '.NS' ? 'NSE' : 'BSE';
-        final yRes = await http.get(
-          Uri.parse('https://query1.finance.yahoo.com/v8/finance/chart/$sym$suffix?range=1d&interval=1d'),
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-          },
-        ).timeout(const Duration(seconds: 8));
-
-        if (yRes.statusCode == 200) {
-          final data = jsonDecode(yRes.body);
-          final resList = data['chart']?['result'] as List?;
-          if (resList != null && resList.isNotEmpty) {
-            final meta = resList[0]['meta'] as Map<String, dynamic>? ?? {};
-            final price = meta['regularMarketPrice'];
-            if (price != null && (price as num) > 0) {
-              final name = meta['shortName'] ?? meta['longName'] ?? '$sym ($exch)';
-              return {
-                'is_valid': true,
-                'symbol': sym,
-                'name': name,
-                'exchange': exch,
-                'price': (price as num).toDouble(),
-                'full_symbol': '$sym$suffix'
-              };
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint("Direct exchange validation failed for '$sym': $e");
-    }
-
     return {"is_valid": false, "symbol": sym, "error": "Could not verify '$sym' on NSE/BSE."};
   }
 
   Future<Map<String, dynamic>> fetchBatchQuotes(List<String> symbols) async {
     if (symbols.isEmpty) return {};
-    final clean = symbols.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet().toList();
-
-    // 1. Try StokVigil API (Vercel Serverless / Cloud Run)
     try {
+      final clean = symbols.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet().toList();
       final q = Uri.encodeComponent(clean.join(','));
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final quotes = Map<String, dynamic>.from(data['quotes'] ?? {});
-        if (quotes.isNotEmpty) return quotes;
+        return Map<String, dynamic>.from(data['quotes'] ?? {});
       }
     } catch (e) {
-      debugPrint("Backend batch quotes unavailable, attempting direct exchange lookup: $e");
+      debugPrint("API Error fetching batch stock quotes: $e");
     }
-
-    // 2. Direct Exchange Batch Fallback
-    final results = <String, dynamic>{};
-    await Future.wait(clean.map((sym) async {
-      try {
-        for (final suffix in ['.NS', '.BO']) {
-          final exch = suffix == '.NS' ? 'NSE' : 'BSE';
-          final yRes = await http.get(
-            Uri.parse('https://query1.finance.yahoo.com/v8/finance/chart/$sym$suffix?range=1d&interval=1d'),
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            },
-          ).timeout(const Duration(seconds: 8));
-
-          if (yRes.statusCode == 200) {
-            final data = jsonDecode(yRes.body);
-            final resList = data['chart']?['result'] as List?;
-            if (resList != null && resList.isNotEmpty) {
-              final meta = resList[0]['meta'] as Map<String, dynamic>? ?? {};
-              final p = meta['regularMarketPrice'];
-              if (p != null && (p as num) > 0) {
-                final price = (p as num).toDouble();
-                final prev = (meta['chartPreviousClose'] ?? meta['previousClose'] ?? price) as num;
-                final chgPct = prev > 0 ? double.parse((((price - prev) / prev) * 100).toStringAsFixed(2)) : 0.0;
-                final name = meta['shortName'] ?? meta['longName'] ?? '$sym ($exch)';
-                results[sym] = {
-                  'symbol': sym,
-                  'name': name,
-                  'exchange': exch,
-                  'price': price,
-                  'change_pct': chgPct,
-                  'is_positive': chgPct >= 0,
-                  'signal': chgPct >= 1.5 ? 'STRONG BUY' : (chgPct >= 0 ? 'BUY' : (chgPct > -1.5 ? 'HOLD' : 'SELL')),
-                  'target': price > 0 ? double.parse((price * 1.12).toStringAsFixed(2)) : 0.0,
-                  'stop_loss': price > 0 ? double.parse((price * 0.94).toStringAsFixed(2)) : 0.0,
-                };
-                break;
-              }
-            }
-          }
-        }
-      } catch (_) {}
-    }));
-
-    return results;
+    return {};
   }
 
   Future<bool> deleteUserAccount(String userId) async {

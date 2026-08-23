@@ -2,9 +2,9 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_STOKVIGIL_BACKEND_URL || process.env.STOKVIGIL_BACKEND_URL || "";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
+const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
