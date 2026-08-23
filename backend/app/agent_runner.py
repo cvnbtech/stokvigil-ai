@@ -30,9 +30,29 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         
     try:
         from breeze_connect import BreezeConnect
-        breeze = BreezeConnect(api_key=app_key)
-        session_res = breeze.generate_session(api_secret=secret_key, session_token=session_token)
-        logger.info(f"Breeze generate_session response: {session_res}")
+        import urllib.parse
+
+        clean_app = str(app_key).strip()
+        clean_sec = str(secret_key).strip()
+        clean_tok = str(session_token).strip()
+
+        # If user pasted whole redirect URL
+        if "apisession=" in clean_tok:
+            clean_tok = clean_tok.split("apisession=")[1].split("&")[0]
+
+        clean_tok = urllib.parse.unquote(clean_tok).strip()
+
+        # Masked verification log
+        app_preview = f"{clean_app[:3]}...{clean_app[-3:]}" if len(clean_app) >= 6 else "***"
+        sec_preview = f"{clean_sec[:3]}...{clean_sec[-3:]}" if len(clean_sec) >= 6 else "***"
+        tok_preview = f"{clean_tok[:3]}...{clean_tok[-3:]}" if len(clean_tok) >= 6 else "***"
+        logger.info(f"Breeze Auth Check - AppKey: {app_preview} (len: {len(clean_app)}), SecretKey: {sec_preview} (len: {len(clean_sec)}), SessionToken: {tok_preview} (len: {len(clean_tok)})")
+
+        breeze = BreezeConnect(api_key=clean_app)
+        breeze.generate_session(api_secret=clean_sec, session_token=clean_tok)
+        
+        session_active = bool(getattr(breeze, 'session_key', None))
+        logger.info(f"Breeze session_key established: {session_active}")
         
         raw_holdings = []
         for exch in ["NSE", "BSE"]:
