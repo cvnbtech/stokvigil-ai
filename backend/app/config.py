@@ -1,7 +1,7 @@
 import os
-from typing import List, Any
+import json
+from typing import List, Union, Any
 from pydantic_settings import BaseSettings
-from pydantic import field_validator
 
 class Settings(BaseSettings):
     APP_NAME: str = "StokVigil AI"
@@ -28,39 +28,26 @@ class Settings(BaseSettings):
     # Cron Security Token
     CRON_SECRET_KEY: str = ""
     
-    # CORS Allowed Origins
-    ALLOWED_ORIGINS: List[str] = [
-        "https://stokvigil-ai.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000"
-    ]
+    # Raw ALLOWED_ORIGINS string or list from env (str first to prevent EnvSettingsSource JSON decode error)
+    ALLOWED_ORIGINS: Union[str, List[str]] = ""
 
-    @field_validator("ALLOWED_ORIGINS", mode="before")
-    @classmethod
-    def parse_allowed_origins(cls, v: Any) -> List[str]:
-        if isinstance(v, list):
-            return [str(x).strip().strip('"').strip("'") for x in v if str(x).strip()]
-        if isinstance(v, str) and v.strip():
-            # Support JSON array format
-            if v.strip().startswith("[") and v.strip().endswith("]"):
+    @property
+    def allowed_origins_list(self) -> List[str]:
+        val = self.ALLOWED_ORIGINS
+        if isinstance(val, list):
+            return [str(x).strip().strip('"').strip("'") for x in val if str(x).strip()]
+        if isinstance(val, str) and val.strip():
+            # Check if it's a JSON array string
+            if val.strip().startswith("[") and val.strip().endswith("]"):
                 try:
-                    import json
-                    parsed = json.loads(v)
+                    parsed = json.loads(val)
                     if isinstance(parsed, list):
                         return [str(x).strip().strip('"').strip("'") for x in parsed if str(x).strip()]
                 except Exception:
                     pass
-            # Support comma-separated strings (e.g. "https://domain1.com, https://domain2.com")
-            return [x.strip().strip('"').strip("'") for x in v.split(",") if x.strip()]
-        return [
-            "https://stokvigil-ai.vercel.app",
-            "http://localhost:3000",
-            "http://localhost:8000",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:8000"
-        ]
+            # Comma-separated string or single URL
+            return [x.strip().strip('"').strip("'") for x in val.split(",") if x.strip()]
+        return ["*"]
 
     class Config:
         env_file = ".env"
