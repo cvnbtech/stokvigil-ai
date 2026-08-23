@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import urllib.parse
@@ -597,18 +598,96 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     # Ingest Macro Market Regime (NIFTY & India VIX)
     macro_data = fetch_macro_market_regime()
 
-    # 4. Evaluate each symbol
-    for symbol in symbols:
+    # ==========================================
+    # STAGE 1: Fast Parallel Multi-Pillar Trigger Screener (Concurrent ThreadPool)
+    # ==========================================
+    def _screen_single_stock(sym: str) -> Optional[Dict[str, Any]]:
         try:
-            technicals = fetch_multi_timeframe_technicals(symbol)
-            financials = fetch_stock_financials(symbol)
-            flow_data = fetch_delivery_and_fo_flow(symbol, technicals.get("price_vs_vwap_pct", 0.0))
-            forensics = evaluate_forensic_health(symbol, financials)
-            news_items = fetch_stock_news(symbol)
-            holding_info = holdings_map.get(symbol)
+            tech = fetch_multi_timeframe_technicals(sym)
+            curr_p = tech.get("current_price", 0.0)
+            if curr_p <= 0:
+                return None
+
+            p_vwap = abs(tech.get("price_vs_vwap_pct", 0.0))
+            rsi_15 = tech.get("rsi_15m", 50.0)
+            rsi_div = tech.get("rsi_divergence", "NONE")
+            is_vol_surge = tech.get("is_volume_surge", False)
+            vol_mult = tech.get("volume_multiple", 1.0)
+            tech_score = tech.get("technical_score", 50)
+            holding_info = holdings_map.get(sym)
+
+            # Check if user holds stock and price is near profit zone or stop loss
+            has_holding_trigger = False
+            if holding_info:
+                avg_p = holding_info.get("average_price", 0.0)
+                if avg_p > 0:
+                    pnl_pct = ((curr_p - avg_p) / avg_p) * 100
+                    if pnl_pct >= 5.0 or pnl_pct <= -3.5:
+                        has_holding_trigger = True
+
+            # Trigger condition: Volume spike, RSI extreme, Divergence, Trend Cross, Price vs VWAP, or Holding Trigger
+            is_active = (
+                is_vol_surge or
+                vol_mult >= 1.3 or
+                p_vwap >= 0.8 or
+                rsi_15 >= 68.0 or rsi_15 <= 32.0 or
+                rsi_div != "NONE" or
+                tech_score >= 70 or tech_score <= 35 or
+                has_holding_trigger
+            )
+
+            if is_active:
+                return {
+                    "symbol": sym,
+                    "technicals": tech,
+                    "holding_info": holding_info,
+                    "priority": tech_score
+                }
+            return None
+        except Exception as e:
+            logger.warning(f"Error in fast screener for {sym}: {e}")
+            return None
+
+    active_candidates: List[Dict[str, Any]] = []
+    if symbols:
+        max_workers = min(25, max(1, len(symbols)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            screened_items = list(pool.map(_screen_single_stock, list(symbols)))
+            active_candidates = [item for item in screened_items if item is not None]
+
+    # If all stocks are extremely quiet, ensure at least top 3 watchlist stocks are deeply evaluated
+    if len(active_candidates) < 3 and len(symbols) > 0:
+        remaining = [s for s in symbols if not any(c['symbol'] == s for c in active_candidates)]
+        for s in remaining[:max(1, 3 - len(active_candidates))]:
+            tech = fetch_multi_timeframe_technicals(s)
+            active_candidates.append({
+                "symbol": s,
+                "technicals": tech,
+                "holding_info": holdings_map.get(s),
+                "priority": tech.get("technical_score", 50)
+            })
+
+    # Sort candidates by priority score so highest conviction setups are evaluated first
+    active_candidates.sort(key=lambda x: x.get("priority", 50), reverse=True)
+    # Cap maximum concurrent deep evaluations at 15 to stay well within Cloud Run latency limits
+    candidates_to_eval = active_candidates[:15]
+
+    # ==========================================
+    # STAGE 2: Deep 7-Pillar AI Confluence Evaluation (Parallel Asyncio Execution)
+    # ==========================================
+    async def _evaluate_and_dispatch_candidate(cand: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        sym = cand["symbol"]
+        technicals = cand["technicals"]
+        holding_info = cand["holding_info"]
+        
+        try:
+            financials = fetch_stock_financials(sym)
+            flow_data = fetch_delivery_and_fo_flow(sym, technicals.get("price_vs_vwap_pct", 0.0))
+            forensics = evaluate_forensic_health(sym, financials)
+            news_items = fetch_stock_news(sym)
             
             analysis = await evaluate_stock_with_ai(
-                symbol=symbol,
+                symbol=sym,
                 technicals=technicals,
                 flow_data=flow_data,
                 macro_data=macro_data,
@@ -617,16 +696,16 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 news_items=news_items,
                 holding_info=holding_info
             )
-            
+
             confluence_score = analysis.get("confluence_score", 50)
             has_actionable = analysis.get("has_actionable_signal", False)
             action_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
-            alert_title = analysis.get("alert_title", f"{symbol} Market Update")
+            alert_title = analysis.get("alert_title", f"{sym} Market Update")
             catalyst_type = analysis.get("catalyst_category", "NEWS_CATALYST")
             confluence_drivers = analysis.get("confluence_drivers", [])
             tactical_levels = analysis.get("tactical_levels", {})
             holding_guidance = analysis.get("holding_guidance")
-            
+
             # Sensitivity Filter
             should_dispatch = False
             if alert_sensitivity == "HIGH":
@@ -638,15 +717,15 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 should_dispatch = has_actionable or (confluence_score >= 65)
 
             if not should_dispatch:
-                continue
+                return None
 
             # Anti-Fatigue Cooldown Check
             is_tier1 = (confluence_score >= 88 or action_bias == "TRAILING_SL_ALERT" or catalyst_type == "BLOCK_DEAL")
-            allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
+            allowed, reason = should_dispatch_alert(user_id, sym, action_bias, confluence_score, is_tier1)
             
             if not allowed:
-                logger.info(f"Skipping dispatch for {symbol}: {reason}")
-                continue
+                logger.info(f"Skipping dispatch for {sym}: {reason}")
+                return None
 
             # Demat position snapshot for alert formatting
             demat_pos = None
@@ -666,7 +745,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             if fcm_token and fcm_enabled:
                 fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Target: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
                 fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
-                    "symbol": symbol,
+                    "symbol": sym,
                     "action_bias": action_bias,
                     "confluence_score": str(confluence_score),
                     "catalyst_type": catalyst_type
@@ -676,7 +755,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             telegram_sent = False
             if telegram_enabled and telegram_chat_id:
                 formatted_msg = format_telegram_alert(
-                    symbol=symbol,
+                    symbol=sym,
                     alert_title=alert_title,
                     action_bias=action_bias,
                     confluence_score=confluence_score,
@@ -693,13 +772,13 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     },
                     holding_guidance=holding_guidance
                 )
-                inline_buttons = build_telegram_inline_keyboard(symbol)
+                inline_buttons = build_telegram_inline_keyboard(sym)
                 telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg, reply_markup=inline_buttons)
 
             # Persist Alert in Supabase Ledger
             alert_record = {
                 "user_id": user_id,
-                "symbol": symbol,
+                "symbol": sym,
                 "alert_title": alert_title,
                 "catalyst_type": catalyst_type if catalyst_type in ["BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", "NEWS_CATALYST"] else "NEWS_CATALYST",
                 "impact_score": confluence_score,
@@ -717,11 +796,15 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 "sent_via_telegram": telegram_sent,
             }
             res = supabase_client.table("stok_alerts").insert(alert_record).execute()
-            if res.data:
-                generated_alerts.append(res.data[0])
+            return res.data[0] if res.data else alert_record
 
         except Exception as stock_err:
-            logger.error(f"Error evaluating symbol {symbol} for user {user_id}: {stock_err}")
-            continue
+            logger.error(f"Error evaluating candidate symbol {sym} for user {user_id}: {stock_err}")
+            return None
+
+    if candidates_to_eval:
+        eval_tasks = [_evaluate_and_dispatch_candidate(cand) for cand in candidates_to_eval]
+        results = await asyncio.gather(*eval_tasks)
+        generated_alerts = [r for r in results if r is not None]
 
     return generated_alerts
