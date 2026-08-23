@@ -727,45 +727,21 @@ export default function App() {
   const loadPortfolioData = useCallback(async (uid: string) => {
     const todayStr = new Date().toISOString().split("T")[0];
     let portfolioLoaded = false;
-    let keysLoaded = false;
-
-    // Tier 1: Direct Supabase Database Vault Fetch (Fastest & most direct)
-    if (supabase && uid) {
-      try {
-        const { data: cred } = await supabase
-          .from('user_credentials')
-          .select('token_date, encrypted_app_key, encrypted_secret_key')
-          .eq('user_id', uid)
-          .maybeSingle();
-
-        if (cred) {
-          const isTokenValidToday = Boolean(cred.token_date === todayStr);
-          if (isTokenValidToday) setHasCredentials(true);
-
-          if (cred.encrypted_app_key) {
-            const decodedAppKey = decodeSafeBase64(cred.encrypted_app_key);
-            if (decodedAppKey) {
-              setAppKey(decodedAppKey);
-              keysLoaded = true;
-            }
-          }
-          if (cred.encrypted_secret_key) {
-            const decodedSecretKey = decodeSafeBase64(cred.encrypted_secret_key);
-            if (decodedSecretKey) {
-              setSecretKey(decodedSecretKey);
-              keysLoaded = true;
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Supabase credentials fetch error:", err);
-      }
-    }
-
-    // Tier 2: Backend API Service Call
+    // Backend API Service Call (Backend decrypts Fernet Vault on server safely)
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`${BACKEND_URL}/api/user/portfolio?user_id=${uid}`, { headers });
+      const credRes = await fetch(`/api/user/credentials?user_id=${uid}`, { headers });
+      if (credRes.ok) {
+        const credData = await credRes.json();
+        if (credData.has_credentials) {
+          const isTokenValidToday = Boolean(credData.token_date === todayStr);
+          if (isTokenValidToday) setHasCredentials(true);
+          if (credData.app_key) setAppKey(credData.app_key);
+          if (credData.secret_key) setSecretKey(credData.secret_key);
+        }
+      }
+
+      const res = await fetch(`/api/user/portfolio?user_id=${uid}`, { headers });
       if (res.ok) {
         const data = await res.json();
         const isTokenValidToday = Boolean(data.has_credentials && data.token_date === todayStr);
@@ -804,23 +780,6 @@ export default function App() {
               loadWatchlistData(uid);
             } catch (err) {
               console.warn("Error auto-syncing demat holdings to watchlists:", err);
-            }
-          }
-        }
-      }
-
-      if (!keysLoaded) {
-        const credRes = await fetch(`${BACKEND_URL}/api/user/credentials?user_id=${uid}`, { headers });
-        if (credRes.ok) {
-          const credData = await credRes.json();
-          if (credData.has_credentials) {
-            if (credData.app_key) {
-              const decodedApp = decodeSafeBase64(credData.app_key);
-              if (decodedApp) setAppKey(decodedApp);
-            }
-            if (credData.secret_key) {
-              const decodedSecret = decodeSafeBase64(credData.secret_key);
-              if (decodedSecret) setSecretKey(decodedSecret);
             }
           }
         }
@@ -1179,32 +1138,10 @@ export default function App() {
     if (currentUserId) {
       let saved = false;
 
-      // Tier 1: Supabase Direct Upsert
-      if (supabase) {
-        try {
-          const base64AppKey = encodeSafeBase64(cleanAppKey);
-          const base64SecretKey = encodeSafeBase64(cleanSecretKey);
-          const base64SessionToken = encodeSafeBase64(cleanSessionTok);
-
-          await supabase.from("user_credentials").upsert({
-            user_id: currentUserId,
-            encrypted_app_key: base64AppKey,
-            encrypted_secret_key: base64SecretKey,
-            encrypted_session_token: base64SessionToken,
-            token_date: new Date().toISOString().split("T")[0],
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "user_id" });
-          saved = true;
-          setHasCredentials(true);
-        } catch (err) {
-          console.warn("Supabase direct save error:", err);
-        }
-      }
-
-      // Tier 2: Backend API Sync
+      // Save securely via Backend Vault (AES-256 Fernet encryption on server)
       try {
         const headers = await getAuthHeaders();
-        const res = await fetch(`${BACKEND_URL}/api/user/credentials`, {
+        const res = await fetch(`/api/user/credentials`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -1215,7 +1152,6 @@ export default function App() {
           })
         });
         if (res.ok) {
-          saved = true;
           setHasCredentials(true);
         }
       } catch (e) {

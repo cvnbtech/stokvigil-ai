@@ -91,40 +91,14 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
     final user = SupabaseService().currentUser;
     if (user == null) return;
     try {
-      // 1. First try getting decrypted keys from backend API (Backend Fernet Vault)
+      // Get decrypted keys securely from backend API (Backend Fernet Vault)
       final creds = await ApiService().fetchUserCredentials(user.id);
       if (creds != null && creds['has_credentials'] == true && mounted) {
         final appKeyVal = creds['app_key']?.toString() ?? '';
         final secretKeyVal = creds['secret_key']?.toString() ?? '';
-        
-        final decryptedApp = _decodeDatabaseValue(appKeyVal);
-        final decryptedSecret = _decodeDatabaseValue(secretKeyVal);
 
-        if (decryptedApp.isNotEmpty) _appKeyController.text = decryptedApp;
-        if (decryptedSecret.isNotEmpty) _secretKeyController.text = decryptedSecret;
-
-        if (_appKeyController.text.isNotEmpty && _secretKeyController.text.isNotEmpty) {
-          return;
-        }
-      }
-
-      // 2. Fallback: Query Supabase user_credentials table directly & decode
-      if (SupabaseService.isConfigured) {
-        final data = await SupabaseService().client
-            .from('user_credentials')
-            .select('encrypted_app_key, encrypted_secret_key')
-            .eq('user_id', user.id)
-            .maybeSingle();
-        if (data != null && mounted) {
-          final rawAppKey = data['encrypted_app_key']?.toString() ?? '';
-          final rawSecretKey = data['encrypted_secret_key']?.toString() ?? '';
-
-          final decodedApp = _decodeDatabaseValue(rawAppKey);
-          final decodedSecret = _decodeDatabaseValue(rawSecretKey);
-
-          if (decodedApp.isNotEmpty) _appKeyController.text = decodedApp;
-          if (decodedSecret.isNotEmpty) _secretKeyController.text = decodedSecret;
-        }
+        if (appKeyVal.isNotEmpty) _appKeyController.text = appKeyVal;
+        if (secretKeyVal.isNotEmpty) _secretKeyController.text = secretKeyVal;
       }
     } catch (e) {
       debugPrint("Could not pre-fill saved keys: $e");
