@@ -16,6 +16,10 @@ from app.notifications import send_fcm_notification, send_telegram_notification,
 
 logger = logging.getLogger("stokvigil.agent_runner")
 
+# Silence noisy third-party internal SDK loggers (Breeze APILogger & yfinance)
+logging.getLogger("APILogger").setLevel(logging.WARNING)
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
 # ==========================================
 # 1. UNIVERSAL DYNAMIC ISIN RESOLVER & DEMAT INTEGRATION
 # ==========================================
@@ -56,7 +60,6 @@ def resolve_isin_to_nse_symbol(isin: str, fallback_code: str = "") -> str:
                     clean_sym = sym.replace(".NS", "").strip().upper()
                     if clean_sym:
                         _ISIN_CACHE[isin_clean] = clean_sym
-                        logger.info(f"Resolved ISIN {isin_clean} -> {clean_sym} (NSE)")
                         return clean_sym
 
             # Fallback to BSE (.BO) or general equity
@@ -66,7 +69,6 @@ def resolve_isin_to_nse_symbol(isin: str, fallback_code: str = "") -> str:
                     clean_sym = sym.replace(".BO", "").replace(".NS", "").strip().upper()
                     if clean_sym and not clean_sym.startswith("0P"):
                         _ISIN_CACHE[isin_clean] = clean_sym
-                        logger.info(f"Resolved ISIN {isin_clean} -> {clean_sym}")
                         return clean_sym
     except Exception as e:
         logger.warning(f"Dynamic ISIN resolution failed for {isin_clean}: {e}")
@@ -111,15 +113,15 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         
         # Primary & Authoritative: Official ICICI Breeze Demat Holdings API
         demat_res = breeze.get_demat_holdings()
-        logger.info(f"Breeze get_demat_holdings response: {demat_res}")
+        status_code = demat_res.get('status') or demat_res.get('Status') if isinstance(demat_res, dict) else "Unknown"
+        logger.info(f"Breeze get_demat_holdings status: {status_code}")
 
         raw_holdings = []
         if isinstance(demat_res, dict):
-            status_code = demat_res.get('status') or demat_res.get('Status')
             if status_code in [200, "200"]:
                 raw_holdings = demat_res.get('Success') or demat_res.get('success') or []
             else:
-                logger.warning(f"Breeze get_demat_holdings returned status: {demat_res}")
+                logger.warning(f"Breeze get_demat_holdings returned error: {demat_res.get('Error') or demat_res}")
                 return []
 
         # Fetch ICICI Tradebook Ledger for Average Buy Prices (Cost of Acquisition)

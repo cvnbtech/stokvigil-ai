@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     
     # Telegram Bot Settings
     TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_WEBHOOK_SECRET: str = ""
     
     # Cron Security Token
     CRON_SECRET_KEY: str = ""

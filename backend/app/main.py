@@ -842,10 +842,20 @@ def place_trade_order(
 
 
 @app.post("/api/telegram/webhook")
-async def telegram_webhook(payload: TelegramWebhookPayload, db: Client = Depends(get_supabase)):
+async def telegram_webhook(
+    payload: TelegramWebhookPayload,
+    x_telegram_bot_api_secret_token: Optional[str] = Header(None),
+    db: Client = Depends(get_supabase)
+):
     """
     Telegram Bot Webhook endpoint handling `/start <USER_ID>` deep link pairing.
+    Protected by X-Telegram-Bot-Api-Secret-Token header validation.
     """
+    if settings.TELEGRAM_WEBHOOK_SECRET:
+        if not x_telegram_bot_api_secret_token or x_telegram_bot_api_secret_token != settings.TELEGRAM_WEBHOOK_SECRET:
+            logger.warning("Blocked unauthorized Telegram webhook call (missing or invalid secret token header).")
+            raise HTTPException(status_code=403, detail="Unauthorized webhook source: Invalid secret token.")
+
     msg = payload.message
     if not msg:
         return {"status": "ignored"}
