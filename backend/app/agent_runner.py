@@ -173,17 +173,43 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         return []
 
 
+# Silence internal yfinance 404 logs for unquoted/corporate action instruments
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
 def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
     """
     Fetches comprehensive financial metrics, valuation data, debt ratios, quarterly growth,
-    and 52-week position from Yahoo Finance for an NSE ticker.
+    and 52-week position from Yahoo Finance with automatic Dual-Exchange (NSE / BSE) resolution.
     """
-    ticker_name = symbol if symbol.endswith(".NS") or symbol.endswith(".BO") else f"{symbol}.NS"
+    clean_sym = str(symbol).strip().upper()
+    if not clean_sym or clean_sym in ["NA", "NONE", "NULL", "0"]:
+        return {"symbol": clean_sym, "price": 0.0}
+
+    # Determine candidates to check (NSE first, then BSE)
+    if clean_sym.endswith(".NS") or clean_sym.endswith(".BO"):
+        candidates = [clean_sym]
+    else:
+        candidates = [f"{clean_sym}.NS", f"{clean_sym}.BO"]
+
+    info = {}
+    current_price = 0.0
+
+    for ticker_name in candidates:
+        try:
+            ticker = yf.Ticker(ticker_name)
+            ticker_info = ticker.info or {}
+            price = ticker_info.get('currentPrice') or ticker_info.get('regularMarketPrice') or ticker_info.get('previousClose') or 0.0
+            if price > 0:
+                info = ticker_info
+                current_price = price
+                break
+        except Exception:
+            continue
+
+    if not info and current_price == 0.0:
+        return {"symbol": clean_sym, "price": 0.0}
+
     try:
-        ticker = yf.Ticker(ticker_name)
-        info = ticker.info or {}
-        
-        current_price = info.get('currentPrice') or info.get('regularMarketPrice') or info.get('previousClose') or 0.0
         pe_ratio = info.get('trailingPE')
         forward_pe = info.get('forwardPE')
         debt_to_equity = info.get('debtToEquity')
@@ -193,7 +219,7 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
         return_on_equity = info.get('returnOnEquity')
         
         return {
-            "symbol": symbol,
+            "symbol": clean_sym,
             "price": current_price,
             "pe_ratio": round(pe_ratio, 2) if pe_ratio else None,
             "forward_pe": round(forward_pe, 2) if forward_pe else None,
@@ -208,8 +234,8 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
             "52_week_low": info.get('fiftyTwoWeekLow'),
         }
     except Exception as e:
-        logger.error(f"Error fetching yfinance financials for {symbol}: {e}")
-        return {"symbol": symbol, "price": 0.0}
+        logger.warning(f"Error parsing financial metrics for {clean_sym}: {e}")
+        return {"symbol": clean_sym, "price": current_price}
 
 
 def fetch_stock_news(symbol: str) -> List[Dict[str, str]]:
