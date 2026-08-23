@@ -33,46 +33,57 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         breeze = BreezeConnect(api_key=app_key)
         breeze.generate_session(api_secret=secret_key, session_token=session_token)
         
-        portfolio_res = breeze.get_portfolio_holdings()
-        logger.info(f"Breeze get_portfolio_holdings response type: {type(portfolio_res)}")
-        
-        if isinstance(portfolio_res, dict):
-            status_code = portfolio_res.get('status') or portfolio_res.get('Status')
-            if status_code in [200, "200"]:
-                holdings = portfolio_res.get('Success') or portfolio_res.get('success') or []
-                result = []
-                for item in holdings:
-                    stock_code = item.get('stock_code') or item.get('symbol') or item.get('stock_name') or ''
-                    
-                    try:
-                        qty = float(item.get('quantity') or 0)
-                    except (ValueError, TypeError):
-                        qty = 0.0
-                        
-                    try:
-                        avg_p = float(item.get('average_price') or item.get('avg_price') or 0)
-                    except (ValueError, TypeError):
-                        avg_p = 0.0
-                        
-                    try:
-                        cmp = float(item.get('current_market_price') or item.get('last_price') or avg_p)
-                    except (ValueError, TypeError):
-                        cmp = avg_p
+        raw_holdings = []
+        for exch in ["NSE", "BSE"]:
+            try:
+                portfolio_res = breeze.get_portfolio_holdings(exchange_code=exch)
+                logger.info(f"Breeze {exch} get_portfolio_holdings response type: {type(portfolio_res)}")
+                
+                if isinstance(portfolio_res, dict):
+                    status_code = portfolio_res.get('status') or portfolio_res.get('Status')
+                    if status_code in [200, "200"]:
+                        h_list = portfolio_res.get('Success') or portfolio_res.get('success') or []
+                        if isinstance(h_list, list):
+                            raw_holdings.extend(h_list)
+                    else:
+                        logger.warning(f"Breeze {exch} API returned status: {portfolio_res}")
+            except Exception as exch_err:
+                logger.warning(f"Error calling get_portfolio_holdings({exch}): {exch_err}")
 
-                    clean_symbol = str(stock_code).upper().strip()
-                    if clean_symbol and qty > 0:
-                        result.append({
-                            "symbol": clean_symbol,
-                            "quantity": qty,
-                            "average_price": avg_p,
-                            "current_market_price": cmp,
-                        })
-                logger.info(f"Successfully retrieved {len(result)} ICICI Breeze portfolio holdings: {[r['symbol'] for r in result]}")
-                return result
-            else:
-                logger.warning(f"Breeze API returned non-200 status: {portfolio_res}")
-                return []
-        return []
+        result = []
+        seen_symbols = set()
+        for item in raw_holdings:
+            if not isinstance(item, dict):
+                continue
+            stock_code = item.get('stock_code') or item.get('symbol') or item.get('stock_name') or ''
+            
+            try:
+                qty = float(item.get('quantity') or 0)
+            except (ValueError, TypeError):
+                qty = 0.0
+                
+            try:
+                avg_p = float(item.get('average_price') or item.get('avg_price') or 0)
+            except (ValueError, TypeError):
+                avg_p = 0.0
+                
+            try:
+                cmp = float(item.get('current_market_price') or item.get('last_price') or avg_p)
+            except (ValueError, TypeError):
+                cmp = avg_p
+
+            clean_symbol = str(stock_code).upper().strip()
+            if clean_symbol and qty > 0 and clean_symbol not in seen_symbols:
+                seen_symbols.add(clean_symbol)
+                result.append({
+                    "symbol": clean_symbol,
+                    "quantity": qty,
+                    "average_price": avg_p,
+                    "current_market_price": cmp,
+                })
+
+        logger.info(f"Successfully retrieved {len(result)} ICICI Breeze portfolio holdings: {[r['symbol'] for r in result]}")
+        return result
     except Exception as e:
         logger.error(f"Error fetching ICICI Breeze portfolio: {e}")
         return []
