@@ -27,8 +27,7 @@ gcloud run deploy $SERVICE_NAME \
     --memory 512Mi \
     --cpu 1 \
     --min-instances 0 \
-    --max-instances 3 \
-    --set-env-vars ENVIRONMENT=production
+    --update-env-vars ENVIRONMENT=production
 
 echo "✅ Deployment successful! Service URL:"
 gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)'
