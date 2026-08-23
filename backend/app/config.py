@@ -6,7 +6,7 @@ from pydantic import field_validator
 class Settings(BaseSettings):
     APP_NAME: str = "StokVigil AI"
     PACKAGE_ID: str = "com.app.stokvigil"
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = ""
     
     # Supabase Settings
     SUPABASE_URL: str = ""
