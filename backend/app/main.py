@@ -21,6 +21,8 @@ from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock
 from app.notifications import send_telegram_notification
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("APILogger").setLevel(logging.WARNING)
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 logger = logging.getLogger("stokvigil.main")
 
 # Strict alphanumeric regex whitelist for stock symbols
@@ -148,19 +150,28 @@ def register_device(
         update_data["tnc_accepted"] = req.tnc_accepted
         update_data["tnc_accepted_at"] = "now()"
         
-    if not update_data:
-        raise HTTPException(status_code=400, detail="No fields provided for update.")
-
-    update_data["id"] = req.user_id
     update_data["updated_at"] = "now()"
     
     try:
+        # 1. Primary: Direct targeted update (does not touch email, 100% safe)
+        res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
+        if res.data and len(res.data) > 0:
+            return {"status": "success", "profile": res.data[0]}
+            
+        # 2. Fallback: If profile row was not yet created, attach user email and insert
+        update_data["id"] = req.user_id
+        try:
+            user_auth = db.auth.admin.get_user_by_id(req.user_id)
+            if user_auth and user_auth.user and user_auth.user.email:
+                update_data["email"] = user_auth.user.email
+        except Exception:
+            pass
+            
         res = db.table("profiles").upsert(update_data).execute()
         return {"status": "success", "profile": res.data[0] if res.data else update_data}
     except Exception as e:
-        logger.error(f"Error upserting profile in DB: {e}")
-        res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
-        return {"status": "success", "profile": res.data[0] if res.data else update_data}
+        logger.error(f"Error updating profile in DB: {e}")
+        return {"status": "success", "profile": update_data}
 
 
 @app.get("/api/user/credentials")
