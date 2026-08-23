@@ -2,15 +2,16 @@ import base64
 import json
 import logging
 import re
+import time
 import urllib.parse
 import urllib.request
 import concurrent.futures
 from collections import OrderedDict
 from datetime import date
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supabase import create_client, Client
 import yfinance as yf
 
@@ -28,16 +29,38 @@ logger = logging.getLogger("stokvigil.main")
 # Strict alphanumeric regex whitelist for stock symbols
 STOCK_SYMBOL_REGEX = re.compile(r'^[A-Z0-9_\-&]{1,20}$')
 
+# In-Memory Sliding Window Rate Limiter (Max 120 req/min per client IP)
+_RATE_LIMIT_BUCKETS: Dict[str, List[float]] = {}
+_RATE_LIMIT_WINDOW = 60.0  # 1 minute
+_RATE_LIMIT_MAX_REQ = 120  # Max requests per window
+
+def check_rate_limit(request: Request):
+    """Protects public search and quote APIs from abuse, scraping, and DoS attacks."""
+    client_ip = request.client.host if request.client else "unknown"
+    if client_ip in ["127.0.0.1", "localhost", "unknown"]:
+        return
+    now = time.time()
+    timestamps = _RATE_LIMIT_BUCKETS.get(client_ip, [])
+    valid_ts = [ts for ts in timestamps if now - ts < _RATE_LIMIT_WINDOW]
+    if len(valid_ts) >= _RATE_LIMIT_MAX_REQ:
+        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests. Please slow down and try again in a minute."
+        )
+    valid_ts.append(now)
+    _RATE_LIMIT_BUCKETS[client_ip] = valid_ts
+
 app = FastAPI(
     title="StokVigil AI Engine API",
     description="Multi-Tenant Market Intelligence & Factual Alert Platform",
     version="1.0.0",
 )
 
-# CORS Setup - Whitelisted Origins
+# CORS Setup - Whitelisted Origins (Parsed safely from list or env string)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -49,7 +72,7 @@ def get_supabase() -> Client:
 
 
 # ==========================================
-# REQUEST / RESPONSE MODELS
+# REQUEST / RESPONSE MODELS (VALIDATED)
 # ==========================================
 
 class RegisterDeviceRequest(BaseModel):
@@ -71,11 +94,11 @@ class SaveCredentialsRequest(BaseModel):
 
 class PlaceOrderRequest(BaseModel):
     user_id: str
-    symbol: str
-    action: str  # "BUY" or "SELL"
-    order_type: str  # "MARKET" or "LIMIT"
-    quantity: int
-    price: Optional[float] = 0.0
+    symbol: str = Field(..., min_length=1, max_length=20, pattern=r'^[A-Z0-9_\-&]{1,20}$')
+    action: str = Field(..., pattern=r'^(BUY|SELL|buy|sell)$')
+    order_type: str = Field(..., pattern=r'^(MARKET|LIMIT|market|limit)$')
+    quantity: int = Field(..., gt=0, le=100000)
+    price: Optional[float] = Field(default=0.0, ge=0.0)
 
 class TelegramWebhookPayload(BaseModel):
     update_id: Optional[int] = None
@@ -261,7 +284,7 @@ def save_user_credentials(
     }
 
 
-@app.get("/api/stocks/search")
+@app.get("/api/stocks/search", dependencies=[Depends(check_rate_limit)])
 def search_stocks(q: str = Query(..., min_length=1)):
     """
     Dynamically searches live NSE & BSE Indian stocks via Yahoo Finance API.
@@ -350,7 +373,7 @@ def search_stocks(q: str = Query(..., min_length=1)):
     return {"stocks": results[:5]}
 
 
-@app.get("/api/stocks/validate")
+@app.get("/api/stocks/validate", dependencies=[Depends(check_rate_limit)])
 def validate_stock(symbol: str = Query(..., min_length=1)):
     """
     Dynamically validates in real-time whether a ticker exists on NSE or BSE.
@@ -506,7 +529,7 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
             continue
     return None
 
-@app.get("/api/stocks/quotes")
+@app.get("/api/stocks/quotes", dependencies=[Depends(check_rate_limit)])
 def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separated stock symbols")):
     """
     Fetches real-time market prices, day % change, and metadata for multiple stocks.
