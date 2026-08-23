@@ -24,9 +24,11 @@ gcloud run deploy $SERVICE_NAME \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
-    --memory 512Mi \
+    --memory 1Gi \
     --cpu 1 \
+    --timeout 300 \
     --min-instances 0 \
+    --max-instances 3 \
     --update-env-vars ENVIRONMENT=production
 
 echo "✅ Deployment successful! Service URL:"
