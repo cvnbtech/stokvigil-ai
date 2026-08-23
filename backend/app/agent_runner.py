@@ -31,7 +31,8 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
     try:
         from breeze_connect import BreezeConnect
         breeze = BreezeConnect(api_key=app_key)
-        breeze.generate_session(api_secret=secret_key, session_token=session_token)
+        session_res = breeze.generate_session(api_secret=secret_key, session_token=session_token)
+        logger.info(f"Breeze generate_session response: {session_res}")
         
         raw_holdings = []
         for exch in ["NSE", "BSE"]:
