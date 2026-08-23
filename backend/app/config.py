@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 def get_allowed_origins() -> List[str]:
     raw = os.getenv("ALLOWED_ORIGINS", "")
     if raw.strip():
-        return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        return [origin.strip().strip('"').strip("'") for origin in raw.split(",") if origin.strip()]
     
     env = os.getenv("ENVIRONMENT", "development").lower()
     if env == "production":
