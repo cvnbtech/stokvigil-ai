@@ -966,6 +966,9 @@ export default function App() {
       localStorage.setItem("stokvigil_demat_auto_sync", String(val));
     }
     await updatePreference("demat_auto_sync", val);
+    if (val && user?.id) {
+      loadPortfolioData(user.id);
+    }
   };
 
   const toggleFcm = async (val: boolean) => {

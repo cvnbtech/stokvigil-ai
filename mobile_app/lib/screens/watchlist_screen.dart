@@ -175,6 +175,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
         executionMode: null,
       );
     }
+    if (val) {
+      _loadWatchlist();
+    }
   }
 
   Future<void> _addSymbol(String symbol, [String? displayName]) async {
