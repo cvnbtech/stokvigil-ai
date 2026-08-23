@@ -122,6 +122,34 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 logger.warning(f"Breeze get_demat_holdings returned status: {demat_res}")
                 return []
 
+        # Fetch ICICI Tradebook Ledger for Average Buy Prices (Cost of Acquisition)
+        tradebook_avg_prices: Dict[str, float] = {}
+        for exch in ["NSE", "BSE"]:
+            try:
+                p_res = breeze.get_portfolio_holdings(
+                    exchange_code=exch,
+                    from_date="",
+                    to_date="",
+                    stock_code="",
+                    portfolio_type=""
+                )
+                if isinstance(p_res, dict):
+                    status = p_res.get('status') or p_res.get('Status')
+                    if status in [200, "200"]:
+                        p_list = p_res.get('Success') or p_res.get('success') or []
+                        if isinstance(p_list, list):
+                            for item in p_list:
+                                if isinstance(item, dict):
+                                    code = str(item.get('stock_code') or item.get('symbol') or '').upper().strip()
+                                    try:
+                                        avg_p = float(item.get('average_price') or item.get('cost_price') or item.get('avg_cost') or item.get('purchase_price') or 0)
+                                    except (ValueError, TypeError):
+                                        avg_p = 0.0
+                                    if code and avg_p > 0:
+                                        tradebook_avg_prices[code] = avg_p
+            except Exception as tradebook_err:
+                logger.warning(f"Note on fetching ICICI {exch} tradebook avg prices: {tradebook_err}")
+
         # High-Speed Parallel ISIN Resolution for 100+ stocks
         def _parse_holding(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             if not isinstance(item, dict):
@@ -134,11 +162,15 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 qty = float(item.get('quantity') or item.get('demat_total_bulk_quantity') or item.get('demat_avail_quantity') or 0)
             except (ValueError, TypeError):
                 qty = 0.0
-                
+
+            # Merge average price from Tradebook ledger or Demat record
+            raw_code_upper = str(raw_code).upper().strip()
+            tb_price = tradebook_avg_prices.get(raw_code_upper, 0.0) or tradebook_avg_prices.get(clean_symbol, 0.0)
+            
             try:
-                avg_p = float(item.get('average_price') or item.get('avg_price') or 0)
+                avg_p = float(item.get('average_price') or item.get('avg_price') or item.get('cost_price') or item.get('purchase_price') or tb_price)
             except (ValueError, TypeError):
-                avg_p = 0.0
+                avg_p = tb_price
                 
             try:
                 cmp = float(item.get('current_market_price') or item.get('last_price') or avg_p)

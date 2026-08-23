@@ -637,9 +637,9 @@ def get_user_portfolio(
         avg_price = h.get('average_price', 0)
         
         current_val = live_price * qty
-        investment_val = avg_price * qty
-        pnl = current_val - investment_val
-        pnl_pct = ((pnl / investment_val) * 100) if investment_val > 0 else 0.0
+        investment_val = (avg_price * qty) if avg_price > 0 else current_val
+        pnl = (current_val - investment_val) if avg_price > 0 else 0.0
+        pnl_pct = ((pnl / investment_val) * 100) if (avg_price > 0 and investment_val > 0) else 0.0
 
         return {
             "symbol": sym,
