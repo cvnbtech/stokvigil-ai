@@ -55,21 +55,59 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         logger.info(f"Breeze session_key established: {session_active}")
         
         raw_holdings = []
-        for exch in ["NSE", "BSE"]:
+
+        # 1. Primary: Official ICICI Breeze Demat Holdings API
+        try:
+            demat_res = breeze.get_demat_holdings()
+            logger.info(f"Breeze get_demat_holdings response: {demat_res}")
+            if isinstance(demat_res, dict):
+                status_code = demat_res.get('status') or demat_res.get('Status')
+                if status_code in [200, "200"]:
+                    h_list = demat_res.get('Success') or demat_res.get('success') or []
+                    if isinstance(h_list, list):
+                        raw_holdings.extend(h_list)
+                else:
+                    logger.warning(f"Breeze get_demat_holdings returned status: {demat_res}")
+        except Exception as demat_err:
+            logger.warning(f"Error calling get_demat_holdings(): {demat_err}")
+
+        # 2. Fallback: Portfolio Holdings with full signature payload
+        if not raw_holdings:
+            for exch in ["NSE", "BSE"]:
+                try:
+                    portfolio_res = breeze.get_portfolio_holdings(
+                        exchange_code=exch,
+                        from_date="",
+                        to_date="",
+                        stock_code="",
+                        portfolio_type=""
+                    )
+                    logger.info(f"Breeze {exch} get_portfolio_holdings response: {portfolio_res}")
+                    
+                    if isinstance(portfolio_res, dict):
+                        status_code = portfolio_res.get('status') or portfolio_res.get('Status')
+                        if status_code in [200, "200"]:
+                            h_list = portfolio_res.get('Success') or portfolio_res.get('success') or []
+                            if isinstance(h_list, list):
+                                raw_holdings.extend(h_list)
+                        else:
+                            logger.warning(f"Breeze {exch} API returned status: {portfolio_res}")
+                except Exception as exch_err:
+                    logger.warning(f"Error calling get_portfolio_holdings({exch}): {exch_err}")
+
+        # 3. Fallback: Portfolio Positions for open delivery holdings
+        if not raw_holdings:
             try:
-                portfolio_res = breeze.get_portfolio_holdings(exchange_code=exch)
-                logger.info(f"Breeze {exch} get_portfolio_holdings response type: {type(portfolio_res)}")
-                
-                if isinstance(portfolio_res, dict):
-                    status_code = portfolio_res.get('status') or portfolio_res.get('Status')
+                pos_res = breeze.get_portfolio_positions()
+                logger.info(f"Breeze get_portfolio_positions response: {pos_res}")
+                if isinstance(pos_res, dict):
+                    status_code = pos_res.get('status') or pos_res.get('Status')
                     if status_code in [200, "200"]:
-                        h_list = portfolio_res.get('Success') or portfolio_res.get('success') or []
+                        h_list = pos_res.get('Success') or pos_res.get('success') or []
                         if isinstance(h_list, list):
                             raw_holdings.extend(h_list)
-                    else:
-                        logger.warning(f"Breeze {exch} API returned status: {portfolio_res}")
-            except Exception as exch_err:
-                logger.warning(f"Error calling get_portfolio_holdings({exch}): {exch_err}")
+            except Exception as pos_err:
+                logger.warning(f"Error calling get_portfolio_positions(): {pos_err}")
 
         result = []
         seen_symbols = set()
