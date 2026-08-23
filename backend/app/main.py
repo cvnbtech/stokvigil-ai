@@ -624,16 +624,46 @@ def delete_user_account(
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 
+# In-Memory RAM Portfolio Cache (15s TTL for lightning-fast tab switching)
+_USER_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
+_USER_PORTFOLIO_CACHE_TTL = 15.0  # 15 seconds
+
+def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]):
+    """Background task to sync Demat holdings to user_watchlists without blocking HTTP response."""
+    if not symbols:
+        return
+    try:
+        sync_payload = [
+            {"user_id": user_id, "symbol": s.upper(), "is_auto_synced": True}
+            for s in symbols
+        ]
+        db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
+        logger.info(f"Background auto-synced {len(symbols)} Demat holdings to user_watchlists for user {user_id}")
+    except Exception as sync_err:
+        logger.warning(f"Note on background auto-syncing Demat holdings: {sync_err}")
+
+
 @app.get("/api/user/portfolio")
 def get_user_portfolio(
     user_id: str,
+    refresh: bool = Query(False, description="Set true to bypass cache and perform live sync"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
 ):
     """
     Fetches synced ICICI holdings, current prices, and total P/L summary.
+    Includes 15-second RAM caching for lightning-fast (<1ms) tab switching.
     """
     verify_user_access(user_id, auth_user_id)
+
+    # 1. Check RAM Cache if not explicitly refreshing (<1ms)
+    now = time.time()
+    if not refresh:
+        cached = _USER_PORTFOLIO_CACHE.get(user_id)
+        if cached and (now - cached.get("timestamp", 0) < _USER_PORTFOLIO_CACHE_TTL):
+            return cached["data"]
+
     cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if not cred_res.data:
         return {"has_credentials": False, "is_expired": False, "holdings": [], "total_portfolio_value": 0.0}
@@ -706,19 +736,12 @@ def get_user_portfolio(
     total_pnl = total_val - total_investment
     total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
 
-    # Auto-sync Demat holdings to user_watchlists table in batches
+    # Approach 3: Asynchronous Non-Blocking Database Watchlist Sync
     if detailed_holdings:
-        try:
-            sync_payload = [
-                {"user_id": user_id, "symbol": h['symbol'].upper(), "is_auto_synced": True}
-                for h in detailed_holdings
-            ]
-            db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
-            logger.info(f"Auto-synced {len(detailed_holdings)} Demat holdings to user_watchlists for user {user_id}")
-        except Exception as sync_err:
-            logger.warning(f"Note on auto-syncing Demat holdings to watchlists: {sync_err}")
+        holding_syms = [h['symbol'] for h in detailed_holdings]
+        background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, holding_syms)
 
-    return {
+    response_payload = {
         "has_credentials": True,
         "token_date": cred.get("token_date"),
         "total_portfolio_value": round(total_val, 2),
@@ -727,6 +750,14 @@ def get_user_portfolio(
         "total_pnl_percent": round(total_pnl_pct, 2),
         "holdings": detailed_holdings
     }
+
+    # Approach 4: Save to RAM Cache for 15s instant tab switching
+    _USER_PORTFOLIO_CACHE[user_id] = {
+        "timestamp": now,
+        "data": response_payload
+    }
+
+    return response_payload
 
 
 @app.get("/api/user/alerts")

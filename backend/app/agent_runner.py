@@ -124,9 +124,9 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 logger.warning(f"Breeze get_demat_holdings returned error: {demat_res.get('Error') or demat_res}")
                 return []
 
-        # Fetch ICICI Tradebook Ledger for Average Buy Prices (Cost of Acquisition)
-        tradebook_avg_prices: Dict[str, float] = {}
-        for exch in ["NSE", "BSE"]:
+        # Fetch ICICI Tradebook Ledger for Average Buy Prices (Parallel NSE + BSE Query)
+        def _fetch_tradebook_for_exchange(exch: str) -> Dict[str, float]:
+            res_dict = {}
             try:
                 p_res = breeze.get_portfolio_holdings(
                     exchange_code=exch,
@@ -148,9 +148,17 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                                     except (ValueError, TypeError):
                                         avg_p = 0.0
                                     if code and avg_p > 0:
-                                        tradebook_avg_prices[code] = avg_p
+                                        res_dict[code] = avg_p
             except Exception as tradebook_err:
                 logger.warning(f"Note on fetching ICICI {exch} tradebook avg prices: {tradebook_err}")
+            return res_dict
+
+        tradebook_avg_prices: Dict[str, float] = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as tb_pool:
+            fut_nse = tb_pool.submit(_fetch_tradebook_for_exchange, "NSE")
+            fut_bse = tb_pool.submit(_fetch_tradebook_for_exchange, "BSE")
+            tradebook_avg_prices.update(fut_nse.result())
+            tradebook_avg_prices.update(fut_bse.result())
 
         # High-Speed Parallel ISIN Resolution for 100+ stocks
         def _parse_holding(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
