@@ -22,7 +22,7 @@ logger = logging.getLogger("stokvigil.agent_runner")
 def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> List[Dict[str, Any]]:
     """
     Fetches real-time portfolio holdings from user's ICICI Demat account using breeze-connect SDK.
-    Falls back gracefully if token is expired or mock testing.
+    Handles case-insensitive response structures and safe float parsing.
     """
     if not app_key or not secret_key or not session_token:
         logger.warning("Incomplete Breeze credentials provided.")
@@ -34,20 +34,45 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         breeze.generate_session(api_secret=secret_key, session_token=session_token)
         
         portfolio_res = breeze.get_portfolio_holdings()
-        if portfolio_res and portfolio_res.get('status') == 200:
-            holdings = portfolio_res.get('Success', [])
-            result = []
-            for item in holdings:
-                result.append({
-                    "symbol": item.get('stock_code', '').upper(),
-                    "quantity": float(item.get('quantity', 0)),
-                    "average_price": float(item.get('average_price', 0)),
-                    "current_market_price": float(item.get('current_market_price', 0)),
-                })
-            return result
-        else:
-            logger.warning(f"Breeze API returned non-200 status: {portfolio_res}")
-            return []
+        logger.info(f"Breeze get_portfolio_holdings response type: {type(portfolio_res)}")
+        
+        if isinstance(portfolio_res, dict):
+            status_code = portfolio_res.get('status') or portfolio_res.get('Status')
+            if status_code in [200, "200"]:
+                holdings = portfolio_res.get('Success') or portfolio_res.get('success') or []
+                result = []
+                for item in holdings:
+                    stock_code = item.get('stock_code') or item.get('symbol') or item.get('stock_name') or ''
+                    
+                    try:
+                        qty = float(item.get('quantity') or 0)
+                    except (ValueError, TypeError):
+                        qty = 0.0
+                        
+                    try:
+                        avg_p = float(item.get('average_price') or item.get('avg_price') or 0)
+                    except (ValueError, TypeError):
+                        avg_p = 0.0
+                        
+                    try:
+                        cmp = float(item.get('current_market_price') or item.get('last_price') or avg_p)
+                    except (ValueError, TypeError):
+                        cmp = avg_p
+
+                    clean_symbol = str(stock_code).upper().strip()
+                    if clean_symbol and qty > 0:
+                        result.append({
+                            "symbol": clean_symbol,
+                            "quantity": qty,
+                            "average_price": avg_p,
+                            "current_market_price": cmp,
+                        })
+                logger.info(f"Successfully retrieved {len(result)} ICICI Breeze portfolio holdings: {[r['symbol'] for r in result]}")
+                return result
+            else:
+                logger.warning(f"Breeze API returned non-200 status: {portfolio_res}")
+                return []
+        return []
     except Exception as e:
         logger.error(f"Error fetching ICICI Breeze portfolio: {e}")
         return []
