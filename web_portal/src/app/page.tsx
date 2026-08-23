@@ -4,7 +4,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
-const BACKEND_URL = process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = "";
 
 function decodeSafeBase64(str: string): string {
   if (!str) return "";
