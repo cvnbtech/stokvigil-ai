@@ -2723,8 +2723,8 @@ export default function App() {
                         }}
                         style={{
                           background: telegramSaved ? "rgba(16,185,129,0.15)" : "rgba(6,182,212,0.15)",
-                          border: `1px solid ${telegramSaved ? C.green : C.cyan}`,
-                          borderRadius: 8, padding: "6px 12px", color: telegramSaved ? C.green : C.cyan,
+                          border: `1px solid ${telegramSaved ? C.emerald : C.cyan}`,
+                          borderRadius: 8, padding: "6px 12px", color: telegramSaved ? C.emerald : C.cyan,
                           fontSize: 11, fontWeight: 800, cursor: "pointer"
                         }}
                       >
