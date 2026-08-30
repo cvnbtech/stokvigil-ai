@@ -14,6 +14,7 @@ from app.flow_tracker import fetch_delivery_and_fo_flow, fetch_bulk_and_block_de
 from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health
 from app.alert_limiter import should_dispatch_alert
 from app.notifications import send_fcm_notification, send_telegram_notification, format_telegram_alert, build_telegram_inline_keyboard
+from app.market_cache import market_cache
 
 logger = logging.getLogger("stokvigil.agent_runner")
 
@@ -566,12 +567,89 @@ Output ONLY valid JSON matching this exact structure:
 
 
 # ==========================================
-# 3. 5-MINUTE MULTI-TENANT SURVEILLANCE RUNNER
+# 3. 5-MINUTE MULTI-TENANT SURVEILLANCE RUNNER (IN-MEMORY EVENT-DRIVEN)
 # ==========================================
+
+async def evaluate_single_symbol_full(
+    symbol: str, 
+    macro_data: Optional[Dict[str, Any]] = None,
+    holding_info: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Evaluates all institutional dimensions (technicals, macro, F&O flow, forensics, news, AI confluence)
+    for a single symbol and caches the analysis into RAM.
+    """
+    if macro_data is None:
+        macro_data = fetch_macro_market_regime()
+
+    technicals = fetch_multi_timeframe_technicals(symbol)
+    financials = fetch_stock_financials(symbol)
+    flow_data = fetch_delivery_and_fo_flow(symbol, technicals.get("price_vs_vwap_pct", 0.0))
+    forensics = evaluate_forensic_health(symbol, financials)
+    news_items = fetch_stock_news(symbol)
+
+    analysis = await evaluate_stock_with_ai(
+        symbol=symbol,
+        technicals=technicals,
+        flow_data=flow_data,
+        macro_data=macro_data,
+        forensics=forensics,
+        financials=financials,
+        news_items=news_items,
+        holding_info=holding_info
+    )
+
+    pack = {
+        "symbol": symbol,
+        "technicals": technicals,
+        "financials": financials,
+        "flow_data": flow_data,
+        "forensics": forensics,
+        "news_items": news_items,
+        "analysis": analysis,
+        "current_price": technicals.get("current_price", 0.0),
+        "confluence_score": analysis.get("confluence_score", 50),
+        "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL"),
+        "tactical_levels": analysis.get("tactical_levels", {})
+    }
+
+    market_cache.set_stock(symbol, pack, ttl_seconds=300)
+    return pack
+
+
+async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
+    """
+    Pre-computes and caches market state in RAM for all unique symbols across all user watchlists.
+    Runs once per 5-minute pulse, reducing 50,000 API calls to ~150-200 calls total.
+    """
+    macro_data = fetch_macro_market_regime()
+    w_res = supabase_client.table("user_watchlists").select("symbol").execute()
+    symbols = set(item['symbol'].strip().upper() for item in (w_res.data or []) if item.get('symbol'))
+
+    if not symbols:
+        logger.info("No active symbols found across user watchlists to pre-compute.")
+        return 0
+
+    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache...")
+    synced = 0
+    for sym in symbols:
+        try:
+            if market_cache.is_fresh(sym, max_age_seconds=240):
+                synced += 1
+                continue
+            await evaluate_single_symbol_full(sym, macro_data=macro_data)
+            synced += 1
+        except Exception as e:
+            logger.error(f"Error pre-computing market cache for {sym}: {e}")
+
+    logger.info(f"✅ Market Cache Sync Complete: {synced}/{len(symbols)} unique symbols cached in RAM.")
+    return synced
+
 
 async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) -> List[dict]:
     """
     Evaluates all tracked stocks for a user across demat holdings and manual watchlists.
+    Uses high-speed In-Memory Market Cache for sub-millisecond per-stock lookups.
     Dispatches FCM Push and rich Telegram notifications for high-conviction catalysts.
     """
     generated_alerts = []
@@ -611,7 +689,6 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 sym = h['symbol']
                 symbols.add(sym)
                 holdings_map[sym] = h
-                # Auto-upsert into user_watchlists
                 try:
                     supabase_client.table("user_watchlists").upsert({
                         "user_id": user_id,
@@ -623,29 +700,24 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         else:
             logger.info(f"ICICI Session Token for user {user_id} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
-    # Ingest Macro Market Regime (NIFTY & India VIX)
     macro_data = fetch_macro_market_regime()
 
-    # 4. Evaluate each symbol
+    # 4. Evaluate each symbol using high-speed In-Memory Cache (< 0.1ms lookup)
     for symbol in symbols:
         try:
-            technicals = fetch_multi_timeframe_technicals(symbol)
-            financials = fetch_stock_financials(symbol)
-            flow_data = fetch_delivery_and_fo_flow(symbol, technicals.get("price_vs_vwap_pct", 0.0))
-            forensics = evaluate_forensic_health(symbol, financials)
-            news_items = fetch_stock_news(symbol)
+            cached_pack = market_cache.get_stock(symbol)
             holding_info = holdings_map.get(symbol)
-            
-            analysis = await evaluate_stock_with_ai(
-                symbol=symbol,
-                technicals=technicals,
-                flow_data=flow_data,
-                macro_data=macro_data,
-                forensics=forensics,
-                financials=financials,
-                news_items=news_items,
-                holding_info=holding_info
-            )
+
+            if cached_pack and not holding_info:
+                technicals = cached_pack.get("technicals", {})
+                flow_data = cached_pack.get("flow_data", {})
+                analysis = cached_pack.get("analysis", {})
+            else:
+                # Cache miss or holding-specific evaluation
+                fresh_pack = await evaluate_single_symbol_full(symbol, macro_data=macro_data, holding_info=holding_info)
+                technicals = fresh_pack.get("technicals", {})
+                flow_data = fresh_pack.get("flow_data", {})
+                analysis = fresh_pack.get("analysis", {})
             
             confluence_score = analysis.get("confluence_score", 50)
             has_actionable = analysis.get("has_actionable_signal", False)

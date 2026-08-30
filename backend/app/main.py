@@ -18,7 +18,8 @@ import yfinance as yf
 from app.config import settings
 from app.vault import vault
 from app.auth import get_current_user_id, verify_user_access
-from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio
+from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
+from app.market_cache import market_cache
 from app.notifications import send_telegram_notification, send_fcm_notification
 
 logging.basicConfig(level=logging.INFO)
@@ -801,6 +802,12 @@ async def run_multi_user_scan(
         raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header.")
 
     today_str = str(date.today())
+    
+    # Step 1: Pre-compute market indicators for all unique watchlist symbols into RAM (Deduplication)
+    synced_symbols_count = await sync_market_cache_for_all_active_symbols(db)
+    logger.info(f"⚡ In-Memory Market Cache refreshed: {synced_symbols_count} unique symbols pre-computed.")
+
+    # Step 2: High-speed in-memory evaluation across all users
     profiles_res = db.table("profiles").select("id").execute()
     users = profiles_res.data or []
     
@@ -815,9 +822,22 @@ async def run_multi_user_scan(
 
     return {
         "status": "completed",
+        "synced_symbols_count": synced_symbols_count,
         "scanned_users_count": scanned_users,
         "generated_alerts_count": len(all_generated_alerts),
         "timestamp": today_str
+    }
+
+
+@app.get("/api/market/cache-stats")
+def get_market_cache_stats():
+    """
+    Returns telemetry stats for the in-memory market cache.
+    """
+    return {
+        "status": "active",
+        "cache_stats": market_cache.get_stats(),
+        "cached_symbols": market_cache.get_all_cached_symbols()
     }
 
 
