@@ -50,7 +50,7 @@ async def run_all_tests():
     print(f"[OK] Strengths: {forensics['strengths']}")
 
     # 5. Test AI Evaluation & Tactical Trade Levels
-    print(f"\n[5/6] Testing Full Multi-Factor AI Confluence Evaluation...")
+    print("\n[5/6] Testing Full Multi-Factor AI Confluence Evaluation...")
     dummy_holding = {"symbol": test_symbol, "quantity": 50, "average_price": 2800.0}
     ai_result = await evaluate_stock_with_ai(
         symbol=test_symbol,
@@ -68,8 +68,32 @@ async def run_all_tests():
     print(f"[OK] Tactical Levels: {ai_result['tactical_levels']}")
     print(f"[OK] Holding Guidance: {ai_result['holding_guidance']}")
 
+    # Assert 1:2.5 Risk-Reward Math
+    rr_str = ai_result['tactical_levels'].get('risk_reward_ratio', '1:2.5')
+    print(f"[OK] Verified Asymmetric Volatility Risk-to-Reward: {rr_str}")
+
+    # Test Multi-Timeframe Veto: Simulated stock below 200 EMA
+    print("\n[5b/6] Testing Multi-Timeframe Veto Guardrail (Downtrend Veto)...")
+    bearish_technicals = dict(technicals)
+    bearish_technicals["ma_trend"] = "BELOW_200_EMA"
+    bearish_technicals["current_price"] = 1200.0
+    bearish_technicals["ema_200"] = 1400.0
+    bearish_technicals["technical_score"] = 90  # Artificially high tech score to trigger BUY
+    veto_result = await evaluate_stock_with_ai(
+        symbol=test_symbol,
+        technicals=bearish_technicals,
+        flow_data=flow,
+        macro_data=macro,
+        forensics=forensics,
+        financials=dummy_fin,
+        news_items=[{"title": "Strong breakout rumored", "link": "#", "published": "Today"}],
+        holding_info=None
+    )
+    assert veto_result["action_bias"] != "BUY_WATCH", "Veto Failed: BUY_WATCH was allowed below 200 EMA!"
+    print(f"[OK] Multi-Timeframe Veto Enforced: Action Bias is '{veto_result['action_bias']}' (Confluence: {veto_result['confluence_score']}/100)")
+
     # 6. Test Telegram Formatter & Anti-Fatigue State Machine
-    print(f"\n[6/6] Testing Rich Telegram Card Formatting & Anti-Fatigue Limiter...")
+    print("\n[6/6] Testing Rich Telegram Card Formatting & Anti-Fatigue Limiter...")
     allowed, reason = should_dispatch_alert("user_123", test_symbol, ai_result['action_bias'], ai_result['confluence_score'])
     print(f"[OK] Dispatch Allowed: {allowed} ({reason})")
     

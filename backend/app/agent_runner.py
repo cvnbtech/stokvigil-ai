@@ -3,6 +3,7 @@ import logging
 import urllib.parse
 import concurrent.futures
 import feedparser
+from datetime import date, datetime
 import yfinance as yf
 from typing import List, Dict, Any, Optional
 
@@ -418,25 +419,42 @@ Output ONLY valid JSON matching this exact structure:
 """
 
     if settings.GEMINI_API_KEY:
+        # Try google.genai (Modern SDK) first, then fallback to google.generativeai
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            
-            for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
+            from google import genai
+            client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash']:
                 try:
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(
-                        prompt,
-                        generation_config={"response_mime_type": "application/json"}
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config={"response_mime_type": "application/json"}
                     )
                     parsed = json.loads(response.text)
-                    logger.info(f"Successfully evaluated {symbol} using AI model '{model_name}'.")
+                    logger.info(f"Successfully evaluated {symbol} using GenAI SDK '{model_name}'.")
                     return parsed
                 except Exception as model_err:
-                    logger.warning(f"Model '{model_name}' attempt failed for {symbol}: {model_err}")
+                    logger.warning(f"GenAI SDK '{model_name}' attempt failed for {symbol}: {model_err}")
                     continue
-        except Exception as e:
-            logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
+        except Exception:
+            try:
+                import google.generativeai as legacy_genai
+                legacy_genai.configure(api_key=settings.GEMINI_API_KEY)
+                for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+                    try:
+                        model = legacy_genai.GenerativeModel(model_name)
+                        response = model.generate_content(
+                            prompt,
+                            generation_config={"response_mime_type": "application/json"}
+                        )
+                        parsed = json.loads(response.text)
+                        logger.info(f"Successfully evaluated {symbol} using legacy AI model '{model_name}'.")
+                        return parsed
+                    except Exception as model_err:
+                        logger.warning(f"Legacy model '{model_name}' attempt failed for {symbol}: {model_err}")
+                        continue
+            except Exception as e:
+                logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
 
     # ==========================================
     # DETERMINISTIC QUANTITATIVE FALLBACK ENGINE
@@ -492,6 +510,17 @@ Output ONLY valid JSON matching this exact structure:
         action_bias = "SELL_WATCH"
         has_actionable_signal = True
 
+    # Multi-Timeframe & Macro Veto Guardrails (Core Principle #2)
+    ema_200_val = technicals.get("ema_200", current_price)
+    is_macro_downtrend = (technicals.get("ma_trend") == "BELOW_200_EMA") or (current_price < ema_200_val)
+    is_high_vix = not macro_data.get("allow_breakout_trades", True)
+
+    if (is_macro_downtrend or is_high_vix) and action_bias == "BUY_WATCH":
+        logger.info(f"Multi-Timeframe Veto triggered for {symbol}: Below 200 EMA (₹{ema_200_val}) or High VIX. Downgrading BUY_WATCH to HOLD_NEUTRAL.")
+        action_bias = "HOLD_NEUTRAL"
+        has_actionable_signal = False
+        confluence_score = min(58, confluence_score)
+
     # Build Confluence Drivers
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
         confluence_drivers.append(f"15m MACD Bullish Crossover detected (Hist: {technicals.get('macd_histogram')}).")
@@ -504,15 +533,15 @@ Output ONLY valid JSON matching this exact structure:
     if not confluence_drivers:
         confluence_drivers.append(f"Current price: ₹{current_price} | 15m RSI: {technicals.get('rsi_15m')}")
 
-    # Compute Tactical Levels
+    # Compute Tactical Volatility Envelopes (Strict 1:2.5 Asymmetric R:R)
     entry_min = round(current_price * 0.995, 2)
     entry_max = round(current_price * 1.005, 2)
+    stop_loss = round(current_price - (1.0 * atr_val), 2)
     target_1 = round(current_price + (1.5 * atr_val), 2)
     target_2 = round(current_price + (2.5 * atr_val), 2)
-    stop_loss = round(current_price - (1.5 * atr_val), 2)
     risk_val = current_price - stop_loss
-    reward_val = target_1 - current_price
-    rr_ratio = round(reward_val / risk_val, 1) if risk_val > 0 else 2.0
+    reward_val = target_2 - current_price
+    rr_ratio = round(reward_val / risk_val, 1) if risk_val > 0 else 2.5
 
     holding_guidance = "Monitor position with trailing SL." if demat_context["is_in_portfolio"] else "Track for optimal entry in tactical range."
 

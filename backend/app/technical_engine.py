@@ -53,16 +53,27 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return atr.fillna(0.0)
 
 def calculate_vwap(df: pd.DataFrame) -> pd.Series:
-    """Calculates Volume Weighted Average Price (VWAP) for intraday data."""
-    if 'Volume' not in df.columns or df['Volume'].sum() == 0:
+    """
+    Calculates Volume Weighted Average Price (VWAP) anchored to the current trading day's session.
+    Resets cumulative calculations at the start of the latest session (09:15 AM IST).
+    """
+    if 'Volume' not in df.columns or df['Volume'].sum() == 0 or df.empty:
         return df['Close']
     
-    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
-    tp_vol = typical_price * df['Volume']
+    try:
+        latest_date = df.index[-1].date()
+        df_session = df[df.index.date == latest_date]
+        if df_session.empty or df_session['Volume'].sum() == 0:
+            df_session = df
+    except Exception:
+        df_session = df
+
+    typical_price = (df_session['High'] + df_session['Low'] + df_session['Close']) / 3
+    tp_vol = typical_price * df_session['Volume']
     cum_tp_vol = tp_vol.cumsum()
-    cum_vol = df['Volume'].cumsum()
+    cum_vol = df_session['Volume'].cumsum()
     vwap = cum_tp_vol / cum_vol.replace(0, np.nan)
-    return vwap.fillna(df['Close'])
+    return vwap.fillna(df_session['Close'])
 
 def detect_rsi_divergence(price_series: pd.Series, rsi_series: pd.Series, window: int = 10) -> str:
     """
