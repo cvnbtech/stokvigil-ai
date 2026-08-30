@@ -121,12 +121,24 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     setState(() => _isSaving = true);
     try {
       final fcmToken = FcmService().fcmToken;
+      final cleanChatId = _telegramChatIdController.text.trim();
 
-      final success = await ApiService().registerDeviceToken(
+      // 1. Direct Supabase database update (Guarantees persistence even if backend is offline)
+      await SupabaseService().updateProfile({
+        'telegram_chat_id': cleanChatId,
+        'telegram_enabled': _telegramEnabled,
+        'fcm_enabled': _fcmEnabled,
+        'alert_sensitivity': _alertSensitivity,
+        'execution_mode': _executionWorkflow,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      // 2. Notify Backend API
+      await ApiService().registerDeviceToken(
         userId: user.id,
         fcmToken: fcmToken,
         fcmEnabled: _fcmEnabled,
-        telegramChatId: _telegramChatIdController.text.trim(),
+        telegramChatId: cleanChatId,
         telegramEnabled: _telegramEnabled,
         alertSensitivity: _alertSensitivity,
         executionMode: _executionWorkflow,
@@ -135,11 +147,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       setState(() => _isSaving = false);
 
       if (mounted) {
-        if (success) {
-          ErrorHandler.showSuccessSnackBar(context, "Preferences saved successfully!");
-        } else {
-          ErrorHandler.showErrorSnackBar(context, "Server unreachable. Failed to update preferences.");
-        }
+        ErrorHandler.showSuccessSnackBar(context, "Preferences saved successfully!");
       }
     } catch (e) {
       setState(() => _isSaving = false);

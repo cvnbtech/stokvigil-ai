@@ -709,6 +709,9 @@ export default function App() {
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
   const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
+  const [telegramChatId, setTelegramChatId] = useState<string>("");
+  const [telegramEnabled, setTelegramEnabled] = useState<boolean>(true);
+  const [telegramSaved, setTelegramSaved] = useState<boolean>(false);
   const [dematAutoSync, setDematAutoSync] = useState<boolean>(false);
   const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
 
@@ -912,6 +915,8 @@ export default function App() {
           if (data.execution_mode) setExecutionMode(data.execution_mode.toUpperCase() as any);
           if (data.fcm_enabled !== undefined) setFcmEnabled(Boolean(data.fcm_enabled));
           if (data.demat_auto_sync !== undefined) setDematAutoSync(Boolean(data.demat_auto_sync));
+          if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
+          if (data.telegram_enabled !== undefined) setTelegramEnabled(Boolean(data.telegram_enabled));
         }
       } catch (e) {
         console.warn("Profile load error:", e);
@@ -2685,6 +2690,47 @@ export default function App() {
                     >
                       Connect @StokVigilAi_bot
                     </button>
+                  </div>
+
+                  {/* Manual Telegram Chat ID Input */}
+                  <div style={{ background: C.bgCard2, borderRadius: 10, padding: "10px 12px", border: `1px solid ${C.border}` }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: C.white }}>Telegram Chat ID</div>
+                      <span style={{ fontSize: 10, color: C.gray2 }}>Get from @userinfobot</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        type="text"
+                        placeholder="e.g. 1084729182"
+                        value={telegramChatId}
+                        onChange={e => {
+                          setTelegramChatId(e.target.value);
+                          setTelegramSaved(false);
+                        }}
+                        style={{
+                          flex: 1, background: C.bgCard, border: `1px solid ${C.border}`,
+                          borderRadius: 8, padding: "6px 10px", fontSize: 11.5, color: C.white, outline: "none"
+                        }}
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!telegramChatId.trim()) return;
+                          await updatePreference("telegram_chat_id", telegramChatId.trim());
+                          await updatePreference("telegram_enabled", true);
+                          setTelegramEnabled(true);
+                          setTelegramSaved(true);
+                          setTimeout(() => setTelegramSaved(false), 3000);
+                        }}
+                        style={{
+                          background: telegramSaved ? "rgba(16,185,129,0.15)" : "rgba(6,182,212,0.15)",
+                          border: `1px solid ${telegramSaved ? C.green : C.cyan}`,
+                          borderRadius: 8, padding: "6px 12px", color: telegramSaved ? C.green : C.cyan,
+                          fontSize: 11, fontWeight: 800, cursor: "pointer"
+                        }}
+                      >
+                        {telegramSaved ? "Saved ✓" : "Save ID"}
+                      </button>
+                    </div>
                   </div>
 
                   <div style={{ height: 1, background: C.border }} />

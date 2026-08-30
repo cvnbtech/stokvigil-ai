@@ -178,6 +178,7 @@ def register_device(
     try:
         # 1. Primary: Direct targeted update (does not touch email, 100% safe)
         res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
+        logger.info(f"✅ Device & notification preferences updated for user {req.user_id}: {update_data}")
         if res.data and len(res.data) > 0:
             return {"status": "success", "profile": res.data[0]}
             
@@ -978,47 +979,75 @@ async def telegram_webhook(
     """
     if settings.TELEGRAM_WEBHOOK_SECRET:
         if not x_telegram_bot_api_secret_token or x_telegram_bot_api_secret_token != settings.TELEGRAM_WEBHOOK_SECRET:
-            logger.warning("Blocked unauthorized Telegram webhook call (missing or invalid secret token header).")
+            logger.warning(f"Blocked Telegram webhook: Secret token header mismatch or missing. (Received: '{x_telegram_bot_api_secret_token}')")
             raise HTTPException(status_code=403, detail="Unauthorized webhook source: Invalid secret token.")
 
-    msg = payload.message
+    msg = payload.message or {}
     if not msg:
         return {"status": "ignored"}
         
-    chat_id = str(msg.get("chat", {}).get("id"))
+    chat_id = str(msg.get("chat", {}).get("id", "")).strip()
     text = msg.get("text", "").strip()
+    logger.info(f"📩 Incoming Telegram Webhook from Chat ID: {chat_id} | Text: '{text}'")
 
-    if text.startswith("/start"):
+    if not chat_id:
+        return {"status": "ignored"}
+
+    user_param = None
+    if text.startswith("/start") or text.startswith("/link"):
         parts = text.split(" ")
         if len(parts) > 1:
             user_param = parts[1].strip()
-            # Link user profile with Telegram chat_id (supports UUID or email)
-            if "@" in user_param:
-                db.table("profiles").update({
-                    "telegram_chat_id": chat_id,
-                    "telegram_enabled": True,
-                    "updated_at": "now()"
-                }).eq("email", user_param).execute()
-            else:
-                db.table("profiles").update({
-                    "telegram_chat_id": chat_id,
-                    "telegram_enabled": True,
-                    "updated_at": "now()"
-                }).eq("id", user_param).execute()
+    elif len(text) >= 20 and ("-" in text or "@" in text):
+        # User directly pasted their UUID or Email
+        user_param = text.strip()
 
+    if user_param:
+        logger.info(f"🔗 Linking Telegram Chat ID: {chat_id} to user identifier: {user_param}")
+        try:
+            # 1. Try updating by UUID or Email
+            is_email = "@" in user_param
+            match_col = "email" if is_email else "id"
+            
+            res = db.table("profiles").update({
+                "telegram_chat_id": chat_id,
+                "telegram_enabled": True,
+                "updated_at": "now()"
+            }).eq(match_col, user_param).execute()
+
+            if not res.data or len(res.data) == 0:
+                # Upsert profile if row doesn't exist yet
+                upsert_payload = {
+                    "telegram_chat_id": chat_id,
+                    "telegram_enabled": True,
+                    "updated_at": "now()"
+                }
+                if is_email:
+                    upsert_payload["email"] = user_param
+                else:
+                    upsert_payload["id"] = user_param
+                db.table("profiles").upsert(upsert_payload).execute()
+
+            logger.info(f"✅ Successfully linked Telegram Chat ID {chat_id} to user {user_param}")
             welcome_msg = (
                 "✅ <b>StokVigil AI Successfully Linked!</b>\n\n"
-                "You will now receive instant high-impact factual alerts (block deals, earnings beats, price breakouts) directly in this chat.\n\n"
-                "<i>Note: StokVigil AI provides factual data alerts only and does not provide financial advice.</i>"
+                f"Your Telegram Chat ID (<code>{chat_id}</code>) has been connected to your StokVigil AI account.\n\n"
+                "You will now receive real-time institutional alerts, 200 EMA breakout signals, and Demat notifications directly here."
             )
             await send_telegram_notification(chat_id, welcome_msg)
             return {"status": "linked", "user_param": user_param, "chat_id": chat_id}
-        else:
-            help_msg = (
-                "👋 <b>Welcome to StokVigil AI Bot!</b>\n\n"
-                "To link your account, open the StokVigil AI Mobile App or Web Portal, go to Notification Settings, and click 'Connect Telegram Bot'."
-            )
-            await send_telegram_notification(chat_id, help_msg)
-            return {"status": "help_sent"}
-
-    return {"status": "ok"}
+        except Exception as e:
+            logger.error(f"Error linking telegram user in Supabase: {e}")
+            await send_telegram_notification(chat_id, f"⚠️ Connection error: {e}. Please save your Chat ID in the app settings.")
+            return {"status": "error", "detail": str(e)}
+    else:
+        help_msg = (
+            f"👋 <b>Welcome to StokVigil AI Bot!</b>\n\n"
+            f"Your Telegram Chat ID is: <code>{chat_id}</code>\n\n"
+            "👉 <b>How to link:</b>\n"
+            "1. Open the StokVigil App or Web Portal $\to$ Settings.\n"
+            f"2. Paste <code>{chat_id}</code> into the <b>Telegram Chat ID</b> field and tap Save.\n"
+            "3. Or tap 'Connect @StokVigilAi_bot' directly from the app."
+        )
+        await send_telegram_notification(chat_id, help_msg)
+        return {"status": "help_sent", "chat_id": chat_id}
