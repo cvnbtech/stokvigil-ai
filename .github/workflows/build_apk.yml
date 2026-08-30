@@ -79,3 +79,5 @@ jobs:
         with:
           name: stockvigilai-android-release-apk
           path: mobile_app/build/app/outputs/flutter-apk/*.apk
+          retention-days: 1
+          if-no-files-found: warn
