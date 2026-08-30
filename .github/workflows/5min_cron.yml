@@ -1,8 +1,10 @@
-name: 5-Minute Indian Market Hours Cron Scanner
+name: 5-Minute Indian Market Hours Cron Scanner & Morning Token Reminder
 
 on:
   schedule:
-    # Runs every 5 minutes from 03:45 UTC to 10:00 UTC (09:15 AM to 03:30 PM IST), Monday through Friday
+    # 1. 08:50 AM IST (03:20 UTC) Morning Demat Token Reminder (Monday - Friday)
+    - cron: '20 3 * * 1-5'
+    # 2. 5-Minute Market Scanner from 09:15 AM to 03:30 PM IST (03:45 to 10:00 UTC, Monday - Friday)
     - cron: '*/5 3-10 * * 1-5'
   workflow_dispatch:
 
@@ -17,3 +19,12 @@ jobs:
             -H "Content-Type: application/json" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY || 'stokvigil_cron_default_secret_2026' }}")
           echo "Scan Response: $RESPONSE"
+
+      - name: Trigger Morning Demat Token Reminder
+        if: github.event.schedule == '20 3 * * 1-5' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "🔔 Triggering 08:50 AM Morning Demat Token Refresh Reminder..."
+          REMINDER_RES=$(curl -s -X POST "${{ secrets.STOKVIGIL_BACKEND_URL }}/api/cron/morning-token-reminder" \
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY || 'stokvigil_cron_default_secret_2026' }}")
+          echo "Reminder Response: $REMINDER_RES"

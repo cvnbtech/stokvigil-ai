@@ -37,10 +37,11 @@ async def run_all_tests():
     print(f"[OK] VWAP: Rs {technicals['vwap']} (Price vs VWAP: {technicals['price_vs_vwap_pct']}%)")
     print(f"[OK] 14-period ATR: Rs {technicals['atr_14']} | Technical Score: {technicals['technical_score']}/100")
 
-    # 3. Test Flow Tracker
+    # 3. Test Flow Tracker (Option Chain PCR & Delivery)
     print(f"\n[3/6] Testing Institutional Flow Tracker for {test_symbol}...")
     flow = fetch_delivery_and_fo_flow(test_symbol, technicals.get("price_vs_vwap_pct", 0.0))
     print(f"[OK] Estimated Delivery %: {flow['delivery_pct']}% | F&O OI Status: {flow['fo_oi_status']}")
+    print(f"[OK] Put-Call Ratio (PCR): {flow.get('pcr', 1.0)} | F&O Instrument: {flow.get('is_fo_stock', False)} | Flow Bias: {flow['flow_bias']}")
 
     # 4. Test Forensic Health
     print(f"\n[4/6] Testing Forensic Health Filter...")
