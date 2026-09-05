@@ -616,11 +616,12 @@ def get_stock_candles(
         if (now - ts) < 60.0:
             return cached_payload
 
-    # Fetch intraday or historical bars
+    # Fetch intraday or historical bars (Support NSE .NS and BSE .BO dual-exchange)
     df_candles = pd.DataFrame()
-    for suffix in [".NS", ".BO"]:
+    candidates = [clean_sym] if (clean_sym.endswith(".NS") or clean_sym.endswith(".BO")) else [f"{clean_sym}.NS", f"{clean_sym}.BO"]
+    for sym_to_try in candidates:
         try:
-            t = yf.Ticker(f"{clean_sym}{suffix}")
+            t = yf.Ticker(sym_to_try)
             df_try = t.history(period=period, interval=interval)
             if not df_try.empty:
                 df_candles = df_try
@@ -658,17 +659,17 @@ def get_stock_candles(
     except Exception:
         chandelier_sl_series = (df_candles["Close"] * 0.96).round(2)
 
-    # Calculate Camarilla pivots from daily data
+    # Calculate Camarilla pivots from daily data (NSE or BSE)
     camarilla = {"h4": 0.0, "h3": 0.0, "l3": 0.0, "l4": 0.0}
-    try:
-        t_daily = yf.Ticker(f"{clean_sym}.NS")
-        df_daily = t_daily.history(period="10d", interval="1d")
-        if df_daily.empty:
-            df_daily = yf.Ticker(f"{clean_sym}.BO").history(period="10d", interval="1d")
-        if not df_daily.empty:
-            camarilla = calculate_camarilla_pivots(df_daily)
-    except Exception as e:
-        logger.warning(f"Error computing Camarilla pivots for candles {clean_sym}: {e}")
+    for sym_to_try in candidates:
+        try:
+            t_daily = yf.Ticker(sym_to_try)
+            df_daily = t_daily.history(period="10d", interval="1d")
+            if not df_daily.empty:
+                camarilla = calculate_camarilla_pivots(df_daily)
+                break
+        except Exception as e:
+            logger.debug(f"Daily Camarilla fetch error for {sym_to_try}: {e}")
 
     candles = []
     for idx, row in df_candles.iterrows():
