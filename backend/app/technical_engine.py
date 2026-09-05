@@ -138,8 +138,23 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         # 2. Fetch Daily Data (Last 1 year for 200 EMA & Daily RSI)
         df_daily = ticker.history(period="1y", interval="1d")
         
+        # Fallback to BSE (.BO) if NSE returned no data and ticker was not already .BO
+        if df_5m.empty and not ticker_sym.endswith(".BO"):
+            clean_ticker = symbol.replace(".NS", "").strip()
+            bse_sym = f"{clean_ticker}.BO"
+            try:
+                bse_ticker = yf.Ticker(bse_sym)
+                df_5m_bse = bse_ticker.history(period="5d", interval="5m")
+                if not df_5m_bse.empty:
+                    df_5m = df_5m_bse
+                    df_daily = bse_ticker.history(period="1y", interval="1d")
+                    ticker_sym = bse_sym
+                    logger.info(f"Resolved {symbol} via BSE exchange ({bse_sym})")
+            except Exception as e:
+                logger.debug(f"BSE fallback failed for {symbol}: {e}")
+
         if df_5m.empty:
-            logger.warning(f"No 5m intraday data returned for {symbol}")
+            logger.warning(f"No 5m intraday data returned for {symbol} (checked NSE & BSE)")
             return default_res
             
         current_price = round(float(df_5m['Close'].iloc[-1]), 2)

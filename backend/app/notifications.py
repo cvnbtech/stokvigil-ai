@@ -131,9 +131,13 @@ def format_telegram_alert(
     else:
         header_badge = "⚪ <b>STOKVIGIL UPDATE: MARKET WATCHTOWER</b> ⚪"
 
+    is_bse = str(symbol).strip().upper().endswith(".BO")
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    exch_label = "BSE" if is_bse else "NSE"
+
     html = f"{header_badge}\n"
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    html += f"📈 <b>Ticker:</b> #{symbol} (NSE)\n"
+    html += f"📈 <b>Ticker:</b> #{clean_sym} ({exch_label})\n"
     html += f"🎯 <b>Confluence Score:</b> <b>{confluence_score}/100</b>\n"
     html += f"⚡ <b>Catalyst:</b> {catalyst_type.replace('_', ' ')}\n\n"
     html += f"📌 <b>{alert_title}</b>\n\n"
@@ -184,18 +188,37 @@ def format_telegram_alert(
             html += f"• VWAP: ₹{metrics_snapshot['vwap']}\n"
         if "delivery_pct" in metrics_snapshot:
             html += f"• Delivery: {metrics_snapshot['delivery_pct']}%\n"
+        if "vsa_regime" in metrics_snapshot and metrics_snapshot.get("vsa_regime"):
+            html += f"• Wyckoff VSA: <b>{metrics_snapshot['vsa_regime'].replace('_', ' ')}</b>\n"
 
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += "<i>⚠️ Factual quantitative intelligence alert. Non-advisory analytical tracking.</i>"
     return html
 
 def build_telegram_inline_keyboard(symbol: str) -> dict:
-    """Builds interactive inline buttons for Telegram alert."""
+    """
+    Builds interactive institutional inline buttons for Telegram alert:
+    1. Direct live TradingView interactive technical chart (NSE or BSE)
+    2. Deep link to ICICI Direct Portfolio / Order execution
+    3. Official NSE / BSE India quote & corporate actions
+    """
+    is_bse = str(symbol).strip().upper().endswith(".BO")
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    chart_exchange = "BSE" if is_bse else "NSE"
+    exchange_name = "BSE India Live" if is_bse else "NSE India Live"
+    exchange_url = (
+        f"https://www.bseindia.com/stock-share-price/{clean_sym}/"
+        if is_bse else
+        f"https://www.nseindia.com/get-quotes/equity?symbol={clean_sym}"
+    )
     return {
         "inline_keyboard": [
             [
-                {"text": "📈 TradingView Chart", "url": f"https://in.tradingview.com/symbols/NSE-{symbol}/"},
+                {"text": "📈 TradingView Chart", "url": f"https://in.tradingview.com/chart/?symbol={chart_exchange}:{clean_sym}"},
                 {"text": "💼 ICICI Direct", "url": "https://secure.icicidirect.com"}
+            ],
+            [
+                {"text": f"🏛️ {exchange_name}", "url": exchange_url}
             ]
         ]
     }

@@ -84,10 +84,26 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
             vix_regime = "EXTREME_VOLATILITY_HIGH_RISK"
             allow_breakout = False
             
+        # BSE SENSEX (^BSESN)
+        sensex_price = 80000.0
+        sensex_change_pct = 0.0
+        try:
+            sensex = yf.Ticker("^BSESN")
+            sensex_hist = sensex.history(period="2d")
+            if len(sensex_hist) >= 2:
+                s_prev = float(sensex_hist['Close'].iloc[-2])
+                s_curr = float(sensex_hist['Close'].iloc[-1])
+                sensex_price = round(s_curr, 2)
+                sensex_change_pct = round(((s_curr - s_prev) / s_prev) * 100, 2)
+        except Exception as e:
+            logger.debug(f"BSE SENSEX fetch fallback: {e}")
+
         return {
             "nifty_price": nifty_price,
             "nifty_change_pct": nifty_change_pct,
             "nifty_trend": nifty_trend,
+            "sensex_price": sensex_price,
+            "sensex_change_pct": sensex_change_pct,
             "india_vix": vix_val,
             "vix_regime": vix_regime,
             "allow_breakout_trades": allow_breakout

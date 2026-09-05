@@ -15,6 +15,7 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Di
     - SHORT_BUILDUP (Price Down + Call Writing / Low PCR <= 0.70)
     - LONG_UNWINDING (Price Down + Put Unwinding)
     """
+    is_bse = str(symbol).strip().upper().endswith(".BO")
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     default_res = {
         "symbol": clean_sym,
@@ -32,8 +33,8 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Di
         pcr = 1.0
         is_fo = False
         
-        # Check Option Chain for F&O Open Interest
-        ticker_sym = clean_sym if clean_sym.endswith(".NS") or clean_sym.endswith(".BO") else f"{clean_sym}.NS"
+        # Check Option Chain for F&O Open Interest (NSE or BSE)
+        ticker_sym = f"{clean_sym}.BO" if is_bse else f"{clean_sym}.NS"
         try:
             ticker = yf.Ticker(ticker_sym)
             opt_dates = ticker.options
@@ -70,7 +71,17 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Di
             flow_bias = "MILD_BEARISH_FLOW"
             flow_score = 40
             estimated_delivery = 42.0
-            
+
+        # Wyckoff Volume Spread Analysis (VSA) Institutional Absorption vs Operator Churn
+        vsa_regime = "NORMAL_VOLUME_SPREAD"
+        vsa_note = "Normal liquidity absorption"
+        if estimated_delivery >= 55.0 and price_change_pct > 0.5:
+            vsa_regime = "SMART_MONEY_ABSORPTION"
+            vsa_note = f"High delivery accumulation ({estimated_delivery}%) confirming upward price expansion"
+        elif estimated_delivery < 25.0 and abs(price_change_pct) > 2.0:
+            vsa_regime = "OPERATOR_CHURN_TRAP"
+            vsa_note = f"Low delivery ({estimated_delivery}%) with high volatility indicates speculative intraday churn"
+
         return {
             "symbol": clean_sym,
             "delivery_pct": estimated_delivery,
@@ -80,7 +91,9 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Di
             "flow_bias": flow_bias,
             "flow_score": flow_score,
             "pcr": pcr,
-            "is_fo_stock": is_fo
+            "is_fo_stock": is_fo,
+            "vsa_regime": vsa_regime,
+            "vsa_note": vsa_note
         }
     except Exception as e:
         logger.error(f"Error evaluating delivery & F&O flow for {symbol}: {e}")

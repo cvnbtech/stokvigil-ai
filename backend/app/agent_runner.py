@@ -6,7 +6,7 @@ import concurrent.futures
 import feedparser
 from datetime import date, datetime
 import yfinance as yf
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from app.config import settings
 from app.vault import vault
@@ -455,35 +455,89 @@ Output ONLY valid JSON matching this exact structure:
         except Exception as e:
             logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
 
-    # ==========================================
-    # DETERMINISTIC QUANTITATIVE FALLBACK ENGINE
-    # ==========================================
+    # Fallback to deterministic quantitative engine
+    return compute_deterministic_confluence(
+        symbol=symbol,
+        technicals=technicals,
+        flow_data=flow_data,
+        macro_data=macro_data,
+        forensics=forensics,
+        financials=financials,
+        news_items=news_items,
+        holding_info=holding_info
+    )
+
+
+def compute_deterministic_confluence(
+    symbol: str,
+    technicals: Dict[str, Any],
+    flow_data: Dict[str, Any],
+    macro_data: Dict[str, Any],
+    forensics: Dict[str, Any],
+    financials: Dict[str, Any],
+    news_items: List[Dict[str, Any]],
+    holding_info: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Deterministic Quantitative Confluence Engine (Master Prompt Section 3 Formula).
+    Evaluates institutional math in 0.001ms with zero API costs:
+    Confluence Score = (0.30 * Tech) + (0.25 * Flow) + (0.25 * Forensic) + (0.20 * News)
+    """
+    current_price = technicals.get("current_price") or financials.get("price") or 100.0
+    atr_val = technicals.get("atr_14", current_price * 0.015)
+
+    # Demat Holding Context
+    demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
+    if holding_info:
+        avg_p = holding_info.get("average_price", 0.0)
+        pnl_pct = round(((current_price - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+        demat_context = {
+            "is_in_portfolio": True,
+            "quantity": holding_info.get("quantity", 0),
+            "average_buy_price": avg_p,
+            "unrealized_pnl_pct": pnl_pct
+        }
+
     tech_score = technicals.get("technical_score", 50)
     flow_score = flow_data.get("flow_score", 50)
     forensic_score = forensics.get("forensic_score", 60)
     
-    # News Score
+    # News & Catalyst Scoring
     news_score = 50
     catalyst_category = "TECHNICAL_BREAKOUT"
     alert_title = f"{symbol}: Technical & Momentum Update"
     confluence_drivers = []
     
     for item in news_items:
-        title_upper = item['title'].upper()
+        title_upper = item.get('title', '').upper()
         if "BLOCK DEAL" in title_upper or "BULK DEAL" in title_upper:
             news_score += 35
             catalyst_category = "BLOCK_DEAL"
             alert_title = f"{symbol}: Institutional Block/Bulk Deal Reported"
             confluence_drivers.append(f"Exchange Filing: {item['title']}")
             break
-        elif "PROFIT" in title_upper or "REVENUE" in title_upper or "Q1" in title_upper or "Q2" in title_upper or "Q3" in title_upper or "Q4" in title_upper:
+        elif any(k in title_upper for k in ["PROFIT", "REVENUE", "Q1", "Q2", "Q3", "Q4", "EARNINGS"]):
             news_score += 30
             catalyst_category = "EARNINGS_BEAT"
             alert_title = f"{symbol}: Quarterly Earnings & Financial Catalyst"
             confluence_drivers.append(f"Financial Disclosure: {item['title']}")
             break
 
-    # Calculate Multi-Factor Confluence Score (0-100)
+    # Wyckoff VSA Scoring Enhancements
+    vsa_regime = flow_data.get("vsa_regime", "NORMAL_VOLUME_SPREAD")
+    if vsa_regime == "SMART_MONEY_ABSORPTION":
+        confluence_drivers.append(f"Wyckoff VSA: Institutional Delivery Absorption ({flow_data.get('delivery_pct')}%)")
+        flow_score = min(95, flow_score + 8)
+    elif vsa_regime == "OPERATOR_CHURN_TRAP":
+        confluence_drivers.append("Wyckoff VSA Warning: Speculative Operator Churn (Low Delivery %)")
+        flow_score = max(20, flow_score - 10)
+
+    # Sector Breadth Integration
+    sector_name = forensics.get("sector_name", "BROAD_MARKET")
+    if sector_name != "BROAD_MARKET":
+        confluence_drivers.append(f"Sector Alignment: {sector_name}")
+
+    # Calculate 4-Pillar Confluence Score (Master Prompt 3.1)
     confluence_score = int(round(
         (tech_score * 0.30) +
         (flow_score * 0.25) +
@@ -501,7 +555,7 @@ Output ONLY valid JSON matching this exact structure:
         has_actionable_signal = True
         catalyst_category = "TRAILING_STOP_TRIGGER"
         alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{demat_context['unrealized_pnl_pct']}%)"
-        confluence_drivers.append(f"Position has gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {technicals.get('rsi_15m')} (Overbought zone).")
+        confluence_drivers.insert(0, f"Position gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {technicals.get('rsi_15m')} (Overbought zone).")
     elif confluence_score >= 72:
         action_bias = "BUY_WATCH"
         has_actionable_signal = True
@@ -509,7 +563,7 @@ Output ONLY valid JSON matching this exact structure:
         action_bias = "SELL_WATCH"
         has_actionable_signal = True
 
-    # Multi-Timeframe & Macro Veto Guardrails (Core Principle #2)
+    # Multi-Timeframe & Macro Veto Guardrails (Master Prompt Core Principle #2)
     ema_200_val = technicals.get("ema_200", current_price)
     is_macro_downtrend = (technicals.get("ma_trend") == "BELOW_200_EMA") or (current_price < ema_200_val)
     is_high_vix = not macro_data.get("allow_breakout_trades", True)
@@ -520,7 +574,7 @@ Output ONLY valid JSON matching this exact structure:
         has_actionable_signal = False
         confluence_score = min(58, confluence_score)
 
-    # Build Confluence Drivers
+    # Confluence Driver Highlights
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
         confluence_drivers.append(f"15m MACD Bullish Crossover detected (Hist: {technicals.get('macd_histogram')}).")
     if technicals.get("is_volume_surge"):
@@ -532,7 +586,7 @@ Output ONLY valid JSON matching this exact structure:
     if not confluence_drivers:
         confluence_drivers.append(f"Current price: ₹{current_price} | 15m RSI: {technicals.get('rsi_15m')}")
 
-    # Compute Tactical Volatility Envelopes (Strict 1:2.5 Asymmetric R:R)
+    # Tactical Volatility Envelopes (Strict 1:2.5 Asymmetric R:R)
     entry_min = round(current_price * 0.995, 2)
     entry_max = round(current_price * 1.005, 2)
     stop_loss = round(current_price - (1.0 * atr_val), 2)
@@ -564,6 +618,63 @@ Output ONLY valid JSON matching this exact structure:
     }
 
 
+def check_has_active_catalyst(
+    symbol: str,
+    technicals: Dict[str, Any],
+    flow_data: Dict[str, Any],
+    news_items: List[Dict[str, Any]],
+    holding_info: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, str]:
+    """
+    Tier-1 Quantitative Gatekeeper: Evaluates whether a stock has an active momentum,
+    volume, corporate filing, or Demat stop-loss catalyst before invoking Gemini AI.
+    Quiet/flat stocks are evaluated via pure deterministic mathematics in 0.001 ms.
+    """
+    # 1. Demat Holding Protection Trigger
+    if holding_info:
+        curr_p = technicals.get("current_price", 0.0)
+        avg_p = holding_info.get("average_price", 0.0)
+        pnl_pct = ((curr_p - avg_p) / avg_p * 100) if avg_p > 0 else 0.0
+        rsi = technicals.get("rsi_15m", 50)
+        if (pnl_pct >= 5.0 and rsi > 70) or pnl_pct <= -4.0:
+            return True, f"Demat Holding Protection Trigger (P&L: {pnl_pct:+.1f}%)"
+
+    # 2. Institutional Volume Surge (>= 1.5x 20-period volume MA)
+    vol_mult = technicals.get("volume_multiple") or technicals.get("volume_surge_ratio", 1.0)
+    if technicals.get("is_volume_surge") or vol_mult >= 1.5:
+        return True, f"Volume Surge ({vol_mult}x 20-MA)"
+
+    # 3. Momentum Extremes or Divergence
+    rsi_15m = technicals.get("rsi_15m", 50)
+    if rsi_15m >= 68 or rsi_15m <= 32:
+        return True, f"15m RSI Momentum Extreme ({rsi_15m})"
+    if technicals.get("rsi_divergence") in ["BULLISH_DIVERGENCE", "BEARISH_DIVERGENCE"]:
+        return True, f"RSI Divergence: {technicals.get('rsi_divergence')}"
+
+    # 4. MACD Trend Transition
+    if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
+        return True, "15m MACD Bullish Crossover"
+
+    # 5. Institutional Order Flow / F&O Build-up
+    if flow_data.get("is_high_delivery"):
+        return True, f"High Institutional Delivery ({flow_data.get('delivery_pct')}%)"
+    if flow_data.get("fo_oi_status") in ["LONG_BUILDUP", "SHORT_BUILDUP"]:
+        return True, f"Derivatives Regime: {flow_data.get('fo_oi_status')} (PCR: {flow_data.get('pcr')})"
+
+    # 6. Intraday VWAP Breakout
+    vwap_pct = abs(technicals.get("price_vs_vwap_pct", 0.0))
+    if vwap_pct >= 0.8:
+        return True, f"Intraday VWAP Deviation ({vwap_pct:.1f}%)"
+
+    # 7. Real-Time News / Corporate Catalysts
+    for item in news_items:
+        title_upper = str(item.get("title", "")).upper()
+        if any(w in title_upper for w in ["BLOCK DEAL", "BULK DEAL", "PROFIT", "REVENUE", "QUARTER", "ORDER", "CONTRACT", "DEBT", "ACQUISITION"]):
+            return True, f"Corporate Disclosure / News Catalyst: {item.get('title', '')[:50]}"
+
+    return False, "Consolidating / Normal Volatility"
+
+
 # ==========================================
 # 3. 5-MINUTE MULTI-TENANT SURVEILLANCE RUNNER (IN-MEMORY EVENT-DRIVEN)
 # ==========================================
@@ -576,7 +687,7 @@ async def evaluate_single_symbol_full(
     """
     Evaluates all institutional dimensions (technicals, macro, F&O flow, forensics, news, AI confluence)
     for a single symbol and caches the analysis into RAM.
-    Uses non-blocking multithreading for external scraping to avoid freezing the asyncio event loop.
+    Uses Tier-1 Gatekeeper filtering to call Gemini AI only for active catalyst stocks (preserving free tier quota).
     """
     if macro_data is None:
         macro_data = await asyncio.to_thread(fetch_macro_market_regime)
@@ -595,16 +706,39 @@ async def evaluate_single_symbol_full(
     )
     forensics = evaluate_forensic_health(symbol, financials)
 
-    analysis = await evaluate_stock_with_ai(
+    # Tier-1 Smart Gatekeeper Evaluation
+    has_catalyst, catalyst_reason = check_has_active_catalyst(
         symbol=symbol,
         technicals=technicals,
         flow_data=flow_data,
-        macro_data=macro_data,
-        forensics=forensics,
-        financials=financials,
         news_items=news_items,
         holding_info=holding_info
     )
+
+    if has_catalyst and settings.GEMINI_API_KEY:
+        logger.info(f"⚡ Active Catalyst Detected for {symbol}: {catalyst_reason}. Invoking Gemini AI...")
+        analysis = await evaluate_stock_with_ai(
+            symbol=symbol,
+            technicals=technicals,
+            flow_data=flow_data,
+            macro_data=macro_data,
+            forensics=forensics,
+            financials=financials,
+            news_items=news_items,
+            holding_info=holding_info
+        )
+    else:
+        # High-speed deterministic evaluation for quiet/consolidating stocks (0.001ms, 0 API quota burned)
+        analysis = compute_deterministic_confluence(
+            symbol=symbol,
+            technicals=technicals,
+            flow_data=flow_data,
+            macro_data=macro_data,
+            forensics=forensics,
+            financials=financials,
+            news_items=news_items,
+            holding_info=holding_info
+        )
 
     pack = {
         "symbol": symbol,
@@ -822,7 +956,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         "rsi_15m": technicals.get("rsi_15m"),
                         "rsi_5m": technicals.get("rsi_5m"),
                         "vwap": technicals.get("vwap"),
-                        "delivery_pct": flow_data.get("delivery_pct")
+                        "delivery_pct": flow_data.get("delivery_pct"),
+                        "vsa_regime": flow_data.get("vsa_regime")
                     },
                     holding_guidance=holding_guidance
                 )

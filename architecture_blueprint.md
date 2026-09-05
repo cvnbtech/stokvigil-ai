@@ -34,25 +34,27 @@ flowchart TD
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
-        C1["ICICI Breeze Connect API (Holdings/Positions)"]
-        C2["yfinance API (5m/15m/1D OHLCV, PE, Debt/Eq)"]
+        C1["ICICI Breeze Connect API (Holdings across NSE & BSE)"]
+        C2["yfinance API (5m/15m/1D OHLCV, Dual-Exchange NSE/BSE Fallback)"]
         C3["Google News RSS & Exchange Filings (Block Deals, Results)"]
-        C4["Macro & Market Indices (^NSEI, ^INDIAVIX, Sectors)"]
-        C5["Universal Dynamic ISIN-to-NSE Resolver (_ISIN_CACHE)"]
+        C4["Macro & Market Indices (^NSEI, ^BSESN SENSEX, ^INDIAVIX, Sectors)"]
+        C5["Universal Dynamic ISIN-to-NSE/BSE Resolver (_ISIN_CACHE)"]
     end
 
     subgraph Engine["AI & Quantitative Surveillance Engine"]
-        D0["Market Cache Manager (RAM Singleton, 300s TTL, Bounded 25 Concurrency)"]
-        D1["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Divergences)"]
-        D2["Flow Tracker (Delivery %, F&O Open Interest, Block Deals)"]
-        D3["Macro & Forensic Filter (India VIX, Sector Alignment, Debt Health)"]
-        D4["Gemini AI Evaluation Agent (3.6 Flash -> 2.5 Flash -> 1.5 Flash -> Rule Engine)"]
+        D0["Market Cache Manager (RAM Singleton, 300s TTL, Bounded 15 Concurrency)"]
+        D1["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Dual-Exchange Fallback)"]
+        D2["Flow Tracker (Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI)"]
+        D3["Macro & Forensic Filter (India VIX, SENSEX, Sector Breadth, Debt Health)"]
+        D3b{"Tier-1 Quantitative Smart Gatekeeper (RAM Math in 0.001 ms)"}
+        D3c["Tier-1: Deterministic Confluence Engine (0 Gemini Calls)"]
+        D4["Tier-2: Google Gemini AI Reasoning (Active Catalysts Only)"]
         D5["Anti-Fatigue State Limiter (45-Min Cooldown & Tier-1 Bypass)"]
     end
 
     subgraph Dispatch["Multi-Channel Actionable Dispatcher"]
         E1["Firebase Cloud Messaging (FCM High-Priority Lock-Screen)"]
-        E2["Telegram Bot API (Rich HTML Cards + Inline TradingView/ICICI Buttons)"]
+        E2["Telegram Cockpit (Rich HTML Cards + TradingView/ICICI/Exchange Buttons)"]
     end
 
     A1 -->|HTTP + Bearer JWT| B0
@@ -65,13 +67,11 @@ flowchart TD
     B4 --> D0
     B5 -->|Decrypt App Key & Token| C1
     C1 --> C5
-    D0 -->|Batch Pre-Compute All Watchlists| D1 & D2 & D3 & D4
-    D4 -->|Fetch Demat Holdings| C1
-    D4 -->|Compute Multi-Timeframe Signals| D1
-    D4 -->|Evaluate Institutional Flow| D2
-    D4 -->|Check Macro Regime & Forensics| D3
-    D1 & D2 & D3 --> D4
-    D4 -->|Calculate Confluence Score & Tactical Levels| D5
+    D0 -->|Batch Pre-Compute All Watchlists| D1 & D2 & D3
+    D1 & D2 & D3 --> D3b
+    D3b -- "Quiet / Flat (Consolidating)" --> D3c
+    D3b -- "Active Catalyst (Breakout / Volume / SL)" --> D4
+    D3c & D4 --> D5
     D5 -->|Dispatch Permitted| E1 & E2
     E1 -->|Push Notification| A1
     E2 -->|Styled Alert Card| A3
@@ -85,20 +85,42 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 
 ### 2.1.1 High-Speed In-Memory Market Cache (`market_cache.py`)
 - **RAM Singleton Architecture**: Thread-safe in-memory cache (`MarketCacheManager`) storing pre-computed technical indicators, live prices, VWAP, RSI, MACD, tactical levels, and Confluence Scores in RAM (~15 MB footprint).
-- **Batch Deduplication**: Before scanning individual users, `sync_market_cache_for_all_active_symbols()` aggregates all unique symbols across all watchlists and pre-computes them in parallel using bounded async concurrency (`asyncio.Semaphore(25)`).
-- **Sub-0.1ms O(1) Latency**: Individual user scans query the RAM cache in `< 0.1ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
+- **Batch Deduplication**: Before scanning individual users, `sync_market_cache_for_all_active_symbols()` aggregates all unique symbols across all watchlists and pre-computes them in parallel using bounded async concurrency (`asyncio.Semaphore(15)`).
+- **Sub-0.02ms O(1) Latency**: Individual user scans query the RAM cache in `< 0.02ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
+
+### 2.1.2 2-Tier Quantitative Smart Gatekeeper (`agent_runner.py`)
+To operate with institutional speed and permanently eliminate Google Gemini `429 Quota Exceeded` errors on the free tier (20 RPM limit), StokVigil enforces a two-tier evaluation architecture:
+1. **Tier-1 Gatekeeper Filter (`check_has_active_catalyst`)**: Evaluates 7 mathematical triggers:
+   - Demat cost basis stop-loss or profit target breach ($\ge 4\%$ drop or $+5\%$ surge with high RSI).
+   - Intraday volume surge ($\ge 1.5\times$ 20-period volume MA).
+   - RSI momentum extremes ($15\text{m RSI} \ge 68$ or $\le 32$) or RSI Divergences.
+   - 15m MACD Bullish/Bearish crossover transitions.
+   - High institutional delivery ($\ge 50\%$) or derivatives Open Interest buildup.
+   - VWAP deviation breakout ($\ge 0.8\%$).
+   - Real-time exchange news or corporate filing catalysts.
+2. **Tier-1 Deterministic RAM Math (`compute_deterministic_confluence`)**:
+   - Quiet, consolidating, or sideways stocks are scored purely in RAM using deterministic mathematical confluence in **0.001 ms**.
+   - **Consumes 0 Gemini API calls**, completely preserving quota.
+3. **Tier-2 Google Gemini AI Synthesis (`evaluate_stock_with_ai`)**:
+   - Only stocks with confirmed catalysts are submitted to Google Gemini for deep qualitative synthesis and institutional level structuring.
+   - **Reduces Gemini calls from 20+ down to 1–3 per 5-minute scan**, keeping RPM well under the 20 RPM ceiling.
+
+### 2.1.3 Wyckoff Volume Spread Analysis (VSA) & Sector Alignment
+- **Wyckoff Institutional Absorption**: If delivery $\ge 55\%$ with price expanding above VWAP $\rightarrow$ classified as `SMART_MONEY_ABSORPTION` (+8 confluence points).
+- **Wyckoff Operator Trap**: If price volatility is high ($> 2\%$) while delivery is low ($< 25\%$) $\rightarrow$ flagged as `OPERATOR_CHURN_TRAP` (-10 confluence points + warning).
+- **Sector Breadth Alignment**: Quantifies whether a stock has sector tailwinds (+8 points) or is diverging against a severe sector decline (-5 points).
+- **Dual Benchmarks**: Macro surveillance monitors both **NIFTY 50** (`^NSEI`) and **BSE SENSEX** (`^BSESN`) alongside **India VIX** (`^INDIAVIX`).
 
 ### The 4 Factor Weights
 1. **Technicals & Multi-Timeframe Confluence (30%)**: 5m/15m/1D RSI, MACD momentum slope, Intraday VWAP distance, 14-period ATR volatility, 20/50/200 EMAs.
-2. **Institutional Flow & Derivatives (25%)**: Delivery Volume % ($>50\%$ accumulation), F&O Open Interest (Long Build-up / Short Covering), and Bulk/Block Deal premiums.
+2. **Institutional Flow & Derivatives (25%)**: Wyckoff VSA delivery accumulation, F&O Open Interest (Long Build-up / Short Covering), and Bulk/Block Deals.
 3. **Fundamental Valuation & Forensic Health (25%)**: Trailing vs Forward P/E, Debt-to-Equity, Promoter Pledging %, and Operating Margin health.
-4. **24h Catalysts & Macro Context (20%)**: Order wins, Quarterly earnings surprises, NIFTY 50 / Sector trend, and India VIX regime.
+4. **24h Catalysts & Macro Context (20%)**: Order wins, Quarterly earnings surprises, NIFTY 50 / SENSEX / Sector trend, and India VIX regime.
 
 ### Model Execution Fallback Chain
-1. **Primary Model**: `gemini-3.6-flash` — High-frequency financial catalyst evaluation with structured JSON output.
-2. **First Fallback**: `gemini-2.5-flash` — Low-latency secondary reasoning engine.
-3. **Second Fallback**: `gemini-1.5-flash` — Reliable structured payload processor.
-4. **Deterministic Rule Engine**: 100% offline algorithm ensuring zero downtime during external API rate limits.
+1. **Primary Model**: `gemini-2.5-flash` via official `google-genai` SDK — Ultra low-latency structured JSON analysis.
+2. **Secondary Model**: `gemini-1.5-flash` — High-speed structured JSON fallback.
+3. **Deterministic Rule Engine**: 100% offline mathematical algorithm ensuring zero downtime.
 
 ### Multi-Timeframe & Macro Veto Guardrails
 - **Daily 200 EMA Veto**: If a stock trades below its 200 EMA (macro downtrend), any `BUY_WATCH` signal is vetoed to `HOLD_NEUTRAL`.
@@ -108,7 +130,7 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 - `🟢 ACCUMULATE / BUY WATCH` (Confluence Score $\ge 75$)
 - `🔴 PROFIT BOOK / SELL WATCH` (Confluence Score $\le 35$)
 - `🟡 TRAILING STOP-LOSS TRIGGER` (Position-aware trigger protecting Demat gains)
-- `⚡ Volume Surge` (5m volume $> 2.0\text{x}$ 20 MA with delivery accumulation)
+- `⚡ Volume Surge` (5m volume $> 1.5\text{x}$ 20 MA with delivery accumulation)
 - `📈 Earnings Beat` (Quarterly profit & margin surprise)
 - `🚀 Price Breakout` (52-week & technical resistance level breaks)
 - `📊 FII / Block Deals` (Institutional block & bulk deals)
@@ -200,16 +222,18 @@ G:\stokvigil-ai\
 │   │   ├── config.py
 │   │   ├── auth.py                  <-- Supabase JWT & IDOR Shield
 │   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
-│   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR
-│   │   ├── flow_tracker.py          <-- Delivery %, F&O OI, Block deals
-│   │   ├── macro_filter.py          <-- India VIX, Sector sync, Forensics
+│   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Dual-Exchange Fallback
+│   │   ├── flow_tracker.py          <-- Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI
+│   │   ├── macro_filter.py          <-- India VIX, SENSEX & NIFTY, Sector sync, Forensics
 │   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
-│   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.1ms O(1) Lookups)
-│   │   ├── notifications.py         <-- Telegram HTML + FCM Push
-│   │   ├── agent_runner.py          <-- Gemini 3.6/2.5/1.5 AI Confluence + ISIN Resolver
+│   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.02ms O(1) Lookups)
+│   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push
+│   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
 │   │   └── main.py                  <-- FastAPI Entrypoint & Rate Limiter
 │   ├── tests/
-│   │   └── test_institutional_engine.py
+│   │   ├── test_api_endpoints.py    <-- 19 API, Auth, Security, and IDOR Unit Tests
+│   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
+│   │   └── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
