@@ -332,5 +332,50 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertIn("&gt;", card)
         self.assertIn("&lt;", card)
 
+    # 23. Security: Cron Secret Production Placeholder Blocked
+    def test_23_cron_secret_production_placeholder_enforcement(self):
+        orig_env = settings.ENVIRONMENT
+        orig_key = settings.CRON_SECRET_KEY
+        try:
+            settings.ENVIRONMENT = "production"
+            settings.CRON_SECRET_KEY = "stokvigil_cron_default_secret_2026"
+            res = self.client.post(
+                "/api/cron/multi-user-scan",
+                headers={"X-Cron-Secret": "stokvigil_cron_default_secret_2026"}
+            )
+            self.assertEqual(res.status_code, 503)
+            self.assertIn("Cron service is unconfigured in production mode", res.json().get("detail", ""))
+
+            # With dedicated production key, authorized call succeeds
+            settings.CRON_SECRET_KEY = "production_dedicated_secret_key_abc123"
+            res_auth = self.client.post(
+                "/api/cron/multi-user-scan",
+                headers={"X-Cron-Secret": "production_dedicated_secret_key_abc123"}
+            )
+            self.assertEqual(res_auth.status_code, 200)
+        finally:
+            settings.ENVIRONMENT = orig_env
+            settings.CRON_SECRET_KEY = orig_key
+
+    # 24. Security: Order Placement Honest Error in Production
+    def test_24_order_placement_production_honest_error(self):
+        orig_env = settings.ENVIRONMENT
+        try:
+            settings.ENVIRONMENT = "production"
+            order_payload = {
+                "user_id": "test-user-123",
+                "symbol": "TCS",
+                "action": "BUY",
+                "quantity": 5,
+                "order_type": "MARKET"
+            }
+            # When BreezeConnect fails or credentials invalid in production, raises 502
+            res = self.client.post("/api/v1/orders/place", json=order_payload)
+            self.assertEqual(res.status_code, 502)
+            self.assertIn("Broker order placement failed", res.json().get("detail", ""))
+        finally:
+            settings.ENVIRONMENT = orig_env
+
+
 if __name__ == "__main__":
     unittest.main()

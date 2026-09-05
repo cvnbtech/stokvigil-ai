@@ -1148,6 +1148,28 @@ async def execute_multi_user_market_scan(db: Client):
         _scan_in_progress = False
 
 
+def verify_cron_secret(x_cron_secret: Optional[str]) -> None:
+    """
+    Validates X-Cron-Secret header using constant-time comparison (hmac.compare_digest).
+    In production mode, enforces that CRON_SECRET_KEY is configured and not the public placeholder.
+    """
+    expected = settings.active_cron_secret
+    if settings.ENVIRONMENT == "production":
+        if not expected or expected == "stokvigil_cron_default_secret_2026":
+            logger.critical("FATAL: CRON_SECRET_KEY is unconfigured or using default placeholder in production.")
+            raise HTTPException(
+                status_code=503,
+                detail="Cron service is unconfigured in production mode."
+            )
+    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
+    if not incoming or not expected or not hmac.compare_digest(incoming, expected):
+        logger.warning("Unauthorized cron trigger attempt blocked.")
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
+        )
+
+
 @app.post("/api/cron/multi-user-scan")
 async def run_multi_user_scan(
     background_tasks: BackgroundTasks,
@@ -1159,14 +1181,7 @@ async def run_multi_user_scan(
     Shielded by exact X-Cron-Secret header token.
     Dispatches scan asynchronously in the background to prevent 504 upstream request timeouts.
     """
-    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
-    expected = settings.active_cron_secret
-    if not incoming or not expected or incoming != expected:
-        logger.warning("Unauthorized multi-user cron scan attempt blocked.")
-        raise HTTPException(
-            status_code=403, 
-            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
-        )
+    verify_cron_secret(x_cron_secret)
 
     today_str = str(date.today())
     background_tasks.add_task(execute_multi_user_market_scan, db)
@@ -1199,14 +1214,7 @@ async def run_morning_token_reminder(
     Automated 08:50 AM IST Morning Push Notification.
     Prompts users whose ICICI session token is expired to authenticate 25 minutes before market open.
     """
-    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
-    expected = settings.active_cron_secret
-    if not incoming or not expected or incoming != expected:
-        logger.warning("Unauthorized morning reminder cron attempt blocked.")
-        raise HTTPException(
-            status_code=403, 
-            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
-        )
+    verify_cron_secret(x_cron_secret)
 
     today_str = str(date.today())
     creds_res = db.table("user_credentials").select("user_id, token_date").execute()
@@ -1261,14 +1269,7 @@ async def run_pre_market_briefing(
     Dispatches global cues, India VIX regime, and sectoral tailwinds 15 minutes before cash market open.
     Shielded by X-Cron-Secret header token.
     """
-    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
-    expected = settings.active_cron_secret
-    if not incoming or not expected or not hmac.compare_digest(incoming, expected):
-        logger.warning("Unauthorized pre-market briefing cron attempt blocked.")
-        raise HTTPException(
-            status_code=403, 
-            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
-        )
+    verify_cron_secret(x_cron_secret)
 
     today_str = str(date.today())
     war_room_data = await asyncio.to_thread(fetch_pre_market_war_room_data)
@@ -1414,13 +1415,18 @@ def place_trade_order(
         }
     except Exception as e:
         logger.error(f"Error placing Breeze trade order for {req.symbol}: {e}")
-        return {
-            "status": "simulated",
-            "message": f"Order {req.action} {req.quantity} {req.symbol} processed successfully.",
-            "symbol": req.symbol,
-            "action": req.action,
-            "quantity": req.quantity,
-        }
+        if settings.ENVIRONMENT != "production":
+            return {
+                "status": "simulated",
+                "message": f"Order {req.action} {req.quantity} {req.symbol} processed successfully.",
+                "symbol": req.symbol,
+                "action": req.action,
+                "quantity": req.quantity,
+            }
+        raise HTTPException(
+            status_code=502,
+            detail=f"Broker order placement failed: {str(e)}"
+        )
 
 
 @app.post("/api/telegram/webhook")
