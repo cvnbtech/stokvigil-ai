@@ -348,7 +348,7 @@ G:\stokvigil-ai\
 │   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
 │   │   └── main.py                  <-- FastAPI Entrypoint & Rate Limiter
 │   ├── tests/
-│   │   ├── test_api_endpoints.py    <-- 19 API, Auth, Security, and IDOR Unit Tests
+│   │   ├── test_api_endpoints.py    <-- 21 API, Auth, Security, and IDOR Unit Tests
 │   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
 │   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
 │   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
