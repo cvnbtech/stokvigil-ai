@@ -124,7 +124,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       final cleanChatId = _telegramChatIdController.text.trim();
 
       // 1. Direct Supabase database update (Guarantees persistence even if backend is offline)
-      await SupabaseService().updateProfile({
+      final profileSaved = await SupabaseService().updateProfile({
         'telegram_chat_id': cleanChatId,
         'telegram_enabled': _telegramEnabled,
         'fcm_enabled': _fcmEnabled,
@@ -147,7 +147,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       setState(() => _isSaving = false);
 
       if (mounted) {
-        ErrorHandler.showSuccessSnackBar(context, "Preferences saved successfully!");
+        if (profileSaved) {
+          ErrorHandler.showSuccessSnackBar(context, "Preferences saved successfully!");
+        } else {
+          ErrorHandler.showErrorSnackBar(context, "Failed to save preferences to database. Please check your network connection.");
+        }
       }
     } catch (e) {
       setState(() => _isSaving = false);

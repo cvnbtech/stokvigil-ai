@@ -92,13 +92,29 @@ class SupabaseService {
     final user = currentUser;
     if (user == null || !isConfigured) return false;
     try {
-      updates['id'] = user.id;
-      if (user.email != null) updates['email'] = user.email;
-      updates['updated_at'] = DateTime.now().toIso8601String();
-      await client.from('profiles').upsert(updates);
+      final sanitizedUpdates = Map<String, dynamic>.from(updates);
+      sanitizedUpdates['updated_at'] = DateTime.now().toIso8601String();
+
+      // 1. Primary: Direct targeted UPDATE (Evaluates standard UPDATE RLS policy)
+      final res = await client
+          .from('profiles')
+          .update(sanitizedUpdates)
+          .eq('id', user.id)
+          .select();
+
+      if (res.isNotEmpty) {
+        return true;
+      }
+
+      // 2. Fallback: If profile row was not yet created, attach user identity and upsert
+      sanitizedUpdates['id'] = user.id;
+      if (user.email != null && user.email!.isNotEmpty) {
+        sanitizedUpdates['email'] = user.email!;
+      }
+      await client.from('profiles').upsert(sanitizedUpdates);
       return true;
     } catch (e) {
-      debugPrint("Error updating profile: $e");
+      debugPrint("Error updating profile in Supabase: $e");
       return false;
     }
   }
