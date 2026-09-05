@@ -13,17 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger StokVigil AI Multi-User Portfolio Scan
+        env:
+          BACKEND_URL_SECRET: ${{ secrets.STOKVIGIL_BACKEND_URL }}
+          BACKEND_URL_VAR: ${{ vars.STOKVIGIL_BACKEND_URL }}
+          CRON_SECRET_RAW: ${{ secrets.CRON_SECRET_KEY }}
+          CRON_SECRET_VAR: ${{ vars.CRON_SECRET_KEY }}
         run: |
           echo "🚀 Triggering Bank-Grade Shielded 5-Minute Market Intelligence Scan..."
           
-          # Resolve Backend URL from Secrets or Variables
-          BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
-          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.STOKVIGIL_BACKEND_URL }}"; fi
+          # Safely resolve Backend URL
+          BACKEND_URL="$BACKEND_URL_SECRET"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="$BACKEND_URL_VAR"; fi
           CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
 
-          # Resolve Cron Secret from Secrets or Variables
-          CRON_SECRET="${{ secrets.CRON_SECRET_KEY }}"
-          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="${{ vars.CRON_SECRET_KEY }}"; fi
+          # Safely resolve Cron Secret (immune to special character expansion)
+          CRON_SECRET="$CRON_SECRET_RAW"
+          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="$CRON_SECRET_VAR"; fi
 
           if [ -z "$CRON_SECRET" ]; then
             echo "❌ CRON_SECRET_KEY is empty in both GitHub Secrets and Variables!"
@@ -48,15 +53,20 @@ jobs:
 
       - name: Trigger Morning Demat Token Reminder
         if: github.event.schedule == '20 3 * * 1-5' || github.event_name == 'workflow_dispatch'
+        env:
+          BACKEND_URL_SECRET: ${{ secrets.STOKVIGIL_BACKEND_URL }}
+          BACKEND_URL_VAR: ${{ vars.STOKVIGIL_BACKEND_URL }}
+          CRON_SECRET_RAW: ${{ secrets.CRON_SECRET_KEY }}
+          CRON_SECRET_VAR: ${{ vars.CRON_SECRET_KEY }}
         run: |
           echo "🔔 Triggering 08:50 AM Morning Demat Token Refresh Reminder..."
           
-          BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
-          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.STOKVIGIL_BACKEND_URL }}"; fi
+          BACKEND_URL="$BACKEND_URL_SECRET"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="$BACKEND_URL_VAR"; fi
           CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
 
-          CRON_SECRET="${{ secrets.CRON_SECRET_KEY }}"
-          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="${{ vars.CRON_SECRET_KEY }}"; fi
+          CRON_SECRET="$CRON_SECRET_RAW"
+          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="$CRON_SECRET_VAR"; fi
 
           REMINDER_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$CLEAN_URL/api/cron/morning-token-reminder" \
             -H "Content-Type: application/json" \

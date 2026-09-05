@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Union, Any
+from typing import List, Union, Any, Optional
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -26,8 +26,14 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WEBHOOK_SECRET: str = ""
     
-    # Cron Security Token
+    # Cron Security Token (Supports both CRON_SECRET_KEY and CRON_SECRET)
     CRON_SECRET_KEY: str = "stokvigil_cron_default_secret_2026"
+    CRON_SECRET: Optional[str] = None
+
+    @property
+    def active_cron_secret(self) -> str:
+        secret = self.CRON_SECRET if (self.CRON_SECRET and self.CRON_SECRET.strip()) else self.CRON_SECRET_KEY
+        return str(secret or "").strip().strip('"').strip("'")
     
     # Raw ALLOWED_ORIGINS string or list from env (str first to prevent EnvSettingsSource JSON decode error)
     ALLOWED_ORIGINS: Union[str, List[str]] = ""

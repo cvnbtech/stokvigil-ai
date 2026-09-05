@@ -798,7 +798,7 @@ async def run_multi_user_scan(
     Shielded by exact X-Cron-Secret header token.
     """
     incoming = (x_cron_secret or "").strip().strip('"').strip("'")
-    expected = (settings.CRON_SECRET_KEY or "").strip().strip('"').strip("'")
+    expected = settings.active_cron_secret
     if not incoming or not expected or incoming != expected:
         logger.warning("Unauthorized multi-user cron scan attempt blocked.")
         raise HTTPException(
@@ -856,7 +856,7 @@ async def run_morning_token_reminder(
     Prompts users whose ICICI session token is expired to authenticate 25 minutes before market open.
     """
     incoming = (x_cron_secret or "").strip().strip('"').strip("'")
-    expected = (settings.CRON_SECRET_KEY or "").strip().strip('"').strip("'")
+    expected = settings.active_cron_secret
     if not incoming or not expected or incoming != expected:
         logger.warning("Unauthorized morning reminder cron attempt blocked.")
         raise HTTPException(
