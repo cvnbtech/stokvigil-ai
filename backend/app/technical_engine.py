@@ -289,8 +289,94 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
                 logger.debug(f"BSE fallback failed for {symbol}: {e}")
 
         if df_5m.empty:
-            logger.warning(f"No 5m intraday data returned for {symbol} (checked NSE & BSE)")
-            return default_res
+            if not df_daily.empty:
+                logger.info(f"No 5m intraday data for {symbol}; synthesizing technical metrics from daily candles ({len(df_daily)} bars)")
+                current_price = round(float(df_daily['Close'].iloc[-1]), 2)
+                atr_series = calculate_atr(df_daily, 14)
+                atr_val = round(float(atr_series.iloc[-1]), 2) if not atr_series.empty and not pd.isna(atr_series.iloc[-1]) else round(current_price * 0.02, 2)
+                if atr_val <= 0:
+                    atr_val = max(1.0, round(current_price * 0.02, 2))
+                
+                rsi_d_series = calculate_rsi(df_daily['Close'], 14)
+                rsi_daily = round(float(rsi_d_series.iloc[-1]), 2) if not rsi_d_series.empty else 50.0
+                
+                ema_20 = round(float(df_daily['Close'].ewm(span=20, adjust=False).mean().iloc[-1]), 2) if len(df_daily) >= 20 else current_price
+                ema_50 = round(float(df_daily['Close'].ewm(span=50, adjust=False).mean().iloc[-1]), 2) if len(df_daily) >= 50 else current_price
+                ema_200 = round(float(df_daily['Close'].ewm(span=200, adjust=False).mean().iloc[-1]), 2) if len(df_daily) >= 200 else ema_50
+                
+                if current_price > ema_20 and ema_20 > ema_50 and ema_50 > ema_200:
+                    ma_trend = "STRONG_BULLISH_ALIGNMENT"
+                elif current_price < ema_20 and ema_20 < ema_50:
+                    ma_trend = "STRONG_BEARISH_ALIGNMENT"
+                elif current_price > ema_200:
+                    ma_trend = "ABOVE_200_EMA"
+                else:
+                    ma_trend = "BELOW_200_EMA"
+                
+                camarilla_pivots = calculate_camarilla_pivots(df_daily)
+                rs_dict = calculate_relative_strength(df_daily)
+                adx_dict = calculate_adx(df_daily, 14)
+                
+                tech_score = 50
+                if current_price > ema_50:
+                    tech_score += 10
+                else:
+                    tech_score -= 10
+                if 50 <= rsi_daily <= 70:
+                    tech_score += 10
+                elif rsi_daily < 35:
+                    tech_score -= 10
+                if rs_dict.get("rs_regime") == "OUTPERFORMING_LEADER":
+                    tech_score += 5
+                elif rs_dict.get("rs_regime") == "UNDERPERFORMING_LAGGARD":
+                    tech_score -= 5
+                tech_score = max(5, min(95, tech_score))
+                
+                return {
+                    "symbol": symbol,
+                    "current_price": current_price,
+                    "rsi_5m": rsi_daily,
+                    "rsi_15m": rsi_daily,
+                    "rsi_daily": rsi_daily,
+                    "rsi_divergence": "NONE",
+                    "macd_line": 0.0,
+                    "macd_signal": 0.0,
+                    "macd_histogram": 0.0,
+                    "macd_trend": "NEUTRAL",
+                    "vwap": current_price,
+                    "price_vs_vwap_pct": 0.0,
+                    "ema_20": ema_20,
+                    "ema_50": ema_50,
+                    "ema_200": ema_200,
+                    "ma_trend": ma_trend,
+                    "atr_14": atr_val,
+                    "adx_14": adx_dict.get("adx_14", 20.0),
+                    "adx_regime": adx_dict.get("adx_regime", "MODERATE_TREND"),
+                    "camarilla_pivots": camarilla_pivots,
+                    "rs_rating": rs_dict.get("rs_rating", 0.0),
+                    "rs_regime": rs_dict.get("rs_regime", "IN_LINE"),
+                    "volume_multiple": 1.0,
+                    "is_volume_surge": False,
+                    "technical_score": tech_score
+                }
+            else:
+                fast_p = None
+                try:
+                    fast = getattr(ticker, 'fast_info', None)
+                    if fast:
+                        fast_p = getattr(fast, 'last_price', None) or getattr(fast, 'regular_market_previous_close', None)
+                except Exception:
+                    pass
+                if fast_p and float(fast_p) > 0:
+                    cp = round(float(fast_p), 2)
+                    default_res["current_price"] = cp
+                    default_res["atr_14"] = max(1.0, round(cp * 0.02, 2))
+                    default_res["vwap"] = cp
+                    default_res["ema_20"] = cp
+                    default_res["ema_50"] = cp
+                    default_res["ema_200"] = cp
+                logger.warning(f"No 5m intraday or daily data returned for {symbol} (checked NSE & BSE)")
+                return default_res
             
         current_price = round(float(df_5m['Close'].iloc[-1]), 2)
         
@@ -321,8 +407,8 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         
         atr_series = calculate_atr(df_5m, 14)
         atr_val = round(float(atr_series.iloc[-1]), 2)
-        if atr_val == 0.0:
-            atr_val = round(current_price * 0.015, 2)
+        if atr_val <= 0.0:
+            atr_val = max(1.0, round(current_price * 0.015, 2))
             
         # Volume Surge Check (vs 20-period Volume MA on 5m)
         vol_ma_20 = df_5m['Volume'].rolling(20).mean().iloc[-1]

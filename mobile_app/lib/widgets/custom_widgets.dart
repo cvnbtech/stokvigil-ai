@@ -523,39 +523,125 @@ class MetricChipStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     if (metrics.isEmpty) return const SizedBox.shrink();
 
+    // Extract nested or flat structures gracefully
+    final flowData = metrics['flow_data'] is Map ? Map<String, dynamic>.from(metrics['flow_data']) : <String, dynamic>{};
+    final technicals = metrics['technicals'] is Map ? Map<String, dynamic>.from(metrics['technicals']) : <String, dynamic>{};
+    final macroData = metrics['macro_data'] is Map ? Map<String, dynamic>.from(metrics['macro_data']) : <String, dynamic>{};
+
+    // 1. Delivery %
+    final deliveryRaw = flowData['delivery_pct'] ?? metrics['delivery_pct'];
+    final deliveryStr = deliveryRaw != null ? "$deliveryRaw%" : "-";
+
+    // 2. RSI 15m
+    final rsiRaw = technicals['rsi_15m'] ?? metrics['rsi_15m'];
+    final rsiStr = rsiRaw != null ? (rsiRaw is num ? rsiRaw.toStringAsFixed(1) : rsiRaw.toString()) : "-";
+
+    // 3. VWAP
+    final vwapRaw = technicals['vwap'] ?? metrics['vwap'];
+    final vwapStr = vwapRaw != null && (vwapRaw is num && vwapRaw > 0) ? "₹${(vwapRaw as num).toStringAsFixed(1)}" : "-";
+
+    // 4. Institutional OI / Flow Bias
+    final oiRaw = flowData['fo_oi_status'] ?? flowData['flow_bias'] ?? metrics['fo_oi_status'] ?? metrics['flow_bias'];
+    final oiStr = oiRaw != null ? oiRaw.toString().replaceAll('_', ' ').trim() : "CASH";
+
+    // 5. Wyckoff VSA Note
+    final vsaNote = flowData['vsa_note'] ?? flowData['vsa_regime'] ?? metrics['vsa_regime'] ?? metrics['vsa_note'];
+    final vsaStr = vsaNote != null ? vsaNote.toString().replaceAll('_', ' ').trim() : "";
+
+    // 6. India VIX (optional badge)
+    final vixRaw = macroData['india_vix'] ?? metrics['india_vix'];
+
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF080B16),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.cardBorder),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: metrics.entries.map((e) {
-          final valStr = e.value?.toString() ?? '-';
-          return Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 4-Column Key Metrics Strip
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                e.key.toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                valStr,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              _buildMetricItem("DELIVERY", deliveryStr, AppTheme.cyan),
+              _buildMetricItem("RSI (15M)", rsiStr, Colors.white),
+              _buildMetricItem("VWAP", vwapStr, Colors.white),
+              _buildMetricItem("F&O / OI", oiStr, AppTheme.primaryEmerald),
             ],
-          );
-        }).toList(),
+          ),
+          if (vsaStr.isNotEmpty && vsaStr.toUpperCase() != "NONE") ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppTheme.cyan.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppTheme.cyan.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Text("⚡ ", style: TextStyle(fontSize: 10)),
+                  Expanded(
+                    child: Text(
+                      "Wyckoff VSA: $vsaStr",
+                      style: const TextStyle(
+                        color: AppTheme.cyan,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (vixRaw != null) ...[
+                    const SizedBox(width: 6),
+                    Text(
+                      "VIX: $vixRaw",
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricItem(String label, String value, Color valueColor) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textMuted,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 11.5,
+              fontWeight: FontWeight.bold,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

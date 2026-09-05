@@ -807,13 +807,55 @@ export default function App() {
         if (data && data.length > 0) {
           setAlerts(data.map((a: any) => {
             const rawSnap = a.metrics_snapshot || {};
-            const livePrice = rawSnap.current_price || rawSnap.price || 0;
+            const flowData = rawSnap.flow_data || {};
+            const technicals = rawSnap.technicals || {};
+            const macroData = rawSnap.macro_data || {};
+            const dematPos = rawSnap.demat_position || null;
+
+            let livePrice = technicals.current_price || rawSnap.current_price || rawSnap.price || (rawSnap.financials && rawSnap.financials.price) || 0;
+            if (!livePrice && dematPos && dematPos.average_buy_price) {
+              livePrice = dematPos.average_buy_price;
+            }
+
+            let dematSanitized = null;
+            if (dematPos && dematPos.is_in_portfolio) {
+              const avgP = dematPos.average_buy_price || 0;
+              let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : 0;
+              if (pnlPct <= -99.0) {
+                if (livePrice > 0 && avgP > 0) {
+                  pnlPct = Number((((livePrice - avgP) / avgP) * 100).toFixed(1));
+                } else {
+                  pnlPct = 0.0;
+                }
+              }
+              dematSanitized = {
+                quantity: dematPos.quantity || 0,
+                average_buy_price: avgP,
+                unrealized_pnl_pct: pnlPct
+              };
+            }
+
             const bias = rawSnap.action_bias || (a.impact_score >= 80 ? "STRONG BUY" : "BUY");
-            const tPrice = rawSnap.tactical_levels?.target_1 || (livePrice > 0 ? `₹${(livePrice * 1.12).toFixed(0)}` : "₹0");
-            const sLoss = rawSnap.tactical_levels?.protective_stop_loss || (livePrice > 0 ? `₹${(livePrice * 0.94).toFixed(0)}` : "₹0");
-            const peVal = rawSnap.financials?.pe_ratio?.toString() || rawSnap.pe_ratio?.toString() || "24.2";
-            const debtVal = rawSnap.financials?.debt_to_equity?.toString() || rawSnap.debt_to_equity?.toString() || "0.38";
-            const roeVal = rawSnap.financials?.roe_pct ? `${rawSnap.financials.roe_pct}%` : (rawSnap.roe || "18.5%");
+            let tPrice = rawSnap.tactical_levels?.target_1;
+            let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
+
+            // Check if stored target/SL are dummy 100.00 placeholders
+            const isDummy100 = (tPrice === "₹100.00" || tPrice === "100.0" || tPrice === "100") &&
+                               (sLoss === "₹100.00" || sLoss === "100.0" || sLoss === "100");
+
+            if (isDummy100 || !tPrice) {
+              tPrice = livePrice > 0 ? `₹${(livePrice * 1.08).toFixed(0)}` : "₹0";
+            }
+            if (isDummy100 || !sLoss) {
+              sLoss = livePrice > 0 ? `₹${(livePrice * 0.95).toFixed(0)}` : "₹0";
+            }
+
+            const deliveryVal = flowData.delivery_pct != null ? `${flowData.delivery_pct}%` : (rawSnap.delivery_pct != null ? `${rawSnap.delivery_pct}%` : "-");
+            const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "50.0");
+            const vwapVal = technicals.vwap && technicals.vwap > 0 ? `₹${technicals.vwap}` : (rawSnap.vwap && rawSnap.vwap > 0 ? `₹${rawSnap.vwap}` : "-");
+            const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias || "CASH").replace(/_/g, ' ');
+            const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
+            const vixVal = macroData.india_vix || rawSnap.india_vix;
 
             let sigType = "buy";
             if (bias.includes("SELL")) sigType = "sell";
@@ -834,11 +876,14 @@ export default function App() {
               title: a.alert_title,
               reasons: a.factual_reasons || [],
               metrics: {
-                price: `₹${livePrice}`,
-                pe: peVal,
-                debt: debtVal,
-                roe: roeVal
+                delivery: deliveryVal,
+                rsi: rsiVal,
+                vwap: vwapVal,
+                flow: oiVal
               },
+              vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
+              vix: vixVal,
+              dematPosition: dematSanitized,
               time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
           }));
@@ -2103,6 +2148,19 @@ export default function App() {
                       {a.title}
                     </div>
 
+                    {/* ICICI Demat Position Banner */}
+                    {a.dematPosition && (
+                      <div style={{
+                        background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
+                        borderRadius: 10, padding: "7px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8
+                      }}>
+                        <span style={{ fontSize: 13 }}>💼</span>
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: C.white }}>
+                          ICICI Demat: {a.dematPosition.quantity} Qty @ Avg ₹{Number(a.dematPosition.average_buy_price).toFixed(1)} (P&L: {a.dematPosition.unrealized_pnl_pct >= 0 ? '+' : ''}{a.dematPosition.unrealized_pnl_pct}%)
+                        </span>
+                      </div>
+                    )}
+
                     <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
                       {a.reasons.map((r: string, i: number) => (
                         <div key={i} style={{ display: "flex", gap: 7, fontSize: 11.5, color: C.gray1, lineHeight: 1.5 }}>
@@ -2126,18 +2184,38 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Fundamental Metrics Grid */}
+                    {/* Institutional Metrics Grid & Wyckoff VSA Insight */}
                     <div style={{
-                      display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr",
-                      gap: 6, background: "#080B16", borderRadius: 12, padding: 10,
-                      border: `1px solid ${C.border}`,
+                      background: "#080B16", borderRadius: 12, padding: "10px 12px",
+                      border: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 8
                     }}>
-                      {Object.entries(a.metrics || {}).map(([k, v]) => (
-                        <div key={k} style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 9, color: C.gray2, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>{k}</div>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: k === "roe" ? C.emerald : C.white }}>{String(v)}</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+                        {Object.entries(a.metrics || {}).map(([k, v]) => (
+                          <div key={k} style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: C.gray2, textTransform: "uppercase", fontWeight: 700, marginBottom: 2 }}>
+                              {k === "flow" ? "F&O / OI" : (k === "rsi" ? "RSI (15M)" : k)}
+                            </div>
+                            <div style={{
+                              fontSize: 11, fontWeight: 800,
+                              color: k === "delivery" ? C.cyan : (k === "flow" ? C.emerald : C.white),
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                            }}>
+                              {String(v)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {a.vsaNote && (
+                        <div style={{
+                          background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.2)`,
+                          borderRadius: 6, padding: "4px 8px", fontSize: 10.5, color: C.cyan,
+                          fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "space-between"
+                        }}>
+                          <span>⚡ Wyckoff VSA: {a.vsaNote}</span>
+                          {a.vix && <span style={{ color: C.gray2, fontSize: 10 }}>VIX: {a.vix}</span>}
                         </div>
-                      ))}
+                      )}
                     </div>
                   </div>
                 ))

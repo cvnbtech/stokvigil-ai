@@ -487,14 +487,42 @@ def compute_deterministic_confluence(
     Evaluates institutional math in 0.001ms with zero API costs:
     Confluence Score = (0.30 * Tech) + (0.25 * Flow) + (0.25 * Forensic) + (0.20 * News)
     """
-    current_price = technicals.get("current_price") or financials.get("price") or 100.0
-    atr_val = technicals.get("atr_14", current_price * 0.015)
+    price_candidate = (
+        technicals.get("current_price") or 
+        financials.get("price") or 
+        (holding_info.get("current_market_price") if holding_info else None) or
+        (holding_info.get("last_price") if holding_info else None) or
+        (holding_info.get("average_price") if holding_info else None) or
+        technicals.get("previous_close")
+    )
+    current_price = float(price_candidate) if price_candidate and float(price_candidate) > 0 else 100.0
+    
+    raw_atr = technicals.get("atr_14")
+    if raw_atr is not None and float(raw_atr) > 0:
+        atr_val = float(raw_atr)
+    else:
+        atr_val = max(1.0, round(current_price * 0.02, 2))
 
     # Demat Holding Context
     demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
     if holding_info:
-        avg_p = holding_info.get("average_price", 0.0)
-        pnl_pct = round(((current_price - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+        avg_p = float(holding_info.get("average_price", 0.0) or 0.0)
+        curr_cmp = float(
+            technicals.get("current_price") or 
+            financials.get("price") or 
+            holding_info.get("current_market_price") or 
+            holding_info.get("last_price") or 
+            0.0
+        )
+        if avg_p > 0 and curr_cmp > 0:
+            pnl_pct = round(((curr_cmp - avg_p) / avg_p) * 100, 2)
+        elif holding_info.get("unrealized_pnl_pct") is not None:
+            pnl_pct = round(float(holding_info["unrealized_pnl_pct"]), 2)
+        elif holding_info.get("pnl_percentage") is not None:
+            pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
+        else:
+            pnl_pct = 0.0
+
         demat_context = {
             "is_in_portfolio": True,
             "quantity": holding_info.get("quantity", 0),
@@ -640,6 +668,11 @@ def compute_deterministic_confluence(
         stop_loss = round(current_price - (1.0 * atr_val), 2)
         target_1 = round(current_price + (1.5 * atr_val), 2)
         target_2 = round(current_price + (2.5 * atr_val), 2)
+
+    # Sanity guardrails: Target must always be above current_price, Stop-loss below current_price
+    target_1 = max(target_1, round(current_price * 1.02, 2))
+    target_2 = max(target_2, round(current_price * 1.05, 2))
+    stop_loss = min(stop_loss, round(current_price * 0.98, 2))
 
     # 5. Dynamic Chandelier Trailing Stop-Loss for Demat Holdings
     holding_guidance = "Track for optimal entry in tactical range."
@@ -919,9 +952,22 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
 
                 # If user holds the stock, evaluate holding-specific trailing stop loss in-memory without re-fetching
                 if holding_info:
-                    curr_p = technicals.get("current_price") or financials.get("price") or 0.0
-                    avg_p = holding_info.get("average_price", 0.0)
-                    pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+                    curr_p = float(
+                        technicals.get("current_price") or 
+                        financials.get("price") or 
+                        holding_info.get("current_market_price") or 
+                        holding_info.get("last_price") or 
+                        0.0
+                    )
+                    avg_p = float(holding_info.get("average_price", 0.0) or 0.0)
+                    if avg_p > 0 and curr_p > 0:
+                        pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2)
+                    elif holding_info.get("unrealized_pnl_pct") is not None:
+                        pnl_pct = round(float(holding_info["unrealized_pnl_pct"]), 2)
+                    elif holding_info.get("pnl_percentage") is not None:
+                        pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
+                    else:
+                        pnl_pct = 0.0
                     rsi_15m = technicals.get("rsi_15m", 50)
                     
                     if pnl_pct >= 5.0 and rsi_15m > 72:
@@ -974,9 +1020,22 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             # Demat position snapshot for alert formatting
             demat_pos = None
             if holding_info:
-                curr_p = technicals.get("current_price") or financials.get("price") or 0.0
-                avg_p = holding_info.get("average_price", 0.0)
-                pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+                curr_p = float(
+                    technicals.get("current_price") or 
+                    financials.get("price") or 
+                    holding_info.get("current_market_price") or 
+                    holding_info.get("last_price") or 
+                    0.0
+                )
+                avg_p = float(holding_info.get("average_price", 0.0) or 0.0)
+                if avg_p > 0 and curr_p > 0:
+                    pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2)
+                elif holding_info.get("unrealized_pnl_pct") is not None:
+                    pnl_pct = round(float(holding_info["unrealized_pnl_pct"]), 2)
+                elif holding_info.get("pnl_percentage") is not None:
+                    pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
+                else:
+                    pnl_pct = 0.0
                 demat_pos = {
                     "is_in_portfolio": True,
                     "quantity": holding_info.get("quantity", 0),

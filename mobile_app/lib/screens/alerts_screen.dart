@@ -187,11 +187,40 @@ class _AlertsScreenState extends State<AlertsScreen> {
                             final alert = filteredList[index];
                             final isHigh = alert.impactScore >= 80;
                             final dateStr = DateFormat('dd MMM, hh:mm a').format(alert.createdAt);
-                            final priceVal = alert.metricsSnapshot['current_price'] ?? alert.metricsSnapshot['price'] ?? 0.0;
+                            
+                            // Resolve effective stock price from metricsSnapshot or Demat position
+                            num effectivePrice = 0.0;
+                            if (alert.metricsSnapshot['current_price'] != null && (alert.metricsSnapshot['current_price'] as num) > 0) {
+                              effectivePrice = alert.metricsSnapshot['current_price'] as num;
+                            } else if (alert.metricsSnapshot['price'] != null && (alert.metricsSnapshot['price'] as num) > 0) {
+                              effectivePrice = alert.metricsSnapshot['price'] as num;
+                            } else if (alert.metricsSnapshot['financials'] is Map && alert.metricsSnapshot['financials']['price'] != null && (alert.metricsSnapshot['financials']['price'] as num) > 0) {
+                              effectivePrice = alert.metricsSnapshot['financials']['price'] as num;
+                            } else if (alert.dematPosition != null && alert.dematPosition!['average_buy_price'] != null && (alert.dematPosition!['average_buy_price'] as num) > 0) {
+                              effectivePrice = alert.dematPosition!['average_buy_price'] as num;
+                            }
+
                             final signalLabel = _getSignalLabel(alert);
                             final signalType = _getSignalType(alert);
-                            final targetStr = alert.target1 ?? ((priceVal as num) > 0 ? "₹${(priceVal * 1.08).toStringAsFixed(0)}" : "₹0");
-                            final slStr = alert.stopLoss ?? ((priceVal as num) > 0 ? "₹${(priceVal * 0.96).toStringAsFixed(0)}" : "₹0");
+                            
+                            // Sanitize dummy ₹100.00 fallback from historical database alerts
+                            final isDummy100 = (alert.target1 == "₹100.00" || alert.target1 == "100.0" || alert.target1 == "100") && 
+                                               (alert.stopLoss == "₹100.00" || alert.stopLoss == "100.0" || alert.stopLoss == "100");
+
+                            final String targetStr;
+                            final String slStr;
+                            if (isDummy100 || alert.target1 == null) {
+                              targetStr = effectivePrice > 0 ? "₹${(effectivePrice * 1.08).toStringAsFixed(0)}" : "₹0";
+                            } else {
+                              targetStr = alert.target1!;
+                            }
+
+                            if (isDummy100 || alert.stopLoss == null) {
+                              slStr = effectivePrice > 0 ? "₹${(effectivePrice * 0.95).toStringAsFixed(0)}" : "₹0";
+                            } else {
+                              slStr = alert.stopLoss!;
+                            }
+
                             final rrStr = alert.riskReward ?? "1:2.0";
 
                             return GlassCard(
@@ -249,26 +278,44 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
                                   // Demat Position Banner (if user holds stock)
                                   if (alert.dematPosition != null) ...[
-                                    Container(
-                                      padding: const EdgeInsets.all(10),
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.primaryEmerald.withOpacity(0.08),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(Icons.account_balance_wallet, color: AppTheme.primaryEmerald, size: 16),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              "ICICI Demat: ${alert.dematPosition!['quantity']} Qty @ Avg ₹${alert.dematPosition!['average_buy_price']} (P&L: ${alert.dematPosition!['unrealized_pnl_pct']}%)",
-                                              style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
-                                            ),
+                                    Builder(
+                                      builder: (context) {
+                                        final demat = alert.dematPosition!;
+                                        final qty = demat['quantity'] ?? 0;
+                                        final avgPrice = (demat['average_buy_price'] as num?)?.toDouble() ?? 0.0;
+                                        num rawPnl = (demat['unrealized_pnl_pct'] as num?) ?? 0.0;
+                                        // Sanitize false -100% loss caused by missing live price during off-market alerts
+                                        if (rawPnl <= -99.0) {
+                                          if (effectivePrice > 0 && avgPrice > 0) {
+                                            rawPnl = ((effectivePrice - avgPrice) / avgPrice) * 100;
+                                          } else {
+                                            rawPnl = 0.0;
+                                          }
+                                        }
+                                        final pnlFormatted = "${rawPnl >= 0 ? '+' : ''}${rawPnl.toStringAsFixed(1)}%";
+
+                                        return Container(
+                                          padding: const EdgeInsets.all(10),
+                                          margin: const EdgeInsets.only(bottom: 12),
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primaryEmerald.withOpacity(0.08),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.3)),
                                           ),
-                                        ],
-                                      ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.account_balance_wallet, color: AppTheme.primaryEmerald, size: 16),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  "ICICI Demat: $qty Qty @ Avg ₹${avgPrice.toStringAsFixed(1)} (P&L: $pnlFormatted)",
+                                                  style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ],
 
@@ -329,7 +376,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                         TradeOrderModal.show(
                                           context,
                                           symbol: alert.symbol,
-                                          currentPrice: (priceVal as num).toDouble(),
+                                          currentPrice: effectivePrice.toDouble(),
                                           initialType: alert.actionBias.contains('SELL') ? 'SELL' : 'BUY',
                                           targetPrice: targetStr,
                                           stopLoss: slStr,
