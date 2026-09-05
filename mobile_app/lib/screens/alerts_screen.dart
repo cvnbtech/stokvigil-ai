@@ -444,52 +444,54 @@ Automated surveillance via StokVigil AI 🛡️''';
                                   MetricChipStrip(metrics: alert.metricsSnapshot),
                                   const SizedBox(height: 10),
 
-                                  // Visual 4-Pillar Confluence Spider / Radar Section
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        side: BorderSide(
-                                          color: _expandedRadarIds.contains(alert.id) ? AppTheme.cyan : AppTheme.cardBorder,
-                                        ),
-                                        backgroundColor: _expandedRadarIds.contains(alert.id)
-                                            ? AppTheme.cyan.withOpacity(0.08)
-                                            : Colors.transparent,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                      ),
-                                      onPressed: () {
-                                        setState(() {
-                                          if (_expandedRadarIds.contains(alert.id)) {
-                                            _expandedRadarIds.remove(alert.id);
-                                          } else {
-                                            _expandedRadarIds.add(alert.id);
-                                          }
-                                        });
-                                      },
-                                      icon: const Icon(Icons.hub_outlined, size: 14, color: AppTheme.cyan),
-                                      label: Text(
-                                        _expandedRadarIds.contains(alert.id)
-                                            ? "Hide 4-Pillar Confluence Radar ▲"
-                                            : "View 4-Pillar Confluence Radar ▼",
-                                        style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ),
-                                  if (_expandedRadarIds.contains(alert.id)) ...[
-                                    const SizedBox(height: 8),
-                                    Container(
+                                  // Visual 4-Pillar Confluence Spider / Radar Section (Only shown if real factors exist)
+                                  if (alert.factorBreakdown != null) ...[
+                                    SizedBox(
                                       width: double.infinity,
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF080B16),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(color: AppTheme.cardBorder),
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          side: BorderSide(
+                                            color: _expandedRadarIds.contains(alert.id) ? AppTheme.cyan : AppTheme.cardBorder,
+                                          ),
+                                          backgroundColor: _expandedRadarIds.contains(alert.id)
+                                              ? AppTheme.cyan.withOpacity(0.08)
+                                              : Colors.transparent,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        ),
+                                        onPressed: () {
+                                          setState(() {
+                                            if (_expandedRadarIds.contains(alert.id)) {
+                                              _expandedRadarIds.remove(alert.id);
+                                            } else {
+                                              _expandedRadarIds.add(alert.id);
+                                            }
+                                          });
+                                        },
+                                        icon: const Icon(Icons.hub_outlined, size: 14, color: AppTheme.cyan),
+                                        label: Text(
+                                          _expandedRadarIds.contains(alert.id)
+                                              ? "Hide 4-Pillar Confluence Radar ▲"
+                                              : "View 4-Pillar Confluence Radar ▼",
+                                          style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
                                       ),
-                                      child: ConfluenceRadarChart(factors: alert.factorBreakdown, size: 150),
                                     ),
+                                    if (_expandedRadarIds.contains(alert.id)) ...[
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF080B16),
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(color: AppTheme.cardBorder),
+                                        ),
+                                        child: ConfluenceRadarChart(factors: alert.factorBreakdown!, size: 150),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 12),
                                   ],
-                                  const SizedBox(height: 12),
 
                                   // 1-Tap Trade Trigger CTA Button
                                   SizedBox(

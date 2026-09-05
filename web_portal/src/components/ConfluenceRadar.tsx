@@ -20,11 +20,12 @@ export default function ConfluenceRadar({
   size = 200,
   showLabels = true
 }: ConfluenceRadarProps) {
-  // Normalize values between 10 and 100 so radar polygon always has shape
-  const t = Math.max(15, Math.min(100, Number(factors.technicals || 50)));
-  const fl = Math.max(15, Math.min(100, Number(factors.flow || 50)));
-  const fo = Math.max(15, Math.min(100, Number(factors.forensics || 50)));
-  const c = Math.max(15, Math.min(100, Number(factors.catalysts || 50)));
+  if (!factors) return null;
+
+  const t = Math.max(0, Math.min(100, Number(factors.technicals != null ? factors.technicals : 0)));
+  const fl = Math.max(0, Math.min(100, Number(factors.flow != null ? factors.flow : 0)));
+  const fo = Math.max(0, Math.min(100, Number(factors.forensics != null ? factors.forensics : 0)));
+  const c = Math.max(0, Math.min(100, Number(factors.catalysts != null ? factors.catalysts : 0)));
 
   const center = size / 2;
   const radius = size * 0.36;
@@ -105,22 +106,22 @@ export default function ConfluenceRadar({
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#94a3b8" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#06b6d4" }}></span>
             <span>Technicals:</span>
-            <span style={{ color: "#fff", marginLeft: "auto" }}>{t}/100</span>
+            <span style={{ color: "#fff", marginLeft: "auto" }}>{factors.technicals != null ? `${t}/100` : "-"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#94a3b8" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }}></span>
             <span>Flow:</span>
-            <span style={{ color: "#fff", marginLeft: "auto" }}>{fl}/100</span>
+            <span style={{ color: "#fff", marginLeft: "auto" }}>{factors.flow != null ? `${fl}/100` : "-"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#94a3b8" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6" }}></span>
             <span>Forensics:</span>
-            <span style={{ color: "#fff", marginLeft: "auto" }}>{fo}/100</span>
+            <span style={{ color: "#fff", marginLeft: "auto" }}>{factors.forensics != null ? `${fo}/100` : "-"}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#94a3b8" }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#f59e0b" }}></span>
             <span>Catalyst:</span>
-            <span style={{ color: "#fff", marginLeft: "auto" }}>{c}/100</span>
+            <span style={{ color: "#fff", marginLeft: "auto" }}>{factors.catalysts != null ? `${c}/100` : "-"}</span>
           </div>
         </div>
       )}

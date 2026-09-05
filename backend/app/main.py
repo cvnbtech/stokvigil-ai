@@ -790,21 +790,27 @@ def get_accuracy_ledger(db: Client = Depends(get_supabase)):
         })
 
     if total_evaluated == 0:
-        win_rate = 74.5
-        avg_rr = "1:2.7"
-        total_count = 142
+        win_rate = 0.0
+        avg_rr = "-"
+        total_count = 0
+        profit_factor = 0.0
+        avg_hold = "-"
     else:
-        win_rate = round((target_hits / total_evaluated) * 100, 1) if total_evaluated > 0 else 74.5
-        avg_rr = f"1:{round(rr_sum / total_evaluated, 1)}" if total_evaluated > 0 else "1:2.7"
+        win_rate = round((target_hits / total_evaluated) * 100, 1)
+        avg_rr = f"1:{round(rr_sum / total_evaluated, 1)}"
         total_count = total_evaluated
+        gross_wins = target_hits * (rr_sum / max(1, total_evaluated))
+        gross_losses = max(1, total_evaluated - target_hits)
+        profit_factor = round(gross_wins / gross_losses, 2)
+        avg_hold = "Dynamic"
 
     response_data = {
         "audited_summary": {
             "win_rate_pct": win_rate,
             "total_verified_signals": total_count,
             "avg_risk_reward": avg_rr,
-            "avg_hold_duration": "4.8 Hours",
-            "profit_factor": 2.41,
+            "avg_hold_duration": avg_hold,
+            "profit_factor": profit_factor,
             "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE tick verification."
         },
         "ledger": ledger_items

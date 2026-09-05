@@ -419,6 +419,12 @@ Output ONLY valid JSON matching this exact structure:
     "protective_stop_loss": "₹968.00",
     "risk_reward_ratio": "1:2.3"
   }},
+  "factor_breakdown": {{
+    "technicals": 85,
+    "flow": 72,
+    "forensics": 80,
+    "catalysts": 90
+  }},
   "holding_guidance": "Recommended holding / trailing stop guidance for user's Demat position.",
   "growth_outlook_summary": "12-month expansion summary."
 }}
@@ -441,8 +447,8 @@ Output ONLY valid JSON matching this exact structure:
                         parsed["factor_breakdown"] = {
                             "technicals": technicals.get("technical_score", 65),
                             "flow": flow_data.get("flow_score", 60),
-                            "forensics": forensics.get("forensic_score", 60),
-                            "catalysts": 75
+                            "forensics": forensics.get("forensic_score", 70),
+                            "catalysts": min(95, max(40, parsed.get("confluence_score", 75)))
                         }
                     logger.info(f"Successfully evaluated {symbol} using Google GenAI SDK '{model_name}'.")
                     return parsed
@@ -460,6 +466,13 @@ Output ONLY valid JSON matching this exact structure:
                     generation_config={"response_mime_type": "application/json"}
                 )
                 parsed = json.loads(response.text)
+                if "factor_breakdown" not in parsed:
+                    parsed["factor_breakdown"] = {
+                        "technicals": technicals.get("technical_score", 65),
+                        "flow": flow_data.get("flow_score", 60),
+                        "forensics": forensics.get("forensic_score", 70),
+                        "catalysts": min(95, max(40, parsed.get("confluence_score", 75)))
+                    }
                 return parsed
             except Exception as leg_err:
                 logger.warning(f"Legacy model fallback failed for {symbol}: {leg_err}")
@@ -1086,12 +1099,12 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         "vwap": technicals.get("vwap"),
                         "delivery_pct": flow_data.get("delivery_pct"),
                         "vsa_regime": flow_data.get("vsa_regime"),
-                        "factor_breakdown": analysis.get("factor_breakdown", {
-                            "technicals": technicals.get("technical_score", 50),
-                            "flow": flow_data.get("flow_score", 50),
-                            "forensics": forensics.get("forensic_score", 60),
-                            "catalysts": 50
-                        })
+                        "factor_breakdown": analysis.get("factor_breakdown") or {
+                            "technicals": technicals.get("technical_score", 65),
+                            "flow": flow_data.get("flow_score", 60),
+                            "forensics": forensics.get("forensic_score", 75),
+                            "catalysts": min(95, max(40, confluence_score))
+                        }
                     },
                     holding_guidance=holding_guidance
                 )
@@ -1126,12 +1139,12 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     "financials": financials,
                     "macro_data": macro_data,
                     "demat_position": demat_pos,
-                    "factor_breakdown": analysis.get("factor_breakdown", {
-                        "technicals": technicals.get("technical_score", 50),
-                        "flow": flow_data.get("flow_score", 50),
-                        "forensics": forensics.get("forensic_score", 60),
-                        "catalysts": 50
-                    })
+                    "factor_breakdown": analysis.get("factor_breakdown") or {
+                        "technicals": technicals.get("technical_score", 65),
+                        "flow": flow_data.get("flow_score", 60),
+                        "forensics": forensics.get("forensic_score", 75),
+                        "catalysts": min(95, max(40, confluence_score))
+                    }
                 },
                 "sent_via_fcm": fcm_sent,
                 "sent_via_telegram": telegram_sent,

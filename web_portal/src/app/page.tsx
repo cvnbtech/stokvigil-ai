@@ -858,7 +858,7 @@ export default function App() {
               };
             }
 
-            const bias = rawSnap.action_bias || (a.impact_score >= 80 ? "STRONG BUY" : "BUY");
+            const bias = rawSnap.action_bias || "HOLD_NEUTRAL";
             let tPrice = rawSnap.tactical_levels?.target_1;
             let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
 
@@ -867,32 +867,46 @@ export default function App() {
                                (sLoss === "₹100.00" || sLoss === "100.0" || sLoss === "100");
 
             if (isDummy100 || !tPrice) {
-              tPrice = livePrice > 0 ? `₹${(livePrice * 1.08).toFixed(0)}` : "₹0";
+              tPrice = "-";
             }
             if (isDummy100 || !sLoss) {
-              sLoss = livePrice > 0 ? `₹${(livePrice * 0.95).toFixed(0)}` : "₹0";
+              sLoss = "-";
             }
 
             const deliveryVal = flowData.delivery_pct != null ? `${flowData.delivery_pct}%` : (rawSnap.delivery_pct != null ? `${rawSnap.delivery_pct}%` : "-");
-            const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "50.0");
+            const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "-");
             const vwapVal = technicals.vwap && technicals.vwap > 0 ? `₹${technicals.vwap}` : (rawSnap.vwap && rawSnap.vwap > 0 ? `₹${rawSnap.vwap}` : "-");
-            const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias || "CASH").replace(/_/g, ' ');
+            const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias)
+              ? String(flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias).replace(/_/g, ' ')
+              : "-";
             const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
-            const vixVal = macroData.india_vix || rawSnap.india_vix;
+            const vixVal = macroData.india_vix || rawSnap.india_vix || null;
 
             let sigType = "buy";
             if (bias.includes("SELL")) sigType = "sell";
             else if (bias.includes("TRAILING")) sigType = "med";
-            else if (a.impact_score >= 80) sigType = "strong_buy";
+            else if ((a.impact_score || 0) >= 80) sigType = "strong_buy";
+
+            // Only extract factors if factor_breakdown was actually computed by backend
+            const hasRealFactors = rawSnap.factor_breakdown &&
+              typeof rawSnap.factor_breakdown === 'object' &&
+              rawSnap.factor_breakdown.technicals != null;
+
+            const resolvedFactors = hasRealFactors ? {
+              technicals: Number(rawSnap.factor_breakdown.technicals),
+              flow: Number(rawSnap.factor_breakdown.flow),
+              forensics: Number(rawSnap.factor_breakdown.forensics),
+              catalysts: Number(rawSnap.factor_breakdown.catalysts)
+            } : null;
 
             return {
               id: a.id,
               symbol: a.symbol,
-              impact: a.impact_score || 80,
-              impactColor: a.impact_score >= 80 ? "emerald" : "amber",
+              impact: a.impact_score != null ? a.impact_score : (a.confluence_score != null ? a.confluence_score : "-"),
+              impactColor: (a.impact_score || 0) >= 80 ? "emerald" : "amber",
               catalyst: a.catalyst_type || "CATALYST",
               category: a.catalyst_type?.toLowerCase() || "high",
-              signal: bias.replace("_", " "),
+              signal: bias.replace(/_/g, " "),
               signalType: sigType,
               targetPrice: tPrice,
               stopLoss: sLoss,
@@ -907,14 +921,9 @@ export default function App() {
               vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
               vix: vixVal,
               dematPosition: dematSanitized,
-              factors: rawSnap.factor_breakdown || {
-                technicals: Math.min(100, Math.round(technicals.technical_score || (a.impact_score * 0.9))),
-                flow: Math.min(100, Math.round(flowData.flow_score || (a.impact_score * 0.85))),
-                forensics: Math.min(100, Math.round(rawSnap.forensics?.forensic_score || 75)),
-                catalysts: Math.min(100, Math.round(a.impact_score || 80))
-              },
+              factors: resolvedFactors,
               entryRange: rawSnap.tactical_levels?.entry_range || "-",
-              riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "1:2.5",
+              riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "-",
               time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
           }));
@@ -1873,7 +1882,7 @@ export default function App() {
                 <div style={{ fontSize: 18, fontWeight: 900, color: C.white, marginTop: 2 }}>{user?.name || "Investor"}</div>
               </div>
 
-              {/* NSE FII / DII Institutional Flow Bar */}
+              {/* Institutional FII / DII Flow Bar */}
               {fiiDiiFlows && (
                 <div style={{
                   background: "#080B16",
@@ -1888,7 +1897,7 @@ export default function App() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, color: C.white }}>
                       <span>🏛️</span>
-                      <span>NSE FII / DII Net Flow</span>
+                      <span>Institutional FII / DII Net Flow</span>
                       <span style={{ fontSize: 10, color: C.gray2 }}>({fiiDiiFlows.date})</span>
                     </div>
                     <div style={{

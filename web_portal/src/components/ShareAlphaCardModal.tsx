@@ -28,14 +28,9 @@ export default function ShareAlphaCardModal({ alert, onClose }: ShareAlphaCardMo
   const [copied, setCopied] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const factors = alert.factors || {
-    technicals: Math.min(100, Math.round(alert.confluenceScore * 0.95)),
-    flow: Math.min(100, Math.round(alert.confluenceScore * 0.88)),
-    forensics: 80,
-    catalysts: alert.confluenceScore
-  };
+  const factors = alert.factors || null;
 
-  const shareText = `⚡ STOKVIGIL AI ALPHA SIGNAL ⚡\n\n🎯 Symbol: #${alert.symbol} (NSE)\n📈 Confluence Score: ${alert.confluenceScore}/100\n🔥 Catalyst: ${alert.catalyst}\n\n🎯 Target: ${alert.targetPrice}\n🛡️ Stop Loss: ${alert.stopLoss}\n⚖️ R:R Ratio: ${alert.riskReward || "1:2.5"}\n\nKey Insights:\n${alert.reasons.slice(0, 2).map(r => `• ${r}`).join("\n")}\n\nAutomated surveillance via StokVigil AI 🛡️`;
+  const shareText = `⚡ STOKVIGIL AI ALPHA SIGNAL ⚡\n\n🎯 Symbol: #${alert.symbol} (NSE)\n📈 Confluence Score: ${alert.confluenceScore}/100\n🔥 Catalyst: ${alert.catalyst}\n\n🎯 Target: ${alert.targetPrice || "-"}\n🛡️ Stop Loss: ${alert.stopLoss || "-"}\n⚖️ R:R Ratio: ${alert.riskReward || "-"}\n\nKey Insights:\n${alert.reasons.slice(0, 2).map(r => `• ${r}`).join("\n")}\n\nAutomated surveillance via StokVigil AI 🛡️`;
 
   const handleCopyText = async () => {
     try {
@@ -148,36 +143,38 @@ export default function ShareAlphaCardModal({ alert, onClose }: ShareAlphaCardMo
       ctx.fillText("RISK:REWARD", 750, 475);
       ctx.fillStyle = "#06b6d4";
       ctx.font = "900 36px Inter, system-ui, sans-serif";
-      ctx.fillText(alert.riskReward || "1:2.5", 750, 525);
+      ctx.fillText(alert.riskReward || "-", 750, 525);
 
-      // 4 Pillars Box
-      ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
-      ctx.fillRect(70, 600, 940, 180);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
-      ctx.strokeRect(70, 600, 940, 180);
+      // 4 Pillars Box (Rendered only when real factors exist)
+      if (factors) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
+        ctx.fillRect(70, 600, 940, 180);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+        ctx.strokeRect(70, 600, 940, 180);
 
-      ctx.fillStyle = "#cbd5e1";
-      ctx.font = "bold 22px Inter, system-ui, sans-serif";
-      ctx.fillText("INSTITUTIONAL 4-PILLAR CONFLUENCE BREAKDOWN", 100, 645);
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "bold 22px Inter, system-ui, sans-serif";
+        ctx.fillText("INSTITUTIONAL 4-PILLAR CONFLUENCE BREAKDOWN", 100, 645);
 
-      const pColWidth = 210;
-      const pillars = [
-        { name: "Technicals", val: factors.technicals, col: "#06b6d4" },
-        { name: "Smart Flow", val: factors.flow, col: "#10b981" },
-        { name: "Forensics", val: factors.forensics, col: "#3b82f6" },
-        { name: "Catalyst", val: factors.catalysts, col: "#f59e0b" },
-      ];
+        const pColWidth = 210;
+        const pillars = [
+          { name: "Technicals", val: factors.technicals, col: "#06b6d4" },
+          { name: "Smart Flow", val: factors.flow, col: "#10b981" },
+          { name: "Forensics", val: factors.forensics, col: "#3b82f6" },
+          { name: "Catalyst", val: factors.catalysts, col: "#f59e0b" },
+        ];
 
-      pillars.forEach((p, idx) => {
-        const x = 100 + (idx * pColWidth);
-        ctx.fillStyle = "#94a3b8";
-        ctx.font = "600 18px Inter, system-ui, sans-serif";
-        ctx.fillText(p.name, x, 695);
+        pillars.forEach((p, idx) => {
+          const x = 100 + (idx * pColWidth);
+          ctx.fillStyle = "#94a3b8";
+          ctx.font = "600 18px Inter, system-ui, sans-serif";
+          ctx.fillText(p.name, x, 695);
 
-        ctx.fillStyle = p.col;
-        ctx.font = "bold 32px Inter, system-ui, sans-serif";
-        ctx.fillText(`${p.val}/100`, x, 740);
-      });
+          ctx.fillStyle = p.col;
+          ctx.font = "bold 32px Inter, system-ui, sans-serif";
+          ctx.fillText(p.val != null ? `${p.val}/100` : "-", x, 740);
+        });
+      }
 
       // Key Evidence Bullet Points
       ctx.fillStyle = "#e2e8f0";
@@ -317,14 +314,16 @@ export default function ShareAlphaCardModal({ alert, onClose }: ShareAlphaCardMo
             </div>
             <div>
               <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700 }}>R:R RATIO</div>
-              <div style={{ fontSize: 13, fontWeight: 900, color: "#06b6d4" }}>{alert.riskReward || "1:2.5"}</div>
+              <div style={{ fontSize: 13, fontWeight: 900, color: "#06b6d4" }}>{alert.riskReward || "-"}</div>
             </div>
           </div>
 
           {/* Radar Visualization */}
-          <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
-            <ConfluenceRadar factors={factors} size={150} showLabels={true} />
-          </div>
+          {factors && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
+              <ConfluenceRadar factors={factors} size={150} showLabels={true} />
+            </div>
+          )}
 
           <div style={{ fontSize: 9.5, color: "#64748b", textAlign: "center" }}>
             Audited by StokVigil AI • Verified Institutional Signal

@@ -1342,10 +1342,10 @@ class ConfluenceRadarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = (factors['technicals'] ?? 50).clamp(15, 100);
-    final fl = (factors['flow'] ?? 50).clamp(15, 100);
-    final fo = (factors['forensics'] ?? 50).clamp(15, 100);
-    final c = (factors['catalysts'] ?? 50).clamp(15, 100);
+    final t = (factors['technicals'] ?? 0).clamp(0, 100);
+    final fl = (factors['flow'] ?? 0).clamp(0, 100);
+    final fo = (factors['forensics'] ?? 0).clamp(0, 100);
+    final c = (factors['catalysts'] ?? 0).clamp(0, 100);
 
     return Column(
       mainAxisSize: MainAxisSize.min,

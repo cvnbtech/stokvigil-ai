@@ -142,25 +142,25 @@ export default function TransparencyPage() {
           {[
             {
               title: "TARGET 1 HIT RATE",
-              value: summary ? `${summary.win_rate_pct}%` : "74.5%",
+              value: summary && summary.total_verified_signals > 0 ? `${summary.win_rate_pct}%` : (loading ? "..." : "--"),
               sub: "Closed signals hitting Target 1 before Stop Loss",
               color: "#10b981"
             },
             {
               title: "VERIFIED SIGNALS",
-              value: summary ? `${summary.total_verified_signals}` : "142",
+              value: summary ? `${summary.total_verified_signals}` : (loading ? "..." : "--"),
               sub: "Audited across NIFTY 50 & F&O Watchlists",
               color: "#06b6d4"
             },
             {
               title: "AVG RISK:REWARD",
-              value: summary ? summary.avg_risk_reward : "1:2.7",
+              value: summary && summary.total_verified_signals > 0 && summary.avg_risk_reward !== "-" ? summary.avg_risk_reward : (loading ? "..." : "--"),
               sub: "Asymmetric Volatility Ratio per alert",
               color: "#38bdf8"
             },
             {
               title: "PROFIT FACTOR",
-              value: summary ? `${summary.profit_factor}` : "2.41",
+              value: summary && summary.total_verified_signals > 0 && summary.profit_factor > 0 ? `${summary.profit_factor}` : (loading ? "..." : "--"),
               sub: "Gross profit divided by gross loss",
               color: "#a855f7"
             }

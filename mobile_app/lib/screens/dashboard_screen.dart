@@ -201,7 +201,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 16),
 
-              // NSE FII / DII Institutional Flow Bar
+              // Institutional FII / DII Flow Bar
               if (_fiiDiiFlows != null) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -219,7 +219,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             children: [
                               const Text("🏛️ ", style: TextStyle(fontSize: 12)),
                               const Text(
-                                "NSE FII / DII Flows",
+                                "Institutional FII / DII Flows",
                                 style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
                               ),
                               const SizedBox(width: 4),
