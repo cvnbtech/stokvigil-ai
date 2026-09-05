@@ -141,5 +141,11 @@ async def run_all_tests():
     print("SUCCESS: ALL 7 INSTITUTIONAL ENGINE MODULES PASSED!")
     print("==================================================")
 
+import unittest
+
+class TestInstitutionalEngine(unittest.IsolatedAsyncioTestCase):
+    async def test_institutional_engine_suite(self):
+        await run_all_tests()
+
 if __name__ == "__main__":
-    asyncio.run(run_all_tests())
+    unittest.main()

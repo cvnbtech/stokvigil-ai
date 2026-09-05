@@ -790,16 +790,21 @@ def get_user_alerts(
 @app.post("/api/cron/multi-user-scan")
 async def run_multi_user_scan(
     background_tasks: BackgroundTasks,
-    x_cron_secret: Optional[str] = Header(None),
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
     db: Client = Depends(get_supabase)
 ):
     """
     5-Minute Cron Endpoint triggered during Indian market hours.
-    Shielded by X-Cron-Secret header token to prevent unauthorized triggers and quota drain.
+    Shielded by exact X-Cron-Secret header token.
     """
-    if not x_cron_secret or x_cron_secret != settings.CRON_SECRET_KEY:
+    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
+    expected = (settings.CRON_SECRET_KEY or "").strip().strip('"').strip("'")
+    if not incoming or not expected or incoming != expected:
         logger.warning("Unauthorized multi-user cron scan attempt blocked.")
-        raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header.")
+        raise HTTPException(
+            status_code=403, 
+            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
+        )
 
     today_str = str(date.today())
     
@@ -843,16 +848,21 @@ def get_market_cache_stats():
 
 @app.post("/api/cron/morning-token-reminder")
 async def run_morning_token_reminder(
-    x_cron_secret: Optional[str] = Header(None),
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
     db: Client = Depends(get_supabase)
 ):
     """
     Automated 08:50 AM IST Morning Push Notification.
     Prompts users whose ICICI session token is expired to authenticate 25 minutes before market open.
     """
-    if not x_cron_secret or x_cron_secret != settings.CRON_SECRET_KEY:
+    incoming = (x_cron_secret or "").strip().strip('"').strip("'")
+    expected = (settings.CRON_SECRET_KEY or "").strip().strip('"').strip("'")
+    if not incoming or not expected or incoming != expected:
         logger.warning("Unauthorized morning reminder cron attempt blocked.")
-        raise HTTPException(status_code=403, detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header.")
+        raise HTTPException(
+            status_code=403, 
+            detail="Unauthorized cron trigger: Invalid or missing X-Cron-Secret header."
+        )
 
     today_str = str(date.today())
     creds_res = db.table("user_credentials").select("user_id, token_date").execute()

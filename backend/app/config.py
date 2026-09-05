@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     TELEGRAM_WEBHOOK_SECRET: str = ""
     
     # Cron Security Token
-    CRON_SECRET_KEY: str = ""
+    CRON_SECRET_KEY: str = "stokvigil_cron_default_secret_2026"
     
     # Raw ALLOWED_ORIGINS string or list from env (str first to prevent EnvSettingsSource JSON decode error)
     ALLOWED_ORIGINS: Union[str, List[str]] = ""

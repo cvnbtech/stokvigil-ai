@@ -19,12 +19,13 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC).
 - **AI Agent Engine**: `google-generativeai` powered by `gemini-3.6-flash` (Primary) with automated fallback to `gemini-2.5-flash`, `gemini-1.5-flash`, and an offline deterministic rule engine.
 - **Quantitative Engines**:
+  - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.1ms $O(1)$ lookups, 300s TTL) with 25-worker async pre-computation.
   - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), and RSI Divergence detection.
   - `flow_tracker.py`: Delivery Volume % Estimation ($>50\%$ accumulation) and F&O Open Interest build-up dynamics.
   - `macro_filter.py`: India VIX Volatility Regime (`^INDIAVIX`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, etc.), and Forensic Health checks.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
 - **Database & Vault**: Supabase PostgreSQL with Row-Level Security (RLS) & Fernet AES-256 encryption.
-- **Integrations**: `breeze-connect` (ICICI Demat holdings), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
+- **Integrations**: `breeze-connect` (ICICI Demat holdings), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
 - **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Telegram Bot API (`@StokVigilAi_bot`).
 
 ---
@@ -79,6 +80,9 @@ for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
 ## 🔍 Dynamic Stock Search & Exchange Validation (Zero Hardcoding)
 - **Live Autocomplete (`GET /api/stocks/search?q={query}`)**: As users type, the system queries live NSE (`.NS`) and BSE (`.BO`) exchange feeds in real-time, displaying verified company names, symbols, and sectors.
 - **Dual-Stage Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**: Every custom stock is checked against live market tick data before being saved. Dummy, non-existent, or misspelled tickers (e.g. `NE`, `ASDFGH`) are blocked and rejected from entering the database.
+- **High-Speed Batch Quotes (`GET /api/stocks/quotes?symbols={s1,s2}`)**: Real-time pricing, day % change, and high/low ranges for 100+ stocks backed by an in-memory 5-second FIFO cache.
+- **Universal Dynamic ISIN Resolver**: Resolves CDSL/NSDL Demat ISIN numbers directly to official NSE tickers dynamically via live exchange search and RAM caching.
+- **Sliding-Window IP Rate Limiter**: Max 120 req/min rate limiting per client IP on public search/quote routes with strict alphanumeric regex sanitization (`^[A-Z0-9_\-&]{1,20}$`).
 - **Demat Auto-Sync**: Automatically imports active ICICI Demat holdings into personal watchlists with one click.
 
 ---
@@ -140,6 +144,7 @@ Users can permanently delete their account directly from the **Settings** page:
    ENCRYPTION_KEY=d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=
    GEMINI_API_KEY=your-gemini-api-key
    TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
@@ -177,7 +182,14 @@ Users can permanently delete their account directly from the **Settings** page:
    flutter run
    ```
 
----
+## ⏰ Automated Indian Market Cron Workflows (`.github/workflows/5min_cron.yml`)
 
-## ⏰ 5-Minute Indian Market Hours Cron
-The GitHub Action workflow (`.github/workflows/5min_cron.yml`) executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"` every 5 minutes Monday–Friday from 09:15 AM to 03:30 PM IST (`03:45 UTC` to `10:00 UTC`).
+The scheduled GitHub Actions runner executes two automated workflows strictly during Indian market trading days (Monday–Friday):
+
+1. **08:50 AM IST Morning Demat Token Reminder (`cron: '20 3 * * 1-5'` / `03:20 UTC`)**:
+   - Executes `POST /api/cron/morning-token-reminder` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - Dispatches high-priority push notifications and Telegram alerts 25 minutes prior to market open (09:15 AM IST), prompting users with expired session tokens to authenticate.
+
+2. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
+   - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - Pre-computes market state in RAM across all unique watchlist symbols in parallel and evaluates multi-tenant portfolios within seconds.

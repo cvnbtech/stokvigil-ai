@@ -15,16 +15,20 @@ jobs:
       - name: Trigger StokVigil AI Multi-User Portfolio Scan
         run: |
           echo "🚀 Triggering Bank-Grade Shielded 5-Minute Market Intelligence Scan..."
-          RESPONSE=$(curl -s -X POST "${{ secrets.STOKVIGIL_BACKEND_URL }}/api/cron/multi-user-scan" \
+          BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
+          CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
+          RESPONSE=$(curl -s -X POST "$CLEAN_URL/api/cron/multi-user-scan" \
             -H "Content-Type: application/json" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY || 'stokvigil_cron_default_secret_2026' }}")
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}")
           echo "Scan Response: $RESPONSE"
 
       - name: Trigger Morning Demat Token Reminder
         if: github.event.schedule == '20 3 * * 1-5' || github.event_name == 'workflow_dispatch'
         run: |
           echo "🔔 Triggering 08:50 AM Morning Demat Token Refresh Reminder..."
-          REMINDER_RES=$(curl -s -X POST "${{ secrets.STOKVIGIL_BACKEND_URL }}/api/cron/morning-token-reminder" \
+          BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
+          CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
+          REMINDER_RES=$(curl -s -X POST "$CLEAN_URL/api/cron/morning-token-reminder" \
             -H "Content-Type: application/json" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY || 'stokvigil_cron_default_secret_2026' }}")
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}")
           echo "Reminder Response: $REMINDER_RES"

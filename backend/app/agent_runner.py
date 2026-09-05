@@ -402,7 +402,7 @@ Output ONLY valid JSON matching this exact structure:
   "action_bias": "BUY_WATCH | SELL_WATCH | TRAILING_SL_ALERT | HOLD_NEUTRAL",
   "confluence_score": 85,
   "alert_title": "Descriptive concise headline",
-  "catalyst_category": "TECHNICAL_BREAKOUT | BLOCK_DEAL | EARNINGS_SURPRISE | DEBT_REDUCTION | VOLUME_SURGE | TRAILING_STOP_TRIGGER",
+  "catalyst_category": "TECHNICAL_BREAKOUT | BLOCK_DEAL | EARNINGS_BEAT | DEBT_CHANGE | VOLUME_SURGE | TRAILING_STOP_TRIGGER | PRICE_BREAKOUT | NEWS_CATALYST",
   "confluence_drivers": [
     "Factual driver 1",
     "Factual driver 2",
@@ -425,7 +425,7 @@ Output ONLY valid JSON matching this exact structure:
         try:
             from google import genai
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash']:
+            for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
                 try:
                     response = client.models.generate_content(
                         model=model_name,
@@ -442,7 +442,7 @@ Output ONLY valid JSON matching this exact structure:
             try:
                 import google.generativeai as legacy_genai
                 legacy_genai.configure(api_key=settings.GEMINI_API_KEY)
-                for model_name in ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
+                for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
                     try:
                         model = legacy_genai.GenerativeModel(model_name)
                         response = model.generate_content(
@@ -481,7 +481,7 @@ Output ONLY valid JSON matching this exact structure:
             break
         elif "PROFIT" in title_upper or "REVENUE" in title_upper or "Q1" in title_upper or "Q2" in title_upper or "Q3" in title_upper or "Q4" in title_upper:
             news_score += 30
-            catalyst_category = "EARNINGS_SURPRISE"
+            catalyst_category = "EARNINGS_BEAT"
             alert_title = f"{symbol}: Quarterly Earnings & Financial Catalyst"
             confluence_drivers.append(f"Financial Disclosure: {item['title']}")
             break
@@ -804,12 +804,24 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 inline_buttons = build_telegram_inline_keyboard(symbol)
                 telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg, reply_markup=inline_buttons)
 
+            # Normalize and validate catalyst against PostgreSQL catalyst_type_enum
+            CATALYST_SYNONYM_MAP = {
+                "EARNINGS_SURPRISE": "EARNINGS_BEAT",
+                "DEBT_REDUCTION": "DEBT_CHANGE",
+            }
+            normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
+            VALID_CATALYST_TYPES = {
+                "BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", 
+                "NEWS_CATALYST", "VOLUME_SURGE", "TECHNICAL_BREAKOUT", "TRAILING_STOP_TRIGGER"
+            }
+            resolved_catalyst = normalized_catalyst if normalized_catalyst in VALID_CATALYST_TYPES else "NEWS_CATALYST"
+
             # Persist Alert in Supabase Ledger
             alert_record = {
                 "user_id": user_id,
                 "symbol": symbol,
                 "alert_title": alert_title,
-                "catalyst_type": catalyst_type if catalyst_type in ["BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", "NEWS_CATALYST"] else "NEWS_CATALYST",
+                "catalyst_type": resolved_catalyst,
                 "impact_score": confluence_score,
                 "factual_reasons": confluence_drivers,
                 "metrics_snapshot": {

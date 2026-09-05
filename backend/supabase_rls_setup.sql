@@ -13,8 +13,15 @@ BEGIN
             'EARNINGS_BEAT',
             'DEBT_CHANGE',
             'PRICE_BREAKOUT',
-            'NEWS_CATALYST'
+            'NEWS_CATALYST',
+            'VOLUME_SURGE',
+            'TECHNICAL_BREAKOUT',
+            'TRAILING_STOP_TRIGGER'
         );
+    ELSE
+        ALTER TYPE catalyst_type_enum ADD VALUE IF NOT EXISTS 'VOLUME_SURGE';
+        ALTER TYPE catalyst_type_enum ADD VALUE IF NOT EXISTS 'TECHNICAL_BREAKOUT';
+        ALTER TYPE catalyst_type_enum ADD VALUE IF NOT EXISTS 'TRAILING_STOP_TRIGGER';
     END IF;
 END$$;
 
