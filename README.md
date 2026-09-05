@@ -28,7 +28,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **Charts & Viral Engine**:
   - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, and ATR-based Chandelier Trailing Stop.
   - **Off-screen HTML5 2D Canvas Engine**: Instant client-side generation of branded 1080×1080 viral "Alpha Cards" with 1-tap WhatsApp and X sharing at zero backend cost.
-- **Database & Vault**: Supabase PostgreSQL with Row-Level Security (RLS) & Fernet AES-256 encryption.
+- **Database & Connection Pooling**: Supabase PostgreSQL with Row-Level Security (RLS) + **Supabase PgBouncer (Port 6543)** connection pooling via `asyncpg` (`statement_cache_size=0`, 2–10 connection multiplexing) with dual-driver zero-downtime REST fallback and Fernet AES-256 vault encryption.
 - **Integrations**: `breeze-connect` (ICICI Demat holdings across NSE and BSE), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
 - **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with live TradingView interactive charts, ICICI Direct deep links, and NSE/BSE official exchange live quote buttons.
 
@@ -264,7 +264,7 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (51 automated unit tests across 7 suites):
+3. Run test suite (54 automated unit tests across 7 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="development"; .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
    ```

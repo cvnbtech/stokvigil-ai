@@ -274,6 +274,24 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 
 ---
 
+## 3.3 Supabase PgBouncer (Port 6543) Connection Pooling Architecture
+To sustain 100,000+ client requests without database connection exhaustion, database access is multiplexed via Supabase PgBouncer / Supavisor on **Port 6543** in **Transaction Pooling Mode**:
+
+1. **Connection Multiplexing (`backend/app/db_pool.py`)**:
+   - Built on `asyncpg` with `statement_cache_size=0` (mandatory for transaction poolers to eliminate prepared statement collisions across pooled connections).
+   - Configured with `min_size=2`, `max_size=10`, `command_timeout=15.0`, and connection credential masking in logs.
+2. **Dual-Driver Execution & Zero-Downtime Fallback**:
+   - High-throughput endpoints attempt execution through PgBouncer first.
+   - If `DATABASE_URL` is empty, unconfigured, or on query timeout, calls seamlessly fall back to the standard `supabase.Client` REST API with zero service interruption.
+   - Integrated routes: `GET /api/market/accuracy-ledger`, `GET /api/user/alerts`, `GET /api/user/accuracy-stats`, `GET /api/user/profile`, and `POST /api/cron/multi-user-scan`.
+3. **100% Data Contract Parity & Normalization**:
+   - Automatic type serialization (`_normalize_row`) converts `uuid.UUID` to `str`, `datetime` to ISO-8601 strings, `Decimal` to `float`, and pre-parses JSON strings into Python dictionaries, matching PostgREST schema identically.
+   - Input normalization (`_normalize_param`) converts string UUID arguments into `uuid.UUID` objects for native B-tree index matching without SQL cast errors.
+4. **Health Telemetry (`GET /api/health/db`)**:
+   - Live health check reporting pool readiness, driver (`pgbouncer-6543` vs `supabase-rest`), pool sizing (`min_size`, `max_size`, `idle_size`), and sub-millisecond `SELECT 1` ping.
+
+---
+
 ## 4. Multi-Channel Notification Architecture
 
 ### 4.1 Firebase Cloud Messaging (FCM Push) Pipeline
@@ -336,7 +354,7 @@ G:\stokvigil-ai\
 │   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
 │   │   ├── test_phase1.py           <-- 4 Phase 1 Tests (War Room Briefing, Confluence Radar, Alpha Cards)
 │   │   ├── test_phase2.py           <-- 5 Phase 2 Tests (Accuracy Ledger, FII/DII Flows, Candle Overlays)
-│   │   └── test_db_pool.py          <-- 5 Connection Pool & PgBouncer Port 6543 Unit Tests
+│   │   └── test_db_pool.py          <-- 8 Connection Pool, PgBouncer Port 6543 & Data Normalization Unit Tests
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
