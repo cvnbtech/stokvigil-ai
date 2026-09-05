@@ -1330,7 +1330,7 @@ async def get_user_accuracy_stats(
     verify_user_access(user_id, auth_user_id)
     # Check PgBouncer connection pool first
     pooled_alerts = await fetch_all(
-        "SELECT id, alert_title, catalyst_type, impact_score FROM stok_alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        "SELECT * FROM stok_alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
         user_id
     )
     if pooled_alerts is not None:
