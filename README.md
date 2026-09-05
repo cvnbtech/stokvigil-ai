@@ -22,8 +22,12 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
   - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation.
   - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
   - `flow_tracker.py`: **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery), plus F&O Open Interest build-up dynamics.
-  - `macro_filter.py`: India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
+  - `fii_dii_tracker.py`: **Institutional Net Flow Tracker** aggregating daily official NSE FII & DII cash market flows with 30-minute in-memory caching, multi-tier fallback (Live NSE $\rightarrow$ Supabase $\rightarrow$ In-memory proxy), and automated institutional sentiment classification (`BULLISH_INFLOW`, `STRONG_ACCUMULATION`, `HEAVY_DISTRIBUTION`, etc.).
+  - `macro_filter.py`: Pre-Market War Room intelligence, India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
+- **Charts & Viral Engine**:
+  - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, and ATR-based Chandelier Trailing Stop.
+  - **Off-screen HTML5 2D Canvas Engine**: Instant client-side generation of branded 1080×1080 viral "Alpha Cards" with 1-tap WhatsApp and X sharing at zero backend cost.
 - **Database & Vault**: Supabase PostgreSQL with Row-Level Security (RLS) & Fernet AES-256 encryption.
 - **Integrations**: `breeze-connect` (ICICI Demat holdings across NSE and BSE), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
 - **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with live TradingView interactive charts, ICICI Direct deep links, and NSE/BSE official exchange live quote buttons.
@@ -132,7 +136,51 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 - **⚡ Wyckoff VSA Badge**: Explicit highlighting of `SMART_MONEY_ABSORPTION` vs `OPERATOR_CHURN_TRAP` with contextual commentary.
 - **💼 ICICI Demat Position Snapshot**: Displays sanitized average buy price, quantity, current market value, and real-time P&L %.
 
+
 ---
+
+## 🌟 Institutional Standout Features (Phase 1 & Phase 2)
+
+### 1. 🌅 09:00 AM IST Pre-Market War Room Briefing
+- **Automated Pre-Market Reconnaissance**: Dispatched 15 minutes before the cash market open (09:00 AM IST) via GitHub Actions cron (`30 3 * * 1-5`) and protected `POST /api/cron/pre-market-briefing` endpoint.
+- **Synthesized Global & Macro Intelligence**:
+  - Domestic benchmarks: NIFTY 50 and BSE SENSEX pre-market levels.
+  - Volatility regime: India VIX (^INDIAVIX) status and trade guardrails.
+  - Global cues: US (Dow Jones, Nasdaq) & Asian (Nikkei 225) overnight closes with net directional bias.
+  - Sectoral momentum: Automated pre-market tracking of leading/lagging sectors (NIFTY Bank, IT, Auto, etc.).
+  - Actionable tactical session guidance delivered via rich Telegram HTML format and high-priority FCM push.
+
+### 2. 🕸️ 4-Pillar Confluence Spider / Radar Chart
+- **Visual Factor Geometry**: Visualizes the four quantitative engines powering every alert:
+  - **Technical Momentum (30%)**: RSI, MACD, Intraday VWAP distance, ATR volatility.
+  - **Wyckoff Flow / VSA (25%)**: Institutional delivery % and F&O Open Interest build-up.
+  - **Forensic Health (25%)**: Debt-to-Equity, P/E multiples, and balance sheet safety.
+  - **Macro / News (20%)**: India VIX regime, sector synchronicity, and 24h market catalysts.
+- **Cross-Platform Vector Rendering**: Custom SVG polygon on Next.js web portal (`ConfluenceRadar.tsx`) and high-performance `CustomPainter` on Flutter mobile (`ConfluenceRadarChart`).
+
+### 3. 🎴 1-Tap Shareable "Alpha Cards"
+- **Viral Social Sharing**: Allows users to export branded, high-contrast trading cards with 1 tap.
+- **Off-Screen HTML5 2D Canvas Engine**: Dynamically renders 1080×1080 high-resolution PNGs entirely client-side, consuming 0 backend CPU.
+- **Instant Community Distribution**: Direct 1-tap sharing to WhatsApp groups and X (Twitter) with pre-formatted trade setups and quantitative confluence scores.
+
+### 4. 🛡️ Public Audited Accuracy Ledger (`/transparency`)
+- **Verifiable Non-Repudiation**: Dedicated public transparency portal at `/transparency` backed by `GET /api/market/accuracy-ledger`.
+- **Audited Metrics**: Displays verified Target 1 Hit Rate %, cumulative win/loss ratio, average risk-to-reward (e.g. 1:2.7), and real-time verifiable signal history.
+- **Zero PII Exposure**: Only public trade setups, timestamps, and outcome markers are published, strictly isolating all user IDs, demat portfolios, and order quantities.
+
+### 5. 🏦 NSE FII & DII Net Flow Tracker
+- **Institutional Market Pulse**: Daily official cash market net turnover tracking for Foreign Institutional Investors (FII) and Domestic Institutional Investors (DII).
+- **Sub-Millisecond 30-Minute Cache**: In-memory caching with multi-tier fallback (Live NSE API $\rightarrow$ Supabase `fii_dii_flows` table $\rightarrow$ Institutional proxy).
+- **Automated Sentiment Classification**: Categorizes institutional flows into clear regimes (`STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_SUPPORT_DEFENDING`).
+- **Visual Sentiment Bar**: Integrated into the header of the Web dashboard and Mobile app.
+
+### 6. 📈 In-App Candlestick Charts with Institutional Overlays
+- **Interactive Lightweight Charts v5**: Full TradingView candlestick charts integrated directly into the web application via `GET /api/stocks/candles`.
+- **Institutional Mathematical Overlays**:
+  - **Camarilla Equation Pivots**: Dynamic $H_4, H_3, L_3, L_4$ institutional order book breakout and liquidity floor levels.
+  - **Intraday Cumulative VWAP**: Real-time Volume-Weighted Average Price trend line.
+  - **Chandelier Trailing Stop**: ATR-based dynamic risk ratchet plotted on the chart.
+
 
 ## 👁️ Demat Portfolio Privacy Masking & Live Indicator
 - **Demat Portfolio Privacy Masking**: Total Portfolio Value, Returns, P&L %, Invested value, and Holdings are masked by default (`₹ • • • • • •` / `••••••`). An interactive **`👁️ Show / Hide`** toggle allows 1-tap unmasking on Mobile & Web.
@@ -189,6 +237,7 @@ Users can permanently delete their account directly from the **Settings** page:
 2. Open the SQL Editor and execute the migration scripts in order:
    - `supabase/migrations/20260809_init_stokvigil.sql`
    - `supabase/migrations/20260822_enhance_stokalerts.sql`
+   - `supabase/migrations/20260906_fii_dii_flows.sql`
 3. Copy your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 2. Backend Deployment (FastAPI on Cloud Run / Local)
@@ -211,9 +260,9 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (37 automated unit tests across 4 suites):
+3. Run test suite (46 automated unit tests across 6 suites):
    ```bash
-   .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="development"; .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
    ```
 4. Start backend server:
    ```bash
@@ -245,7 +294,7 @@ Users can permanently delete their account directly from the **Settings** page:
    npm install
    npm run dev
    ```
-2. Access the portal at `http://localhost:3000`.
+2. Access the portal at `http://localhost:3000` or view the public audit ledger at `http://localhost:3000/transparency`.
 
 ### 5. Running the Flutter Android App (`com.app.stokvigil`)
 1. Navigate to `mobile_app/`:
@@ -256,13 +305,17 @@ Users can permanently delete their account directly from the **Settings** page:
 
 ## ⏰ Automated Indian Market Cron Workflows (`.github/workflows/5min_cron.yml`)
 
-The scheduled GitHub Actions runner executes two automated workflows strictly during Indian market trading days (Monday–Friday):
+The scheduled GitHub Actions runner executes three automated workflows strictly during Indian market trading days (Monday–Friday):
 
 1. **08:50 AM IST Morning Demat Token Reminder (`cron: '20 3 * * 1-5'` / `03:20 UTC`)**:
    - Executes `POST /api/cron/morning-token-reminder` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - Dispatches high-priority push notifications and Telegram alerts 25 minutes prior to market open (09:15 AM IST), prompting users with expired session tokens to authenticate.
 
-2. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
+2. **09:00 AM IST Pre-Market War Room Briefing (`cron: '30 3 * * 1-5'` / `03:30 UTC`)**:
+   - Executes `POST /api/cron/pre-market-briefing` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - Aggregates GIFT Nifty, US/Asian markets, India VIX regime, FII/DII net flows, and sector momentum 15 minutes before cash market open. Dispatches rich HTML war room cards to Telegram and FCM push notifications.
+
+3. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - **Asynchronous Background Execution**: Dispatches scan asynchronously via FastAPI `BackgroundTasks` with a concurrency lock (`_scan_in_progress`), returning `200 OK` in ~50ms to completely eliminate Cloud Run 504 Gateway Timeouts.
    - Pre-computes market state in RAM across all unique watchlist symbols in parallel and evaluates multi-tenant portfolios within seconds.

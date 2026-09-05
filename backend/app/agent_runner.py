@@ -437,6 +437,13 @@ Output ONLY valid JSON matching this exact structure:
                         config={"response_mime_type": "application/json"}
                     )
                     parsed = json.loads(response.text)
+                    if "factor_breakdown" not in parsed:
+                        parsed["factor_breakdown"] = {
+                            "technicals": technicals.get("technical_score", 65),
+                            "flow": flow_data.get("flow_score", 60),
+                            "forensics": forensics.get("forensic_score", 60),
+                            "catalysts": 75
+                        }
                     logger.info(f"Successfully evaluated {symbol} using Google GenAI SDK '{model_name}'.")
                     return parsed
                 except Exception as model_err:
@@ -703,7 +710,13 @@ def compute_deterministic_confluence(
             "risk_reward_ratio": f"1:{rr_ratio}"
         },
         "holding_guidance": holding_guidance,
-        "growth_outlook_summary": f"Long term valuation: P/E {financials.get('pe_ratio', 'N/A')}, D/E {financials.get('debt_to_equity', 'N/A')}."
+        "growth_outlook_summary": f"Long term valuation: P/E {financials.get('pe_ratio', 'N/A')}, D/E {financials.get('debt_to_equity', 'N/A')}.",
+        "factor_breakdown": {
+            "technicals": tech_score,
+            "flow": flow_score,
+            "forensics": forensic_score,
+            "catalysts": min(95, news_score)
+        }
     }
 
 
@@ -1072,7 +1085,13 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         "rsi_5m": technicals.get("rsi_5m"),
                         "vwap": technicals.get("vwap"),
                         "delivery_pct": flow_data.get("delivery_pct"),
-                        "vsa_regime": flow_data.get("vsa_regime")
+                        "vsa_regime": flow_data.get("vsa_regime"),
+                        "factor_breakdown": analysis.get("factor_breakdown", {
+                            "technicals": technicals.get("technical_score", 50),
+                            "flow": flow_data.get("flow_score", 50),
+                            "forensics": forensics.get("forensic_score", 60),
+                            "catalysts": 50
+                        })
                     },
                     holding_guidance=holding_guidance
                 )
@@ -1106,7 +1125,13 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     "flow_data": flow_data,
                     "financials": financials,
                     "macro_data": macro_data,
-                    "demat_position": demat_pos
+                    "demat_position": demat_pos,
+                    "factor_breakdown": analysis.get("factor_breakdown", {
+                        "technicals": technicals.get("technical_score", 50),
+                        "flow": flow_data.get("flow_score", 50),
+                        "forensics": forensics.get("forensic_score", 60),
+                        "catalysts": 50
+                    })
                 },
                 "sent_via_fcm": fcm_sent,
                 "sent_via_telegram": telegram_sent,

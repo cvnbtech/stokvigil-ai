@@ -23,6 +23,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _totalPnl = 0.0;
   double _totalPnlPct = 0.0;
   List<PortfolioHolding> _holdings = [];
+  Map<String, dynamic>? _fiiDiiFlows;
 
   @override
   void initState() {
@@ -43,6 +44,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     // Auto-sync FCM device token in background
     FcmService().syncDeviceToken(user.id);
+
+    // Fetch FII/DII net flows in background
+    ApiService().fetchFiiDiiFlows().then((flows) {
+      if (mounted && flows != null) {
+        setState(() => _fiiDiiFlows = flows);
+      }
+    });
 
     setState(() => _isLoading = true);
     final data = await ApiService().fetchPortfolioSummary(user.id);
@@ -192,6 +200,112 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ],
               ),
               const SizedBox(height: 16),
+
+              // NSE FII / DII Institutional Flow Bar
+              if (_fiiDiiFlows != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF080B16),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: AppTheme.cardBorder),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Text("🏛️ ", style: TextStyle(fontSize: 12)),
+                              const Text(
+                                "NSE FII / DII Flows",
+                                style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                "(${_fiiDiiFlows!['date'] ?? ''})",
+                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 9.5),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (_fiiDiiFlows!['combined_net'] ?? 0) >= 0
+                                  ? AppTheme.primaryEmerald.withOpacity(0.15)
+                                  : AppTheme.dangerRose.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              (_fiiDiiFlows!['sentiment'] ?? 'BALANCED').toString().replaceAll('_', ' '),
+                              style: TextStyle(
+                                color: (_fiiDiiFlows!['combined_net'] ?? 0) >= 0 ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text("FII NET", style: TextStyle(color: AppTheme.textMuted, fontSize: 9, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "${(_fiiDiiFlows!['fii']?['net'] ?? 0) >= 0 ? '+' : ''}₹${((_fiiDiiFlows!['fii']?['net'] ?? 0) as num).toStringAsFixed(0)} Cr",
+                                  style: TextStyle(
+                                    color: (_fiiDiiFlows!['fii']?['net'] ?? 0) >= 0 ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text("DII NET", style: TextStyle(color: AppTheme.textMuted, fontSize: 9, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "${(_fiiDiiFlows!['dii']?['net'] ?? 0) >= 0 ? '+' : ''}₹${((_fiiDiiFlows!['dii']?['net'] ?? 0) as num).toStringAsFixed(0)} Cr",
+                                  style: TextStyle(
+                                    color: (_fiiDiiFlows!['dii']?['net'] ?? 0) >= 0 ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text("COMBINED", style: TextStyle(color: AppTheme.cyan, fontSize: 9, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  "${(_fiiDiiFlows!['combined_net'] ?? 0) >= 0 ? '+' : ''}₹${((_fiiDiiFlows!['combined_net'] ?? 0) as num).toStringAsFixed(0)} Cr",
+                                  style: TextStyle(
+                                    color: (_fiiDiiFlows!['combined_net'] ?? 0) >= 0 ? AppTheme.cyan : AppTheme.dangerRose,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
 
               // Hero Gradient Demat Portfolio Balance Card (Matches Screenshot Design)
               Container(

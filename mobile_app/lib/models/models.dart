@@ -92,6 +92,23 @@ class StokAlert {
   String? get stopLoss => tacticalLevels['protective_stop_loss'];
   String? get riskReward => tacticalLevels['risk_reward_ratio'];
   Map<String, dynamic>? get dematPosition => metricsSnapshot['demat_position'] != null ? Map<String, dynamic>.from(metricsSnapshot['demat_position']) : null;
+  Map<String, int> get factorBreakdown {
+    if (metricsSnapshot['factor_breakdown'] != null) {
+      final fb = Map<String, dynamic>.from(metricsSnapshot['factor_breakdown']);
+      return {
+        'technicals': ((fb['technicals'] ?? 50) as num).toInt(),
+        'flow': ((fb['flow'] ?? 50) as num).toInt(),
+        'forensics': ((fb['forensics'] ?? 50) as num).toInt(),
+        'catalysts': ((fb['catalysts'] ?? 50) as num).toInt(),
+      };
+    }
+    return {
+      'technicals': ((metricsSnapshot['technicals']?['technical_score'] ?? (impactScore * 0.9)) as num).toInt(),
+      'flow': ((metricsSnapshot['flow_data']?['flow_score'] ?? (impactScore * 0.85)) as num).toInt(),
+      'forensics': 80,
+      'catalysts': impactScore,
+    };
+  }
 
   StokAlert({
     required this.id,

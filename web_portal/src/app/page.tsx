@@ -1,6 +1,10 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import ConfluenceRadar from "../components/ConfluenceRadar";
+import ShareAlphaCardModal, { AlphaCardData } from "../components/ShareAlphaCardModal";
+import LightweightCandleChart from "../components/LightweightCandleChart";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
@@ -714,6 +718,25 @@ export default function App() {
   const [telegramSaved, setTelegramSaved] = useState<boolean>(false);
   const [dematAutoSync, setDematAutoSync] = useState<boolean>(false);
   const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
+  const [sharingAlert, setSharingAlert] = useState<AlphaCardData | null>(null);
+  const [chartingSymbol, setChartingSymbol] = useState<string | null>(null);
+  const [fiiDiiFlows, setFiiDiiFlows] = useState<any | null>(null);
+  const [expandedRadarId, setExpandedRadarId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchFiiDii = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/market/fii-dii-flows`);
+        if (res.ok) {
+          const data = await res.json();
+          setFiiDiiFlows(data);
+        }
+      } catch (e) {
+        console.debug("FII/DII fetch error", e);
+      }
+    };
+    fetchFiiDii();
+  }, []);
 
   const getAuthHeaders = useCallback(async () => {
     let token = "";
@@ -884,6 +907,14 @@ export default function App() {
               vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
               vix: vixVal,
               dematPosition: dematSanitized,
+              factors: rawSnap.factor_breakdown || {
+                technicals: Math.min(100, Math.round(technicals.technical_score || (a.impact_score * 0.9))),
+                flow: Math.min(100, Math.round(flowData.flow_score || (a.impact_score * 0.85))),
+                forensics: Math.min(100, Math.round(rawSnap.forensics?.forensic_score || 75)),
+                catalysts: Math.min(100, Math.round(a.impact_score || 80))
+              },
+              entryRange: rawSnap.tactical_levels?.entry_range || "-",
+              riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "1:2.5",
               time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             };
           }));
@@ -1788,6 +1819,17 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Link
+              href="/transparency"
+              target="_blank"
+              style={{
+                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
+                borderRadius: 10, padding: "6px 10px", color: C.emerald, fontSize: 11, fontWeight: 800,
+                textDecoration: "none", display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              🛡️ Audit Ledger
+            </Link>
             <button onClick={openKeyModal} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
@@ -1830,6 +1872,59 @@ export default function App() {
                 </div>
                 <div style={{ fontSize: 18, fontWeight: 900, color: C.white, marginTop: 2 }}>{user?.name || "Investor"}</div>
               </div>
+
+              {/* NSE FII / DII Institutional Flow Bar */}
+              {fiiDiiFlows && (
+                <div style={{
+                  background: "#080B16",
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 16,
+                  padding: "12px 16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)"
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 800, color: C.white }}>
+                      <span>🏛️</span>
+                      <span>NSE FII / DII Net Flow</span>
+                      <span style={{ fontSize: 10, color: C.gray2 }}>({fiiDiiFlows.date})</span>
+                    </div>
+                    <div style={{
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: "3px 8px",
+                      borderRadius: 8,
+                      background: fiiDiiFlows.combined_net >= 0 ? "rgba(16,185,129,0.15)" : "rgba(244,63,94,0.15)",
+                      color: fiiDiiFlows.combined_net >= 0 ? C.emerald : C.rose,
+                      border: `1px solid ${fiiDiiFlows.combined_net >= 0 ? "rgba(16,185,129,0.3)" : "rgba(244,63,94,0.3)"}`
+                    }}>
+                      {String(fiiDiiFlows.sentiment || "BALANCED").replace(/_/g, " ")}
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
+                    <div style={{ background: "rgba(255,255,255,0.02)", padding: "6px 4px", borderRadius: 8 }}>
+                      <div style={{ fontSize: 9.5, color: C.gray2, fontWeight: 700 }}>FII NET</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: (fiiDiiFlows.fii?.net || 0) >= 0 ? C.emerald : C.rose }}>
+                        {(fiiDiiFlows.fii?.net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.fii?.net || 0).toLocaleString()} Cr
+                      </div>
+                    </div>
+                    <div style={{ background: "rgba(255,255,255,0.02)", padding: "6px 4px", borderRadius: 8 }}>
+                      <div style={{ fontSize: 9.5, color: C.gray2, fontWeight: 700 }}>DII NET</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: (fiiDiiFlows.dii?.net || 0) >= 0 ? C.emerald : C.rose }}>
+                        {(fiiDiiFlows.dii?.net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.dii?.net || 0).toLocaleString()} Cr
+                      </div>
+                    </div>
+                    <div style={{ background: "rgba(6,182,212,0.05)", border: `1px solid rgba(6,182,212,0.2)`, padding: "6px 4px", borderRadius: 8 }}>
+                      <div style={{ fontSize: 9.5, color: C.cyan, fontWeight: 800 }}>COMBINED</div>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: (fiiDiiFlows.combined_net || 0) >= 0 ? C.cyan : C.rose }}>
+                        {(fiiDiiFlows.combined_net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.combined_net || 0).toLocaleString()} Cr
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Hero Card */}
               <div style={{
@@ -2216,6 +2311,109 @@ export default function App() {
                           {a.vix && <span style={{ color: C.gray2, fontSize: 10 }}>VIX: {a.vix}</span>}
                         </div>
                       )}
+                    </div>
+
+                    {/* Visual 4-Pillar Confluence Spider / Radar Section */}
+                    {a.factors && (
+                      <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button
+                          onClick={() => setExpandedRadarId(expandedRadarId === a.id ? null : a.id)}
+                          style={{
+                            background: expandedRadarId === a.id ? "rgba(6,182,212,0.15)" : "rgba(255,255,255,0.03)",
+                            border: `1px solid ${expandedRadarId === a.id ? "rgba(6,182,212,0.4)" : C.border}`,
+                            borderRadius: 10,
+                            padding: "6px 12px",
+                            color: expandedRadarId === a.id ? C.cyan : C.gray1,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            width: "100%",
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <span>🕸️</span>
+                            <span>4-Pillar Confluence Radar</span>
+                          </span>
+                          <span>{expandedRadarId === a.id ? "▲ Hide" : "▼ View"}</span>
+                        </button>
+
+                        {expandedRadarId === a.id && (
+                          <div style={{
+                            background: "#080B16",
+                            border: `1px solid ${C.border}`,
+                            borderRadius: 14,
+                            padding: 12,
+                            display: "flex",
+                            justifyContent: "center"
+                          }}>
+                            <ConfluenceRadar factors={a.factors} size={190} showLabels={true} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Phase 1 & 2 Action Buttons: Candlestick Chart + Share Alpha Card */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 10 }}>
+                      <button
+                        onClick={() => setChartingSymbol(a.symbol)}
+                        style={{
+                          background: "rgba(6,182,212,0.1)",
+                          border: `1px solid rgba(6,182,212,0.3)`,
+                          borderRadius: 10,
+                          padding: "8px 10px",
+                          color: C.cyan,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <span>📊</span>
+                        <span>Candles & Camarilla</span>
+                      </button>
+
+                      <button
+                        onClick={() => setSharingAlert({
+                          symbol: a.symbol,
+                          title: a.title,
+                          catalyst: a.catalyst,
+                          confluenceScore: a.impact,
+                          bias: a.signal,
+                          targetPrice: a.targetPrice,
+                          stopLoss: a.stopLoss,
+                          entryRange: a.entryRange,
+                          riskReward: a.riskReward,
+                          reasons: a.reasons,
+                          factors: a.factors,
+                          time: a.time
+                        })}
+                        style={{
+                          background: "rgba(16,185,129,0.12)",
+                          border: `1px solid rgba(16,185,129,0.35)`,
+                          borderRadius: 10,
+                          padding: "8px 10px",
+                          color: C.emerald,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          transition: "all 0.2s"
+                        }}
+                      >
+                        <span>⚡</span>
+                        <span>Share Alpha Card</span>
+                      </button>
                     </div>
                   </div>
                 ))
@@ -3676,6 +3874,37 @@ export default function App() {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 1: 1-TAP SHAREABLE ALPHA CARD MODAL */}
+        {sharingAlert && (
+          <ShareAlphaCardModal
+            alert={sharingAlert}
+            onClose={() => setSharingAlert(null)}
+          />
+        )}
+
+        {/* PHASE 2: IN-APP LIGHTWEIGHT CANDLESTICK CHART MODAL */}
+        {chartingSymbol && (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(3, 7, 18, 0.88)",
+            backdropFilter: "blur(14px)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16
+          }}>
+            <div style={{ maxWidth: 780, width: "100%" }}>
+              <LightweightCandleChart
+                symbol={chartingSymbol}
+                backendUrl={BACKEND_URL}
+                onClose={() => setChartingSymbol(null)}
+              />
             </div>
           </div>
         )}

@@ -233,4 +233,18 @@ class ApiService {
       return profileUpdates.isNotEmpty;
     }
   }
+
+  Future<Map<String, dynamic>?> fetchFiiDiiFlows() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$baseUrl/api/market/fii-dii-flows'))
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      }
+    } catch (e) {
+      debugPrint("API Error fetching FII/DII flows: $e");
+    }
+    return null;
+  }
 }

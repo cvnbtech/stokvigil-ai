@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../config/theme.dart';
 import '../models/models.dart';
@@ -19,6 +20,87 @@ class _AlertsScreenState extends State<AlertsScreen> {
   String _selectedFilter = 'all';
   List<StokAlert> _alerts = [];
   StreamSubscription<List<StokAlert>>? _alertsSub;
+  final Set<String> _expandedRadarIds = {};
+
+  void _shareAlphaCard(StokAlert alert, String targetStr, String slStr, String rrStr) {
+    final shareText = '''⚡ STOKVIGIL AI ALPHA SIGNAL ⚡
+
+🎯 Symbol: #${alert.symbol} (NSE)
+📈 Confluence Score: ${alert.impactScore}/100
+🔥 Catalyst: ${alert.catalystType}
+
+🎯 Target: $targetStr
+🛡️ Stop Loss: $slStr
+⚖️ R:R Ratio: $rrStr
+
+Key Insights:
+${alert.factualReasons.take(2).map((r) => '• $r').join('\n')}
+
+Automated surveillance via StokVigil AI 🛡️''';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF080B16),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("1-TAP SHAREABLE ALPHA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppTheme.cyan)),
+                    Text(alert.symbol, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                  ],
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF10B981)),
+                  ),
+                  child: Text("${alert.impactScore}/100 SCORE", style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(alert.alertTitle, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12.5, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF10B981),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: shareText));
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("✅ Alpha Card copied! Ready to paste on WhatsApp or Twitter/X."),
+                      backgroundColor: Color(0xFF10B981),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy, size: 16),
+                label: const Text("Copy Signal for WhatsApp / Twitter", style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -356,10 +438,57 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 10),
 
                                   // Fundamental Metrics Grid
                                   MetricChipStrip(metrics: alert.metricsSnapshot),
+                                  const SizedBox(height: 10),
+
+                                  // Visual 4-Pillar Confluence Spider / Radar Section
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        side: BorderSide(
+                                          color: _expandedRadarIds.contains(alert.id) ? AppTheme.cyan : AppTheme.cardBorder,
+                                        ),
+                                        backgroundColor: _expandedRadarIds.contains(alert.id)
+                                            ? AppTheme.cyan.withOpacity(0.08)
+                                            : Colors.transparent,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      ),
+                                      onPressed: () {
+                                        setState(() {
+                                          if (_expandedRadarIds.contains(alert.id)) {
+                                            _expandedRadarIds.remove(alert.id);
+                                          } else {
+                                            _expandedRadarIds.add(alert.id);
+                                          }
+                                        });
+                                      },
+                                      icon: const Icon(Icons.hub_outlined, size: 14, color: AppTheme.cyan),
+                                      label: Text(
+                                        _expandedRadarIds.contains(alert.id)
+                                            ? "Hide 4-Pillar Confluence Radar ▲"
+                                            : "View 4-Pillar Confluence Radar ▼",
+                                        style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ),
+                                  if (_expandedRadarIds.contains(alert.id)) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF080B16),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: AppTheme.cardBorder),
+                                      ),
+                                      child: ConfluenceRadarChart(factors: alert.factorBreakdown, size: 150),
+                                    ),
+                                  ],
                                   const SizedBox(height: 12),
 
                                   // 1-Tap Trade Trigger CTA Button
@@ -390,6 +519,26 @@ class _AlertsScreenState extends State<AlertsScreen> {
                                             style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 12),
                                           ),
                                         ],
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+
+                                  // 1-Tap Share Alpha Card Button
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        side: const BorderSide(color: Color(0xFF10B981)),
+                                        backgroundColor: const Color(0xFF10B981).withOpacity(0.08),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                      ),
+                                      onPressed: () => _shareAlphaCard(alert, targetStr, slStr, rrStr),
+                                      icon: const Icon(Icons.share, size: 14, color: Color(0xFF10B981)),
+                                      label: const Text(
+                                        "⚡ 1-Tap Share Alpha Card (WhatsApp / X)",
+                                        style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 12),
                                       ),
                                     ),
                                   ),

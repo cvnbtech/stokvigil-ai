@@ -4,7 +4,9 @@ on:
   schedule:
     # 1. 08:50 AM IST (03:20 UTC) Morning Demat Token Reminder (Monday - Friday)
     - cron: '20 3 * * 1-5'
-    # 2. 5-Minute Market Scanner from 09:15 AM to 03:30 PM IST (03:45 to 10:00 UTC, Monday - Friday)
+    # 2. 09:00 AM IST (03:30 UTC) Pre-Market War Room Briefing (Monday - Friday)
+    - cron: '30 3 * * 1-5'
+    # 3. 5-Minute Market Scanner from 09:15 AM to 03:30 PM IST (03:45 to 10:00 UTC, Monday - Friday)
     - cron: '*/5 3-10 * * 1-5'
   workflow_dispatch:
 
@@ -13,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trigger StokVigil AI Multi-User Portfolio Scan
+        if: github.event.schedule != '20 3 * * 1-5' && github.event.schedule != '30 3 * * 1-5' || github.event_name == 'workflow_dispatch'
         env:
           BACKEND_URL_SECRET: ${{ secrets.STOKVIGIL_BACKEND_URL }}
           BACKEND_URL_VAR: ${{ vars.STOKVIGIL_BACKEND_URL }}
@@ -77,3 +80,30 @@ jobs:
 
           echo "HTTP Status: $REMINDER_STATUS"
           echo "Reminder Response: $REMINDER_BODY"
+
+      - name: Trigger 09:00 AM Pre-Market War Room Briefing
+        if: github.event.schedule == '30 3 * * 1-5' || github.event_name == 'workflow_dispatch'
+        env:
+          BACKEND_URL_SECRET: ${{ secrets.STOKVIGIL_BACKEND_URL }}
+          BACKEND_URL_VAR: ${{ vars.STOKVIGIL_BACKEND_URL }}
+          CRON_SECRET_RAW: ${{ secrets.CRON_SECRET_KEY }}
+          CRON_SECRET_VAR: ${{ vars.CRON_SECRET_KEY }}
+        run: |
+          echo "🌅 Triggering 09:00 AM Pre-Market War Room Briefing..."
+          
+          BACKEND_URL="$BACKEND_URL_SECRET"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="$BACKEND_URL_VAR"; fi
+          CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
+
+          CRON_SECRET="$CRON_SECRET_RAW"
+          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="$CRON_SECRET_VAR"; fi
+
+          BRIEFING_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$CLEAN_URL/api/cron/pre-market-briefing" \
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: $CRON_SECRET")
+          
+          BRIEFING_BODY=$(echo "$BRIEFING_RES" | sed -e '$d')
+          BRIEFING_STATUS=$(echo "$BRIEFING_RES" | tail -n1 | cut -d':' -f2)
+
+          echo "HTTP Status: $BRIEFING_STATUS"
+          echo "Briefing Response: $BRIEFING_BODY"

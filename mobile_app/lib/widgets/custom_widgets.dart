@@ -1324,3 +1324,144 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
     );
   }
 }
+
+// ─────────────────────────────────────────────
+// VISUAL 4-PILLAR CONFLUENCE RADAR CHART
+// ─────────────────────────────────────────────
+class ConfluenceRadarChart extends StatelessWidget {
+  final Map<String, int> factors;
+  final double size;
+  final bool showLabels;
+
+  const ConfluenceRadarChart({
+    super.key,
+    required this.factors,
+    this.size = 170,
+    this.showLabels = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = (factors['technicals'] ?? 50).clamp(15, 100);
+    final fl = (factors['flow'] ?? 50).clamp(15, 100);
+    final fo = (factors['forensics'] ?? 50).clamp(15, 100);
+    final c = (factors['catalysts'] ?? 50).clamp(15, 100);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        CustomPaint(
+          size: Size(size, size),
+          painter: _RadarChartPainter(t: t, fl: fl, fo: fo, c: c),
+        ),
+        if (showLabels) ...[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              alignment: WrapAlignment.center,
+              children: [
+                _buildPill('Tech', t, AppColors.cyan),
+                _buildPill('Flow', fl, AppColors.emerald),
+                _buildPill('Forensic', fo, const Color(0xFF3B82F6)),
+                _buildPill('Catalyst', c, AppColors.amber),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPill(String label, int val, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 5, height: 5, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const SizedBox(width: 4),
+          Text('$label $val', style: TextStyle(color: color, fontSize: 9.5, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+}
+
+class _RadarChartPainter extends CustomPainter {
+  final int t, fl, fo, c;
+  _RadarChartPainter({required this.t, required this.fl, required this.fo, required this.c});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width * 0.38;
+
+    final gridPaint = Paint()
+      ..color = Colors.white.withOpacity(0.08)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    final axisPaint = Paint()
+      ..color = Colors.white.withOpacity(0.12)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    // Concentric grid diamonds (25%, 50%, 75%, 100%)
+    for (final lvl in [0.25, 0.5, 0.75, 1.0]) {
+      final r = radius * lvl;
+      final gridPath = Path()
+        ..moveTo(center.dx, center.dy - r)
+        ..lineTo(center.dx + r, center.dy)
+        ..lineTo(center.dx, center.dy + r)
+        ..lineTo(center.dx - r, center.dy)
+        ..close();
+      canvas.drawPath(gridPath, gridPaint);
+    }
+
+    // Crosshairs
+    canvas.drawLine(Offset(center.dx, center.dy - radius), Offset(center.dx, center.dy + radius), axisPaint);
+    canvas.drawLine(Offset(center.dx - radius, center.dy), Offset(center.dx + radius, center.dy), axisPaint);
+
+    // Value Polygon
+    final pTop = Offset(center.dx, center.dy - (radius * (t / 100.0)));
+    final pRight = Offset(center.dx + (radius * (fl / 100.0)), center.dy);
+    final pBottom = Offset(center.dx, center.dy + (radius * (fo / 100.0)));
+    final pLeft = Offset(center.dx - (radius * (c / 100.0)), center.dy);
+
+    final polyPath = Path()
+      ..moveTo(pTop.dx, pTop.dy)
+      ..lineTo(pRight.dx, pRight.dy)
+      ..lineTo(pBottom.dx, pBottom.dy)
+      ..lineTo(pLeft.dx, pLeft.dy)
+      ..close();
+
+    final fillPaint = Paint()
+      ..color = AppColors.cyan.withOpacity(0.25)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(polyPath, fillPaint);
+
+    final strokePaint = Paint()
+      ..color = AppColors.cyan
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    canvas.drawPath(polyPath, strokePaint);
+
+    // Dots
+    final dotPaint = Paint()..color = AppColors.cyan;
+    for (final pt in [pTop, pRight, pBottom, pLeft]) {
+      canvas.drawCircle(pt, 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RadarChartPainter oldDelegate) =>
+      oldDelegate.t != t || oldDelegate.fl != fl || oldDelegate.fo != fo || oldDelegate.c != c;
+}

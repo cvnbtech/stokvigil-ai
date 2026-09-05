@@ -229,3 +229,54 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
             ]
         ]
     }
+
+
+def format_pre_market_war_room_telegram(data: Dict[str, Any]) -> str:
+    """
+    Formats the 09:00 AM IST Pre-Market War Room Briefing card for Telegram.
+    """
+    date_str = data.get("date", "")
+    nifty_p = data.get("nifty_price", 24500.0)
+    nifty_chg = data.get("nifty_change_pct", 0.0)
+    sensex_p = data.get("sensex_price", 80000.0)
+    sensex_chg = data.get("sensex_change_pct", 0.0)
+    vix = data.get("india_vix", 14.5)
+    vix_regime = data.get("vix_regime", "NORMAL_VOLATILITY").replace('_', ' ')
+    
+    global_cues = data.get("global_cues", {})
+    dow = global_cues.get("dow_jones_pct", 0.0)
+    nasdaq = global_cues.get("nasdaq_pct", 0.0)
+    nikkei = global_cues.get("nikkei_pct", 0.0)
+    bias = global_cues.get("bias", "NEUTRAL").replace('_', ' ')
+    
+    leading = data.get("leading_sectors", [])
+    guidance = data.get("tactical_guidance", "")
+    
+    html = "🌅 <b>STOKVIGIL AI: PRE-MARKET WAR ROOM BRIEFING</b> 🌅\n"
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += f"📅 <b>Date:</b> {date_str} | ⏰ <b>09:00 AM IST (Pre-Open)</b>\n\n"
+    
+    html += "🏛️ <b>DOMESTIC BENCHMARKS:</b>\n"
+    html += f"• <b>NIFTY 50:</b> ₹{nifty_p:,.2f} (<b>{nifty_chg:+.2f}%</b>)\n"
+    html += f"• <b>SENSEX:</b> {sensex_p:,.2f} (<b>{sensex_chg:+.2f}%</b>)\n"
+    html += f"• <b>India VIX:</b> {vix} — <i>{vix_regime}</i>\n\n"
+    
+    html += "🌍 <b>GLOBAL MARKET CUES:</b>\n"
+    html += f"• <b>Dow Jones:</b> {dow:+.2f}% | <b>Nasdaq:</b> {nasdaq:+.2f}%\n"
+    html += f"• <b>Nikkei 225:</b> {nikkei:+.2f}%\n"
+    html += f"• <b>Global Bias:</b> <b>{bias}</b>\n\n"
+    
+    if leading:
+        html += "🚀 <b>SECTORAL MOMENTUM WATCH:</b>\n"
+        for s in leading:
+            safe_name = html_lib.escape(str(s.get('name', 'N/A')), quote=False)
+            html += f"• <b>{safe_name}:</b> {s.get('change_pct', 0.0):+.2f}%\n"
+        html += "\n"
+        
+    safe_guidance = html_lib.escape(str(guidance), quote=False)
+    html += "💡 <b>TACTICAL SESSION GUIDANCE:</b>\n"
+    html += f"{safe_guidance}\n\n"
+    
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += "⚡ <i>Automated 5-minute surveillance starts at 09:15 AM IST.</i>"
+    return html
