@@ -157,6 +157,7 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
   - **Forensic Health (25%)**: Debt-to-Equity, P/E multiples, and balance sheet safety.
   - **Macro / News (20%)**: India VIX regime, sector synchronicity, and 24h market catalysts.
 - **Cross-Platform Vector Rendering**: Custom SVG polygon on Next.js web portal (`ConfluenceRadar.tsx`) and high-performance `CustomPainter` on Flutter mobile (`ConfluenceRadarChart`).
+- **Zero-Hardcoding Guarantee**: Factor scores are strictly derived from authentic quantitative calculations (`metrics_snapshot.factor_breakdown`). If an alert lacks factor metrics, synthetic defaults are never substituted; the radar toggle is conditionally hidden or displays `"-"`, preserving 100% mathematical integrity.
 
 ### 3. 🎴 1-Tap Shareable "Alpha Cards"
 - **Viral Social Sharing**: Allows users to export branded, high-contrast trading cards with 1 tap.
@@ -165,19 +166,21 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 
 ### 4. 🛡️ Public Audited Accuracy Ledger (`/transparency`)
 - **Verifiable Non-Repudiation**: Dedicated public transparency portal at `/transparency` backed by `GET /api/market/accuracy-ledger`.
-- **Audited Metrics**: Displays verified Target 1 Hit Rate %, cumulative win/loss ratio, average risk-to-reward (e.g. 1:2.7), and real-time verifiable signal history.
+- **Audited Metrics**: Displays verified Target 1 Hit Rate %, cumulative win/loss ratio, average risk-to-reward, and real-time verifiable signal history.
+- **Zero-Mock Policy**: All accuracy stats and KPIs are computed on the fly directly from immutable database alerts. When 0 verified signals exist, the ledger transparently reports `0.0%` win rate, `0` count, and `"-"` rather than synthetic mock numbers.
 - **Zero PII Exposure**: Only public trade setups, timestamps, and outcome markers are published, strictly isolating all user IDs, demat portfolios, and order quantities.
 
-### 5. 🏦 NSE FII & DII Net Flow Tracker
-- **Institutional Market Pulse**: Daily official cash market net turnover tracking for Foreign Institutional Investors (FII) and Domestic Institutional Investors (DII).
+### 5. 🏦 Institutional FII & DII Net Flow Tracker (NSE & BSE)
+- **Institutional Market Pulse**: Daily official cash market net turnover tracking for Foreign Institutional Investors (FII) and Domestic Institutional Investors (DII), aggregating combined cash market flows across Indian stock exchanges.
 - **Sub-Millisecond 30-Minute Cache**: In-memory caching with multi-tier fallback (Live NSE API $\rightarrow$ Supabase `fii_dii_flows` table $\rightarrow$ Institutional proxy).
 - **Automated Sentiment Classification**: Categorizes institutional flows into clear regimes (`STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_SUPPORT_DEFENDING`).
 - **Visual Sentiment Bar**: Integrated into the header of the Web dashboard and Mobile app.
 
 ### 6. 📈 In-App Candlestick Charts with Institutional Overlays
 - **Interactive Lightweight Charts v5**: Full TradingView candlestick charts integrated directly into the web application via `GET /api/stocks/candles`.
+- **Dual-Exchange Support**: Seamlessly charts both NSE (`.NS`) and BSE (`.BO`) equities with dynamic ticker resolution.
 - **Institutional Mathematical Overlays**:
-  - **Camarilla Equation Pivots**: Dynamic $H_4, H_3, L_3, L_4$ institutional order book breakout and liquidity floor levels.
+  - **Camarilla Equation Pivots**: Dynamic $H_4, $H_3, $L_3, $L_4 institutional order book breakout and liquidity floor levels.
   - **Intraday Cumulative VWAP**: Real-time Volume-Weighted Average Price trend line.
   - **Chandelier Trailing Stop**: ATR-based dynamic risk ratchet plotted on the chart.
 

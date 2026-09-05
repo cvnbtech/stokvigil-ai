@@ -211,19 +211,23 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
    - Computes granular scores in `agent_runner.py`: Technical (30%), Wyckoff VSA Flow (25%), Forensic Health (25%), and Macro/News (20%).
    - Stored in `metrics_snapshot.factor_breakdown`.
    - Client Renderers: Native SVG polygon in `web_portal/src/components/ConfluenceRadar.tsx` and 60fps Flutter `CustomPainter` in `mobile_app/lib/widgets/custom_widgets.dart`.
+   - **Zero-Hardcoding Guarantee**: Factor values strictly reflect real mathematical indicator snapshots. If an alert record lacks factor metrics, synthetic approximations (e.g. 50 or 80) are never substituted—the radar toggle is conditionally hidden or displays `"-"`, preserving mathematical authenticity.
 2. **1-Tap Shareable "Alpha Cards"**:
    - `web_portal/src/components/ShareAlphaCardModal.tsx`: Uses client-side off-screen HTML5 2D Canvas to generate 1080×1080 branded PNG cards with zero server load.
-   - Includes one-tap direct distribution to WhatsApp groups and X (Twitter).
+   - Includes one-tap direct distribution to WhatsApp groups and X (Twitter) with real factor geometry.
 3. **Public Audited Accuracy Ledger (`/transparency` & `/api/market/accuracy-ledger`)**:
    - Non-repudiation audit ledger exposing Target 1 hit rates %, cumulative win rate, average risk-to-reward ratio, and signal history.
    - 300-second in-memory cache serving 10,000+ concurrent requests at $<0.1\text{ms}$.
+   - **Dynamic Calculation & Zero-Mock Policy**: All performance stats are calculated on the fly directly from stored `stok_alerts`. When 0 verified signals exist, the ledger transparently reports `total_verified_signals: 0, win_rate_pct: 0.0, avg_risk_reward: "-"` with zero mock placeholders.
    - Zero PII leakage: Strictly projects public technical parameters without user identifiers or position sizes.
-4. **NSE FII & DII Cash Market Net Flow Engine (`fii_dii_tracker.py`)**:
+4. **Institutional FII & DII Cash Market Net Flow Engine (`fii_dii_tracker.py`)**:
+   - Captures daily official Indian equity cash turnover (combined NSE & BSE institutional transactions).
    - Multi-tier fallback (Live NSE API $\rightarrow$ Supabase `fii_dii_flows` table $\rightarrow$ Institutional proxy) with 30-minute in-memory caching.
    - Sentiment classification: `STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_DII_SUPPORT_DEFENDING`.
    - Visual sentiment bars in Web and Mobile dashboard headers.
 5. **In-App Candlestick Charts with Overlays (`GET /api/stocks/candles`)**:
    - TradingView Lightweight Charts v5 integration in `web_portal/src/components/LightweightCandleChart.tsx`.
+   - **Dual-Exchange Support**: Automatically resolves and charts both NSE (`.NS`) and BSE (`.BO`) tickers.
    - Overlays: Camarilla $H_4/L_4$ breakout pivots, Intraday cumulative VWAP, and ATR Chandelier Trailing Stop.
    - In-memory bounded cache (max 200 entries, LRU batch eviction).
 
@@ -423,9 +427,9 @@ G:\stokvigil-ai\
 | `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours (Dispatched asynchronously via FastAPI BackgroundTasks with `_scan_in_progress` concurrency lock to eliminate Cloud Run 504 timeouts) |
 | `/api/cron/morning-token-reminder` | `POST` | `X-Cron-Secret` | Dispatches 08:50 AM IST reminders to users with expired daily Demat tokens |
 | `/api/cron/pre-market-briefing` | `POST` | `X-Cron-Secret` | Dispatches automated 09:00 AM IST War Room Briefing (GIFT Nifty, VIX, Global Cues, FII/DII, Sector Momentum) |
-| `/api/stocks/candles` | `GET` | Rate-Limited | Returns OHLCV candles with Camarilla $H_4/L_4$ breakout pivots, VWAP, and Chandelier Trailing Stop (60s RAM Cache) |
-| `/api/market/fii-dii-flows` | `GET` | Rate-Limited | Returns daily official NSE FII & DII net flows in ₹ Crores with institutional sentiment classification (30m RAM Cache) |
-| `/api/market/accuracy-ledger` | `GET` | Rate-Limited | Public audited non-repudiation accuracy ledger and historical verified performance metrics (300s RAM Cache) |
+| `/api/stocks/candles` | `GET` | Rate-Limited | Returns OHLCV candles for NSE (.NS) and BSE (.BO) with Camarilla $H_4/L_4$ breakout pivots, VWAP, and Chandelier Trailing Stop (60s RAM Cache) |
+| `/api/market/fii-dii-flows` | `GET` | Rate-Limited | Returns daily official FII & DII cash market net flows in ₹ Crores across Indian exchanges with institutional sentiment classification (30m RAM Cache) |
+| `/api/market/accuracy-ledger` | `GET` | Rate-Limited | Public audited non-repudiation accuracy ledger and dynamically calculated performance metrics (zero mock values, 300s RAM Cache) |
 | `/api/telegram/webhook` | `POST` | Secret Header | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
 | `/api/stocks/search` | `GET` | Rate-Limited | Real-time dynamic search across live NSE & BSE traded equities |
 | `/api/stocks/validate` | `GET` | Rate-Limited | Real-time exchange validation ensuring zero dummy/misspelled tickers |
