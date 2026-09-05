@@ -421,11 +421,11 @@ Output ONLY valid JSON matching this exact structure:
 """
 
     if settings.GEMINI_API_KEY:
-        # Try google.genai (Modern SDK) first, then fallback to google.generativeai
+        # Modern Official Google GenAI SDK (google.genai)
         try:
             from google import genai
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']:
+            for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash']:
                 try:
                     response = client.models.generate_content(
                         model=model_name,
@@ -433,30 +433,27 @@ Output ONLY valid JSON matching this exact structure:
                         config={"response_mime_type": "application/json"}
                     )
                     parsed = json.loads(response.text)
-                    logger.info(f"Successfully evaluated {symbol} using GenAI SDK '{model_name}'.")
+                    logger.info(f"Successfully evaluated {symbol} using Google GenAI SDK '{model_name}'.")
                     return parsed
                 except Exception as model_err:
                     logger.warning(f"GenAI SDK '{model_name}' attempt failed for {symbol}: {model_err}")
                     continue
-        except Exception:
+        except ImportError:
+            # Temporary fallback only if google.genai is not yet installed in runtime
             try:
                 import google.generativeai as legacy_genai
                 legacy_genai.configure(api_key=settings.GEMINI_API_KEY)
-                for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']:
-                    try:
-                        model = legacy_genai.GenerativeModel(model_name)
-                        response = model.generate_content(
-                            prompt,
-                            generation_config={"response_mime_type": "application/json"}
-                        )
-                        parsed = json.loads(response.text)
-                        logger.info(f"Successfully evaluated {symbol} using legacy AI model '{model_name}'.")
-                        return parsed
-                    except Exception as model_err:
-                        logger.warning(f"Legacy model '{model_name}' attempt failed for {symbol}: {model_err}")
-                        continue
-            except Exception as e:
-                logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
+                model = legacy_genai.GenerativeModel('gemini-3.6-flash')
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                parsed = json.loads(response.text)
+                return parsed
+            except Exception as leg_err:
+                logger.warning(f"Legacy model fallback failed for {symbol}: {leg_err}")
+        except Exception as e:
+            logger.error(f"Gemini API execution error: {e}. Falling back to deterministic engine.")
 
     # ==========================================
     # DETERMINISTIC QUANTITATIVE FALLBACK ENGINE
