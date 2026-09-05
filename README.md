@@ -256,6 +256,7 @@ Users can permanently delete their account directly from the **Settings** page:
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-supabase-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   DATABASE_URL=postgresql://postgres.yourprojectref:yourpassword@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
    ENCRYPTION_KEY=d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=
    GEMINI_API_KEY=your-gemini-api-key
    TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
@@ -263,7 +264,7 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (46 automated unit tests across 6 suites):
+3. Run test suite (51 automated unit tests across 7 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="development"; .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
    ```

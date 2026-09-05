@@ -325,6 +325,7 @@ G:\stokvigil-ai\
 │   │   ├── macro_filter.py          <-- India VIX, SENSEX & NIFTY, Sector sync, Forensics, Pre-Market War Room
 │   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
 │   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.02ms O(1) Lookups)
+│   │   ├── db_pool.py               <-- Supabase Transaction Pooler (PgBouncer Port 6543) using asyncpg
 │   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push
 │   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
 │   │   └── main.py                  <-- FastAPI Entrypoint & Rate Limiter
@@ -334,7 +335,8 @@ G:\stokvigil-ai\
 │   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
 │   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
 │   │   ├── test_phase1.py           <-- 4 Phase 1 Tests (War Room Briefing, Confluence Radar, Alpha Cards)
-│   │   └── test_phase2.py           <-- 5 Phase 2 Tests (Accuracy Ledger, FII/DII Flows, Candle Overlays)
+│   │   ├── test_phase2.py           <-- 5 Phase 2 Tests (Accuracy Ledger, FII/DII Flows, Candle Overlays)
+│   │   └── test_db_pool.py          <-- 5 Connection Pool & PgBouncer Port 6543 Unit Tests
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -411,11 +413,13 @@ G:\stokvigil-ai\
 | `TELEGRAM_BOT_TOKEN` | Backend Server Only | 🚨 **High Secret** | Telegram Bot API authentication token |
 | `TELEGRAM_WEBHOOK_SECRET` | Backend Server Only | 🚨 **High Secret** | Secret token header for webhook authenticity |
 | `CRON_SECRET_KEY` | Backend & GitHub Actions | 🚨 **High Secret** | Secret header (`X-Cron-Secret`) for automated scanners |
+| `DATABASE_URL` | Backend Server Only | 🚨 **High Secret** | Supabase Transaction Pooler (PgBouncer Port 6543) connection string with `?pgbouncer=true` |
 | `ALLOWED_ORIGINS` | Backend Server Only | Public / Low | Comma-separated CORS origin whitelist |
 | `ENVIRONMENT` | Backend Server Only | Public / Low | Deployment runtime environment (`production`/`development`) |
 
 | Endpoint | Method | Auth Scheme | Purpose |
 | :--- | :---: | :---: | :--- |
+| `/api/health/db` | `GET` | Public / CORS | Health check reporting Supabase Connection Pool (Port 6543) and underlying database connectivity |
 | `/api/user/credentials` | `GET` | `Bearer <JWT>` | Retrieves decrypted App Key and Secret Key for pre-filling with eye toggles |
 | `/api/user/credentials` | `POST` | `Bearer <JWT>` | Encrypts (AES-256 Fernet) and upserts ICICI App Key, Secret Key, and Session Token |
 | `/api/user/profile` | `GET` | `Bearer <JWT>` | Retrieves user profile and notification preferences |

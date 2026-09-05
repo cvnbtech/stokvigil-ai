@@ -27,6 +27,7 @@ from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.technical_engine import calculate_camarilla_pivots
+from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("APILogger").setLevel(logging.WARNING)
@@ -81,6 +82,54 @@ def get_supabase() -> Client:
     if _supabase_client is None:
         _supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
     return _supabase_client
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initializes Supabase PgBouncer Connection Pool on Port 6543."""
+    await init_db_pool()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully closes all connections in the database pool on shutdown."""
+    await close_db_pool()
+
+
+@app.get("/api/health/db")
+async def get_db_health():
+    """
+    Health check verifying the status of the Supabase Connection Pool (PgBouncer Port 6543)
+    and underlying database connectivity.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        return {
+            "status": "ready",
+            "pooler_active": False,
+            "driver": "supabase-rest",
+            "message": "Operating via Supabase REST API (DATABASE_URL unconfigured or using fallback)."
+        }
+    try:
+        async with pool.acquire() as conn:
+            val = await conn.fetchval("SELECT 1")
+        return {
+            "status": "healthy",
+            "pooler_active": True,
+            "pooler": "pgbouncer-6543",
+            "test_query": val,
+            "max_size": pool.get_max_size(),
+            "min_size": pool.get_min_size(),
+            "idle_size": pool.get_idle_size()
+        }
+    except Exception as e:
+        logger.warning(f"Database health check query failed: {e}")
+        return {
+            "status": "degraded",
+            "pooler_active": False,
+            "error": str(e),
+            "fallback": "supabase-rest"
+        }
 
 
 # ==========================================
