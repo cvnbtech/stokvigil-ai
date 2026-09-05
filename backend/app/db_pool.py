@@ -130,3 +130,59 @@ async def get_db_connection() -> AsyncGenerator[Optional[asyncpg.Connection], No
         yield conn
     finally:
         await pool.release(conn)
+
+
+async def fetch_all(query: str, *args) -> Optional[list]:
+    """
+    Executes a read query via the PgBouncer pool and returns rows as standard dictionaries.
+    Returns None if pool is unconfigured or on query error (signaling callers to use REST fallback).
+    """
+    import json
+    pool = await get_db_pool()
+    if pool is None:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            records = await conn.fetch(query, *args)
+            results = []
+            for r in records:
+                d = dict(r)
+                for k, v in d.items():
+                    if isinstance(v, str) and len(v) >= 2 and ((v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]"))):
+                        try:
+                            d[k] = json.loads(v)
+                        except Exception:
+                            pass
+                results.append(d)
+            return results
+    except Exception as e:
+        logger.warning(f"PgBouncer fetch_all query failed ({e}). Falling back to REST.")
+        return None
+
+
+async def fetch_one(query: str, *args) -> Optional[dict]:
+    """
+    Executes a single-row query via the PgBouncer pool.
+    Returns None if unconfigured or on error.
+    """
+    import json
+    pool = await get_db_pool()
+    if pool is None:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            record = await conn.fetchrow(query, *args)
+            if not record:
+                return {}
+            d = dict(record)
+            for k, v in d.items():
+                if isinstance(v, str) and len(v) >= 2 and ((v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]"))):
+                    try:
+                        d[k] = json.loads(v)
+                    except Exception:
+                        pass
+            return d
+    except Exception as e:
+        logger.warning(f"PgBouncer fetch_one query failed ({e}). Falling back to REST.")
+        return None
+

@@ -27,7 +27,7 @@ from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.technical_engine import calculate_camarilla_pivots
-from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready
+from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("APILogger").setLevel(logging.WARNING)
@@ -185,7 +185,7 @@ def health_check():
 
 
 @app.get("/api/user/profile")
-def get_user_profile(
+async def get_user_profile(
     user_id: str,
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
@@ -195,6 +195,12 @@ def get_user_profile(
     Guaranteed IDOR protection via verify_user_access.
     """
     verify_user_access(user_id, auth_user_id)
+    # Check PgBouncer connection pool first
+    pooled_profile = await fetch_one("SELECT * FROM profiles WHERE id = $1", user_id)
+    if pooled_profile:
+        return {"status": "success", "profile": pooled_profile}
+
+    # Fallback to Supabase REST
     res = db.table("profiles").select("*").eq("id", user_id).execute()
     if not res.data:
         raise HTTPException(status_code=404, detail="User profile not found.")
@@ -772,7 +778,7 @@ _ACCURACY_LEDGER_CACHE: Dict[str, Any] = {}
 _ACCURACY_LEDGER_TS: float = 0.0
 
 @app.get("/api/market/accuracy-ledger", dependencies=[Depends(check_rate_limit)])
-def get_accuracy_ledger(db: Client = Depends(get_supabase)):
+async def get_accuracy_ledger(db: Client = Depends(get_supabase)):
     """
     Public Institutional Audited Accuracy Ledger.
     Computes audited track record and performance metrics for StokVigil AI signals:
@@ -787,14 +793,22 @@ def get_accuracy_ledger(db: Client = Depends(get_supabase)):
     if _ACCURACY_LEDGER_CACHE and (now - _ACCURACY_LEDGER_TS) < 300:
         return _ACCURACY_LEDGER_CACHE
 
-    try:
-        res = db.table("stok_alerts").select(
-            "id, symbol, alert_title, catalyst_type, impact_score, metrics_snapshot, created_at"
-        ).order("created_at", desc=True).limit(50).execute()
-        raw_alerts = res.data or []
-    except Exception as e:
-        logger.warning(f"Error querying stok_alerts for accuracy ledger: {e}")
-        raw_alerts = []
+    raw_alerts = None
+    pooled_rows = await fetch_all(
+        "SELECT id, symbol, alert_title, catalyst_type, impact_score, metrics_snapshot, created_at "
+        "FROM stok_alerts ORDER BY created_at DESC LIMIT 50"
+    )
+    if pooled_rows is not None:
+        raw_alerts = pooled_rows
+    else:
+        try:
+            res = db.table("stok_alerts").select(
+                "id, symbol, alert_title, catalyst_type, impact_score, metrics_snapshot, created_at"
+            ).order("created_at", desc=True).limit(50).execute()
+            raw_alerts = res.data or []
+        except Exception as e:
+            logger.warning(f"Error querying stok_alerts for accuracy ledger: {e}")
+            raw_alerts = []
 
     ledger_items = []
     target_hits = 0
@@ -1057,7 +1071,7 @@ def get_user_portfolio(
 
 
 @app.get("/api/user/alerts")
-def get_user_alerts(
+async def get_user_alerts(
     user_id: str,
     limit: int = 50,
     auth_user_id: Optional[str] = Depends(get_current_user_id),
@@ -1067,6 +1081,15 @@ def get_user_alerts(
     Retrieves historical alert logs for the user.
     """
     verify_user_access(user_id, auth_user_id)
+    # Check PgBouncer connection pool first
+    pooled_alerts = await fetch_all(
+        "SELECT * FROM stok_alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
+        user_id, limit
+    )
+    if pooled_alerts is not None:
+        return {"alerts": pooled_alerts}
+
+    # Fallback to Supabase REST
     res = db.table("stok_alerts") \
             .select("*") \
             .eq("user_id", user_id) \
@@ -1096,9 +1119,13 @@ async def execute_multi_user_market_scan(db: Client):
         synced_symbols_count = await sync_market_cache_for_all_active_symbols(db)
         logger.info(f"⚡ In-Memory Market Cache refreshed: {synced_symbols_count} unique symbols pre-computed.")
 
-        # Step 2: High-speed in-memory evaluation across all users
-        profiles_res = db.table("profiles").select("id").execute()
-        users = profiles_res.data or []
+        # Step 2: High-speed in-memory evaluation across all users (PgBouncer pool first, REST fallback)
+        pooled_users = await fetch_all("SELECT id FROM profiles")
+        if pooled_users is not None:
+            users = pooled_users
+        else:
+            profiles_res = db.table("profiles").select("id").execute()
+            users = profiles_res.data or []
         
         scanned_users = 0
         all_generated_alerts = []
@@ -1292,7 +1319,7 @@ async def run_pre_market_briefing(
 
 
 @app.get("/api/user/accuracy-stats")
-def get_user_accuracy_stats(
+async def get_user_accuracy_stats(
     user_id: str,
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
@@ -1301,8 +1328,16 @@ def get_user_accuracy_stats(
     Computes real-time accuracy and performance metrics for the user's historical alerts.
     """
     verify_user_access(user_id, auth_user_id)
-    res = db.table("stok_alerts").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(100).execute()
-    alerts = res.data or []
+    # Check PgBouncer connection pool first
+    pooled_alerts = await fetch_all(
+        "SELECT id, alert_title, catalyst_type, impact_score FROM stok_alerts WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100",
+        user_id
+    )
+    if pooled_alerts is not None:
+        alerts = pooled_alerts
+    else:
+        res = db.table("stok_alerts").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(100).execute()
+        alerts = res.data or []
     
     total = len(alerts)
     if total == 0:
