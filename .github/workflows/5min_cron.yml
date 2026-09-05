@@ -15,20 +15,55 @@ jobs:
       - name: Trigger StokVigil AI Multi-User Portfolio Scan
         run: |
           echo "🚀 Triggering Bank-Grade Shielded 5-Minute Market Intelligence Scan..."
+          
+          # Resolve Backend URL from Secrets or Variables
           BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.STOKVIGIL_BACKEND_URL }}"; fi
           CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
-          RESPONSE=$(curl -s -X POST "$CLEAN_URL/api/cron/multi-user-scan" \
+
+          # Resolve Cron Secret from Secrets or Variables
+          CRON_SECRET="${{ secrets.CRON_SECRET_KEY }}"
+          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="${{ vars.CRON_SECRET_KEY }}"; fi
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "❌ CRON_SECRET_KEY is empty in both GitHub Secrets and Variables!"
+            exit 1
+          fi
+
+          echo "Connecting to $CLEAN_URL/api/cron/multi-user-scan ..."
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$CLEAN_URL/api/cron/multi-user-scan" \
             -H "Content-Type: application/json" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}")
-          echo "Scan Response: $RESPONSE"
+            -H "X-Cron-Secret: $CRON_SECRET")
+          
+          HTTP_BODY=$(echo "$RESPONSE" | sed -e '$d')
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1 | cut -d':' -f2)
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Scan Response: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Scan failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
 
       - name: Trigger Morning Demat Token Reminder
         if: github.event.schedule == '20 3 * * 1-5' || github.event_name == 'workflow_dispatch'
         run: |
           echo "🔔 Triggering 08:50 AM Morning Demat Token Refresh Reminder..."
+          
           BACKEND_URL="${{ secrets.STOKVIGIL_BACKEND_URL }}"
+          if [ -z "$BACKEND_URL" ]; then BACKEND_URL="${{ vars.STOKVIGIL_BACKEND_URL }}"; fi
           CLEAN_URL=$(echo "$BACKEND_URL" | sed 's:/*$::')
-          REMINDER_RES=$(curl -s -X POST "$CLEAN_URL/api/cron/morning-token-reminder" \
+
+          CRON_SECRET="${{ secrets.CRON_SECRET_KEY }}"
+          if [ -z "$CRON_SECRET" ]; then CRON_SECRET="${{ vars.CRON_SECRET_KEY }}"; fi
+
+          REMINDER_RES=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$CLEAN_URL/api/cron/morning-token-reminder" \
             -H "Content-Type: application/json" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}")
-          echo "Reminder Response: $REMINDER_RES"
+            -H "X-Cron-Secret: $CRON_SECRET")
+          
+          REMINDER_BODY=$(echo "$REMINDER_RES" | sed -e '$d')
+          REMINDER_STATUS=$(echo "$REMINDER_RES" | tail -n1 | cut -d':' -f2)
+
+          echo "HTTP Status: $REMINDER_STATUS"
+          echo "Reminder Response: $REMINDER_BODY"
