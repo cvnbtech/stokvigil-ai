@@ -197,7 +197,9 @@ async def get_user_profile(
     verify_user_access(user_id, auth_user_id)
     # Check PgBouncer connection pool first
     pooled_profile = await fetch_one("SELECT * FROM profiles WHERE id = $1", user_id)
-    if pooled_profile:
+    if pooled_profile is not None:
+        if not pooled_profile:
+            raise HTTPException(status_code=404, detail="User profile not found.")
         return {"status": "success", "profile": pooled_profile}
 
     # Fallback to Supabase REST

@@ -80,6 +80,87 @@ class TestDBPool(unittest.IsolatedAsyncioTestCase):
         async with get_db_connection() as conn:
             self.assertIsNone(conn)
 
+    def test_normalize_param_uuid_and_primitives(self):
+        """Valid UUID strings are converted to uuid.UUID; other primitives remain unchanged."""
+        from app.db_pool import _normalize_param
+        import uuid
+
+        raw_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        norm_uuid = _normalize_param(raw_uuid)
+        self.assertIsInstance(norm_uuid, uuid.UUID)
+        self.assertEqual(str(norm_uuid), raw_uuid)
+
+        # Non-UUID string preserved
+        self.assertEqual(_normalize_param("RELIANCE"), "RELIANCE")
+        self.assertEqual(_normalize_param(100), 100)
+
+    def test_normalize_value_and_row(self):
+        """Verifies UUID, datetime, Decimal, and JSON fields match Supabase REST contracts."""
+        from app.db_pool import _normalize_row
+        import uuid
+        from datetime import datetime, timezone
+        from decimal import Decimal
+
+        test_uuid = uuid.uuid4()
+        now = datetime.now(timezone.utc)
+        record = {
+            "id": test_uuid,
+            "created_at": now,
+            "impact_score": Decimal("85.50"),
+            "metrics_snapshot": '{"entry_range": "100-105", "target_1": "115"}',
+            "symbol": "TCS",
+            "is_active": True,
+            "null_val": None
+        }
+
+        normalized = _normalize_row(record)
+        self.assertEqual(normalized["id"], str(test_uuid))
+        self.assertEqual(normalized["created_at"], now.isoformat())
+        self.assertEqual(normalized["impact_score"], 85.50)
+        self.assertIsInstance(normalized["metrics_snapshot"], dict)
+        self.assertEqual(normalized["metrics_snapshot"]["target_1"], "115")
+        self.assertEqual(normalized["symbol"], "TCS")
+        self.assertTrue(normalized["is_active"])
+        self.assertIsNone(normalized["null_val"])
+
+    async def test_fetch_all_and_fetch_one_normalization(self):
+        """fetch_all and fetch_one normalize types when acquiring from pool."""
+        from app.db_pool import fetch_all, fetch_one
+        import uuid
+
+        test_uid = uuid.uuid4()
+        fake_records = [
+            {"id": test_uid, "user_id": test_uid, "metrics_snapshot": '{"a": 1}'}
+        ]
+
+        mock_conn = MagicMock()
+        mock_conn.fetch = AsyncMock(return_value=fake_records)
+        mock_conn.fetchrow = AsyncMock(return_value=fake_records[0])
+
+        mock_acquire_cm = MagicMock()
+        mock_acquire_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_acquire_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_pool = MagicMock()
+        mock_pool._closed = False
+        mock_pool.acquire.return_value = mock_acquire_cm
+
+        with patch("app.db_pool.get_db_pool", AsyncMock(return_value=mock_pool)):
+            # Test fetch_all
+            rows = await fetch_all("SELECT * FROM stok_alerts WHERE user_id = $1", str(test_uid))
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["id"], str(test_uid))
+            self.assertEqual(rows[0]["metrics_snapshot"], {"a": 1})
+
+            # Test fetch_one
+            single = await fetch_one("SELECT * FROM profiles WHERE id = $1", str(test_uid))
+            self.assertEqual(single["id"], str(test_uid))
+
+            # Test fetch_one when not found
+            mock_conn.fetchrow.return_value = None
+            empty = await fetch_one("SELECT * FROM profiles WHERE id = $1", str(test_uid))
+            self.assertEqual(empty, {})
+
 
 if __name__ == "__main__":
     unittest.main()

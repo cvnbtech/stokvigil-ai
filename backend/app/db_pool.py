@@ -5,9 +5,13 @@ Multiplexes thousands of client queries over a resilient pool of physical connec
 """
 
 import asyncio
+import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
-from typing import Optional, AsyncGenerator
+from datetime import datetime, date, time
+from decimal import Decimal
+from typing import Optional, AsyncGenerator, Any
 from urllib.parse import urlparse
 
 import asyncpg
@@ -132,29 +136,65 @@ async def get_db_connection() -> AsyncGenerator[Optional[asyncpg.Connection], No
         await pool.release(conn)
 
 
+def _normalize_param(arg: Any) -> Any:
+    """
+    Normalizes query arguments for asyncpg.
+    Converts valid UUID strings to uuid.UUID objects so PostgreSQL can match
+    UUID column types natively without type mismatch errors.
+    """
+    if isinstance(arg, str):
+        try:
+            return uuid.UUID(arg)
+        except (ValueError, AttributeError):
+            return arg
+    return arg
+
+
+def _normalize_value(v: Any) -> Any:
+    """
+    Normalizes PostgreSQL values returned by asyncpg to match the Supabase REST API schema:
+    - uuid.UUID -> str (e.g. 'c44c502b-a010-449e-b9ff-fdbca2bbd3a7')
+    - datetime / date / time -> ISO-8601 str
+    - Decimal -> float
+    - JSON string -> parsed dict or list
+    """
+    if isinstance(v, uuid.UUID):
+        return str(v)
+    elif isinstance(v, (datetime, date, time)):
+        return v.isoformat()
+    elif isinstance(v, Decimal):
+        return float(v)
+    elif isinstance(v, str) and len(v) >= 2 and ((v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]"))):
+        try:
+            return json.loads(v)
+        except Exception:
+            return v
+    return v
+
+
+def _normalize_row(record: Any) -> dict:
+    """Converts an asyncpg Record into a standard dictionary with REST-compatible types."""
+    d = dict(record)
+    for k, v in d.items():
+        d[k] = _normalize_value(v)
+    return d
+
+
 async def fetch_all(query: str, *args) -> Optional[list]:
     """
     Executes a read query via the PgBouncer pool and returns rows as standard dictionaries.
+    Guarantees that column types (UUIDs as str, timestamps as ISO-8601, JSONB as dict)
+    strictly match the Supabase REST API format for 100% contract parity.
     Returns None if pool is unconfigured or on query error (signaling callers to use REST fallback).
     """
-    import json
     pool = await get_db_pool()
     if pool is None:
         return None
     try:
+        norm_args = [_normalize_param(a) for a in args]
         async with pool.acquire() as conn:
-            records = await conn.fetch(query, *args)
-            results = []
-            for r in records:
-                d = dict(r)
-                for k, v in d.items():
-                    if isinstance(v, str) and len(v) >= 2 and ((v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]"))):
-                        try:
-                            d[k] = json.loads(v)
-                        except Exception:
-                            pass
-                results.append(d)
-            return results
+            records = await conn.fetch(query, *norm_args)
+            return [_normalize_row(r) for r in records]
     except Exception as e:
         logger.warning(f"PgBouncer fetch_all query failed ({e}). Falling back to REST.")
         return None
@@ -163,25 +203,22 @@ async def fetch_all(query: str, *args) -> Optional[list]:
 async def fetch_one(query: str, *args) -> Optional[dict]:
     """
     Executes a single-row query via the PgBouncer pool.
-    Returns None if unconfigured or on error.
+    Guarantees that column types strictly match the Supabase REST API format.
+    Returns:
+        - dict: if a matching record was found
+        - {}: if query succeeded but no record matched (0 rows)
+        - None: if pool is unconfigured or on error (signaling caller to use REST fallback)
     """
-    import json
     pool = await get_db_pool()
     if pool is None:
         return None
     try:
+        norm_args = [_normalize_param(a) for a in args]
         async with pool.acquire() as conn:
-            record = await conn.fetchrow(query, *args)
+            record = await conn.fetchrow(query, *norm_args)
             if not record:
                 return {}
-            d = dict(record)
-            for k, v in d.items():
-                if isinstance(v, str) and len(v) >= 2 and ((v.startswith("{") and v.endswith("}")) or (v.startswith("[") and v.endswith("]"))):
-                    try:
-                        d[k] = json.loads(v)
-                    except Exception:
-                        pass
-            return d
+            return _normalize_row(record)
     except Exception as e:
         logger.warning(f"PgBouncer fetch_one query failed ({e}). Falling back to REST.")
         return None
