@@ -20,7 +20,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-2.5-flash` / `gemini-1.5-flash` with the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
 - **Quantitative Engines**:
   - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation.
-  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, and automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**.
+  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
   - `flow_tracker.py`: **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery), plus F&O Open Interest build-up dynamics.
   - `macro_filter.py`: India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
@@ -79,7 +79,20 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
    - For active ICICI Demat holdings, dynamic trailing stop is locked at $\text{Current Price} - (2.5 \times \text{ATR})$.
    - Ratchets upward monotonically as price advances, mathematically locking in unrealized gains.
 
-### 5. Model Hierarchy
+### 5. Daily Candle Fallback & Robust Price Resolution
+- **Off-Market & Low-Liquidity Synthesis**: If intraday 5m data is empty (off-market hours, weekends, market holidays, or low-liquidity stocks), `technical_engine.py` smoothly synthesizes price, ATR, Camarilla institutional pivots ($H_4, H_3, L_3, L_4$), EMAs (20/50/200), Mansfield Relative Strength vs NIFTY 50, and 14-period Wilder's ADX from 1-year daily history (100+ daily bars).
+- **Zero Dummy Prices**: Enforces a multi-tier candidate resolution ladder (`technicals.current_price` $\rightarrow$ `financials.price` $\rightarrow$ `holding.current_market_price` $\rightarrow$ `holding.last_price` $\rightarrow$ `holding.average_price` $\rightarrow$ `technicals.previous_close` $\rightarrow$ `fast_info`), permanently eliminating missing prices or dummy ₹100.00 fallback values.
+
+### 6. Dynamic Target/Stop-Loss Guardrails & Demat P&L Sanitization
+- **Mathematical Bounds**:
+  - **Target 1**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
+  - **Target 2**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
+  - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ risk buffer).
+  - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$, dynamically ratcheting upward with price.
+  - **Risk-Reward Ratio**: Dynamically computed as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
+- **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
+
+### 7. Model Hierarchy
 1. **Primary Model**: `gemini-2.5-flash` via official `google-genai` SDK — Ultra low-latency financial catalyst reasoning with strict JSON schema.
 2. **Fallback Model**: `gemini-1.5-flash` — High-efficiency secondary engine.
 3. **Deterministic Rule Engine**: 100% offline mathematical engine ensuring continuous uptime if external network APIs are unavailable.
@@ -109,6 +122,15 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
   - `[📈 TradingView Chart]`: Deep link directly opening live interactive chart for NSE or BSE (`https://in.tradingview.com/chart/?symbol={EXCH}:{SYMBOL}`).
   - `[💼 ICICI Direct]`: Deep link to portfolio & order execution.
   - `[🏛️ NSE / BSE India Live]`: Direct link to official exchange quote and corporate announcement filings.
+
+### 3. Institutional 4-Column Metric Grid & Wyckoff VSA Presentation
+- **High-Density Metric Strip**: Alerts on both Flutter mobile (`MetricChipStrip`) and Next.js Web (`page.tsx`) replace raw JSON dumps with a clean, structured 4-column HUD:
+  - **DELIVERY**: Delivery volume percentage with institutional green/cyan badges.
+  - **RSI (15M)**: 15-minute Relative Strength Index indicator.
+  - **VWAP**: Intraday session Volume-Weighted Average Price.
+  - **F&O / OI**: Derivatives Open Interest status (`LONG BUILDUP`, `SHORT COVERING`, `UNWINDING`, `CASH`).
+- **⚡ Wyckoff VSA Badge**: Explicit highlighting of `SMART_MONEY_ABSORPTION` vs `OPERATOR_CHURN_TRAP` with contextual commentary.
+- **💼 ICICI Demat Position Snapshot**: Displays sanitized average buy price, quantity, current market value, and real-time P&L %.
 
 ---
 
@@ -189,7 +211,7 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (27 automated unit tests):
+3. Run test suite (37 automated unit tests across 4 suites):
    ```bash
    .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
    ```
@@ -198,13 +220,22 @@ Users can permanently delete their account directly from the **Settings** page:
    .\.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
+> [!IMPORTANT]
+> **Google Cloud Run Configuration**: To ensure background scan tasks execute without interruption after returning the fast HTTP response, configure your Cloud Run service with **"CPU is always allocated"** (pass `--no-cpu-throttling` via `gcloud` CLI or select "CPU is always allocated" under CPU allocation in the GCP Cloud Run Console).
+
 ### 3. Telegram Bot Setup (@BotFather)
 1. Open Telegram and search for `@BotFather`.
 2. Send `/newbot`, name it `StokVigil AI Bot`, and set username to `StokVigilAi_bot`.
 3. Copy the HTTP API token and set it in your backend environment as `TELEGRAM_BOT_TOKEN`.
-4. Register the Webhook:
+4. Register the Webhook (includes secret token authentication):
    ```bash
-   curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=<YOUR_BACKEND_URL>/api/telegram/webhook"
+   curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook" \
+        -H "Content-Type: application/json" \
+        -d '{"url": "<YOUR_BACKEND_URL>/api/telegram/webhook", "secret_token": "<YOUR_TELEGRAM_WEBHOOK_SECRET>"}'
+   ```
+   *Alternative single-line query parameter format:*
+   ```bash
+   curl -X POST "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=<YOUR_BACKEND_URL>/api/telegram/webhook&secret_token=<YOUR_TELEGRAM_WEBHOOK_SECRET>"
    ```
 
 ### 4. Running the Web Portal (Next.js PWA)
@@ -233,4 +264,5 @@ The scheduled GitHub Actions runner executes two automated workflows strictly du
 
 2. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - **Asynchronous Background Execution**: Dispatches scan asynchronously via FastAPI `BackgroundTasks` with a concurrency lock (`_scan_in_progress`), returning `200 OK` in ~50ms to completely eliminate Cloud Run 504 Gateway Timeouts.
    - Pre-computes market state in RAM across all unique watchlist symbols in parallel and evaluates multi-tenant portfolios within seconds.

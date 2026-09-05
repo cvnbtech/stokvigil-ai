@@ -31,6 +31,7 @@ flowchart TD
         B3["verify_user_access (Zero IDOR / BOLA Shield)"]
         B4["Cron Secret Header Validator (DoS & Quota Shield)"]
         B5["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
+        B6["FastAPI BackgroundTasks Worker (Concurrency Lock: _scan_in_progress)"]
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
@@ -43,7 +44,7 @@ flowchart TD
 
     subgraph Engine["AI & Quantitative Surveillance Engine"]
         D0["Market Cache Manager (RAM Singleton, 300s TTL, Bounded 15 Concurrency)"]
-        D1["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Dual-Exchange Fallback)"]
+        D1["Technical Engine (5m/15m/1D RSI, MACD, VWAP, ATR, Dual-Exchange & 1Y Daily Fallback)"]
         D2["Flow Tracker (Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI)"]
         D3["Macro & Forensic Filter (India VIX, SENSEX, Sector Breadth, Debt Health)"]
         D3b{"Tier-1 Quantitative Smart Gatekeeper (RAM Math in 0.001 ms)"}
@@ -64,7 +65,8 @@ flowchart TD
     B1 --> B2 & B4
     B2 --> B3
     B3 --> B5
-    B4 --> D0
+    B4 -->|HTTP 200 OK ~50ms + Async Task| B6
+    B6 -->|Execute Multi-User Scan| D0
     B5 -->|Decrypt App Key & Token| C1
     C1 --> C5
     D0 -->|Batch Pre-Compute All Watchlists| D1 & D2 & D3
@@ -130,6 +132,35 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 5. **Dynamic Chandelier Trailing Stop-Loss for Demat Holdings**:
    - For active ICICI Demat holdings, dynamic trailing stop is computed as $\text{Current Price} - (2.5 \times \text{ATR})$.
    - Ratchets upward monotonically as price advances, mathematically locking in unrealized gains.
+
+### 2.1.5 Robust Price Resolution & 1-Year Daily Candle Fallback (`technical_engine.py`)
+- **Off-Market & Low-Liquidity Synthesis**: When intraday 5m data is empty (off-market hours, weekends, exchange holidays, illiquid stocks, or upstream latency), `technical_engine.py` smoothly synthesizes price, 14-period ATR, Camarilla institutional pivots ($H_4, H_3, L_3, L_4$), EMAs (20/50/200), Mansfield Relative Strength vs NIFTY 50, and 14-period Wilder's ADX directly from the 1-year daily history (100+ daily bars).
+- **Multi-Tier Price Candidate Ladder**: Eliminates any missing or dummy ₹100.00 prices by checking:
+  1. `technicals.current_price` (from 5m or 1D bar close)
+  2. `financials.price`
+  3. `holding.current_market_price`
+  4. `holding.last_price`
+  5. `holding.average_price`
+  6. `technicals.previous_close`
+  7. `ticker.fast_info.last_price` or `regular_market_previous_close`
+
+### 2.1.6 Dynamic Target/Stop-Loss Guardrails & Demat P&L Sanitization (`agent_runner.py`)
+- **Mathematical Bounds**: Tactical levels must adhere to rigorous geometric constraints relative to `current_price`:
+  - **Target 1**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
+  - **Target 2**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
+  - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside risk buffer).
+  - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$ where $\text{Chandelier SL} = \text{Current Price} - (2.5 \times \text{ATR})$.
+  - **Risk-Reward Ratio**: Dynamically computed as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
+- **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
+
+### 2.1.7 Institutional 4-Column UI Grid & Actionable Presentation (`custom_widgets.dart` & `page.tsx`)
+- **High-Density Metric Strip**: Replaces unstructured JSON dumps with a standardized 4-column HUD:
+  - **DELIVERY**: Delivery volume percentage with institutional green/cyan badges.
+  - **RSI (15M)**: 15-minute Relative Strength Index indicator.
+  - **VWAP**: Intraday session Volume-Weighted Average Price.
+  - **F&O / OI**: Derivatives Open Interest status (`LONG BUILDUP`, `SHORT COVERING`, `UNWINDING`, `CASH`).
+- **⚡ Wyckoff VSA Badge**: Explicit highlighting of `SMART_MONEY_ABSORPTION` vs `OPERATOR_CHURN_TRAP` with contextual commentary.
+- **💼 ICICI Demat Position Snapshot**: Displays sanitized average buy price, quantity, current market value, and real-time P&L %.
 
 ### The 4 Factor Weights
 1. **Technicals & Multi-Timeframe Confluence (30%)**: 5m/15m/1D RSI, MACD momentum slope, Intraday VWAP distance, 14-period ATR volatility, 20/50/200 EMAs.
@@ -218,7 +249,7 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 ### 4.2 Multi-Tenant Telegram Bot Flow (`@StokVigilAi_bot`)
 1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=USER_ID`).
 2. **Account Linking**: The bot receives the `/start <USER_ID>` deep link payload via Webhook (`/api/telegram/webhook`).
-3. **Webhook Security**: Incoming webhooks validate the `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_WEBHOOK_SECRET` to eliminate request spoofing.
+3. **Webhook Security**: Incoming webhooks validate the `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_WEBHOOK_SECRET` (configured via Telegram's `setWebhook` API with `secret_token`) to eliminate request spoofing.
 4. **Registration**: The FastAPI backend maps `chat_id` to the user's `profiles` record in Supabase and sets `telegram_enabled = true`.
 5. **Instant Alerts**: During 5-minute scans, high-impact alerts formatted in Telegram HTML (with badges, Demat position context, tactical levels, and inline TradingView/ICICI buttons) are pushed to the user's chat.
 
@@ -242,7 +273,7 @@ G:\stokvigil-ai\
 │   │   ├── config.py
 │   │   ├── auth.py                  <-- Supabase JWT & IDOR Shield
 │   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
-│   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Dual-Exchange Fallback
+│   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Dual-Exchange & 1Y Daily Fallback
 │   │   ├── flow_tracker.py          <-- Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI
 │   │   ├── macro_filter.py          <-- India VIX, SENSEX & NIFTY, Sector sync, Forensics
 │   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
@@ -253,7 +284,8 @@ G:\stokvigil-ai\
 │   ├── tests/
 │   │   ├── test_api_endpoints.py    <-- 19 API, Auth, Security, and IDOR Unit Tests
 │   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
-│   │   └── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
+│   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
+│   │   └── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -337,7 +369,7 @@ G:\stokvigil-ai\
 | `/api/user/alerts` | `GET` | `Bearer <JWT>` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
 | `/api/user/accuracy-stats` | `GET` | `Bearer <JWT>` | Computes real-time win rate estimate and historical signal performance stats |
 | `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
-| `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours |
+| `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours (Dispatched asynchronously via FastAPI BackgroundTasks with `_scan_in_progress` concurrency lock to eliminate Cloud Run 504 timeouts) |
 | `/api/cron/morning-token-reminder` | `POST` | `X-Cron-Secret` | Dispatches 08:50 AM IST reminders to users with expired daily Demat tokens |
 | `/api/telegram/webhook` | `POST` | Secret Header | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
 | `/api/stocks/search` | `GET` | Rate-Limited | Real-time dynamic search across live NSE & BSE traded equities |
@@ -357,4 +389,6 @@ The system uses a GitHub Actions workflow executing strictly during Indian tradi
    - Pushes high-priority FCM & Telegram alerts 25 minutes before market open, prompting users to authenticate.
 2. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - **Asynchronous Background Execution**: The endpoint returns `200 OK` in ~50ms, while the full scan executes in the background via FastAPI `BackgroundTasks`. Concurrency is strictly guarded via `_scan_in_progress` to prevent overlapping runs.
    - Pre-computes market state in RAM across all unique symbols and dispatches confluence alerts within seconds.
+   - **Google Cloud Run Configuration**: Configure Cloud Run with **"CPU is always allocated"** (`--no-cpu-throttling`) to ensure background processing tasks continue execution after the HTTP response is sent.
