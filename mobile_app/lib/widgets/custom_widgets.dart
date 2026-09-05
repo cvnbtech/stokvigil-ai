@@ -1363,10 +1363,10 @@ class ConfluenceRadarChart extends StatelessWidget {
               runSpacing: 4,
               alignment: WrapAlignment.center,
               children: [
-                _buildPill('Tech', t, AppColors.cyan),
-                _buildPill('Flow', fl, AppColors.emerald),
+                _buildPill('Tech', t, AppTheme.cyan),
+                _buildPill('Flow', fl, AppTheme.primaryEmerald),
                 _buildPill('Forensic', fo, const Color(0xFF3B82F6)),
-                _buildPill('Catalyst', c, AppColors.amber),
+                _buildPill('Catalyst', c, AppTheme.warningAmber),
               ],
             ),
           ),
@@ -1444,18 +1444,18 @@ class _RadarChartPainter extends CustomPainter {
       ..close();
 
     final fillPaint = Paint()
-      ..color = AppColors.cyan.withOpacity(0.25)
+      ..color = AppTheme.cyan.withOpacity(0.25)
       ..style = PaintingStyle.fill;
     canvas.drawPath(polyPath, fillPaint);
 
     final strokePaint = Paint()
-      ..color = AppColors.cyan
+      ..color = AppTheme.cyan
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
     canvas.drawPath(polyPath, strokePaint);
 
     // Dots
-    final dotPaint = Paint()..color = AppColors.cyan;
+    final dotPaint = Paint()..color = AppTheme.cyan;
     for (final pt in [pTop, pRight, pBottom, pLeft]) {
       canvas.drawCircle(pt, 3.5, dotPaint);
     }
