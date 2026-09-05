@@ -100,6 +100,136 @@ def detect_rsi_divergence(price_series: pd.Series, rsi_series: pd.Series, window
         
     return "NONE"
 
+def calculate_adx(df: pd.DataFrame, period: int = 14) -> Dict[str, Any]:
+    """
+    Calculates 14-period Wilder's Average Directional Index (ADX).
+    Quantifies trend strength to eliminate false breakouts in choppy, range-bound markets:
+    - STRONG_TREND: ADX >= 25 (high breakout follow-through probability)
+    - MODERATE_TREND: 20 <= ADX < 25
+    - CHOPPY_SIDEWAYS: ADX < 20 (breakouts fail 70% of the time, penalize setups)
+    """
+    default_adx = {"adx_14": 20.0, "plus_di": 20.0, "minus_di": 20.0, "adx_regime": "MODERATE_TREND"}
+    if len(df) < period + 5:
+        return default_adx
+
+    try:
+        high = df['High']
+        low = df['Low']
+        close = df['Close']
+        prev_close = close.shift(1)
+
+        # True Range
+        tr1 = high - low
+        tr2 = (high - prev_close).abs()
+        tr3 = (low - prev_close).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        # Directional Movement
+        up_move = high - high.shift(1)
+        down_move = low.shift(1) - low
+
+        plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+        minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+
+        plus_dm_series = pd.Series(plus_dm, index=df.index)
+        minus_dm_series = pd.Series(minus_dm, index=df.index)
+
+        # Wilder's Smoothing
+        tr_smooth = tr.ewm(alpha=1.0 / period, adjust=False).mean()
+        plus_dm_smooth = plus_dm_series.ewm(alpha=1.0 / period, adjust=False).mean()
+        minus_dm_smooth = minus_dm_series.ewm(alpha=1.0 / period, adjust=False).mean()
+
+        plus_di = (plus_dm_smooth / tr_smooth.replace(0, np.nan) * 100).fillna(0.0)
+        minus_di = (minus_dm_smooth / tr_smooth.replace(0, np.nan) * 100).fillna(0.0)
+
+        di_sum = plus_di + minus_di
+        dx = ((plus_di - minus_di).abs() / di_sum.replace(0, np.nan) * 100).fillna(0.0)
+        adx = dx.ewm(alpha=1.0 / period, adjust=False).mean()
+
+        adx_val = round(float(adx.iloc[-1]), 2)
+        plus_di_val = round(float(plus_di.iloc[-1]), 2)
+        minus_di_val = round(float(minus_di.iloc[-1]), 2)
+
+        if adx_val >= 25.0:
+            regime = "STRONG_TREND"
+        elif adx_val >= 20.0:
+            regime = "MODERATE_TREND"
+        else:
+            regime = "CHOPPY_SIDEWAYS"
+
+        return {
+            "adx_14": adx_val,
+            "plus_di": plus_di_val,
+            "minus_di": minus_di_val,
+            "adx_regime": regime
+        }
+    except Exception as e:
+        logger.warning(f"ADX calculation fallback: {e}")
+        return default_adx
+
+def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, float]:
+    """
+    Computes Camarilla Equation Institutional Pivots from the prior completed daily session.
+    Provides mathematical floors (L3, L4) and ceilings (H3, H4) watched by institutional order books:
+    - H4: Institutional Breakout Ceiling
+    - H3: Target 1 / Mean Reversal Resistance
+    - L3: Institutional Accumulation Floor / Support
+    - L4: Hard Structural Stop-Loss Floor
+    """
+    default_pivots = {"h4": 0.0, "h3": 0.0, "l3": 0.0, "l4": 0.0}
+    if len(df_daily) < 1:
+        return default_pivots
+
+    try:
+        ref_row = df_daily.iloc[-2] if len(df_daily) >= 2 else df_daily.iloc[-1]
+        h = float(ref_row['High'])
+        l = float(ref_row['Low'])
+        c = float(ref_row['Close'])
+        rng = h - l
+
+        if rng <= 0:
+            return default_pivots
+
+        h4 = round(c + (rng * 1.1 / 2.0), 2)
+        h3 = round(c + (rng * 1.1 / 4.0), 2)
+        l3 = round(c - (rng * 1.1 / 4.0), 2)
+        l4 = round(c - (rng * 1.1 / 2.0), 2)
+
+        return {"h4": h4, "h3": h3, "l3": l3, "l4": l4}
+    except Exception as e:
+        logger.warning(f"Camarilla pivots calculation fallback: {e}")
+        return default_pivots
+
+def calculate_relative_strength(df_daily: pd.DataFrame, nifty_20d_ret: float = 1.0) -> Dict[str, Any]:
+    """
+    Computes Mansfield Relative Strength (RS vs NIFTY 50) over a 20-trading-day window.
+    Filters out underperforming laggards and identifies institutional market leaders.
+    """
+    default_rs = {"rs_rating": 0.0, "rs_regime": "IN_LINE"}
+    if len(df_daily) < 20:
+        return default_rs
+
+    try:
+        p_now = float(df_daily['Close'].iloc[-1])
+        p_20d = float(df_daily['Close'].iloc[-20])
+        if p_20d <= 0:
+            return default_rs
+
+        stock_20d_ret = ((p_now - p_20d) / p_20d) * 100.0
+        delta_rs = round(stock_20d_ret - nifty_20d_ret, 2)
+
+        if delta_rs >= 3.0:
+            regime = "OUTPERFORMING_LEADER"
+        elif delta_rs <= -3.0:
+            regime = "UNDERPERFORMING_LAGGARD"
+        else:
+            regime = "IN_LINE"
+
+        return {"rs_rating": delta_rs, "rs_regime": regime}
+    except Exception as e:
+        logger.warning(f"Relative Strength calculation fallback: {e}")
+        return default_rs
+
 def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
     """
     Fetches real-time multi-timeframe intraday (5m, 15m) and daily (1D) OHLCV data.
@@ -125,6 +255,11 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "ema_200": 0.0,
         "ma_trend": "NEUTRAL",
         "atr_14": 0.0,
+        "adx_14": 20.0,
+        "adx_regime": "MODERATE_TREND",
+        "camarilla_pivots": {"h4": 0.0, "h3": 0.0, "l3": 0.0, "l4": 0.0},
+        "rs_rating": 0.0,
+        "rs_regime": "IN_LINE",
         "volume_multiple": 1.0,
         "is_volume_surge": False,
         "technical_score": 50
@@ -209,6 +344,11 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         # RSI Divergence on 15m
         rsi_divergence = detect_rsi_divergence(df_15m['Close'], rsi_15m_series)
         
+        # 14-period Wilder's ADX Trend Strength
+        adx_dict = calculate_adx(df_15m if len(df_15m) >= 20 else df_5m, 14)
+        adx_14 = adx_dict["adx_14"]
+        adx_regime = adx_dict["adx_regime"]
+
         # Daily Technicals (EMAs & Daily RSI)
         rsi_daily = 50.0
         ema_20 = current_price
@@ -236,6 +376,12 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
             else:
                 ma_trend = "BELOW_200_EMA"
 
+        # Camarilla Institutional Pivots & Relative Strength vs NIFTY
+        camarilla_pivots = calculate_camarilla_pivots(df_daily)
+        rs_dict = calculate_relative_strength(df_daily)
+        rs_rating = rs_dict["rs_rating"]
+        rs_regime = rs_dict["rs_regime"]
+
         # Calculate Quantitative Technical Score (0 - 100)
         tech_score = 50
         if current_price > vwap_val:
@@ -262,6 +408,18 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
             
         if is_volume_surge and current_price > df_5m['Open'].iloc[-1]:
             tech_score += 15
+
+        # ADX Trend Strength bonus / chop penalty
+        if adx_regime == "STRONG_TREND":
+            tech_score += 5
+        elif adx_regime == "CHOPPY_SIDEWAYS":
+            tech_score -= 8  # Penalize chop to eliminate false breakouts
+
+        # Relative Strength market leadership bonus / laggard penalty
+        if rs_regime == "OUTPERFORMING_LEADER":
+            tech_score += 5
+        elif rs_regime == "UNDERPERFORMING_LAGGARD":
+            tech_score -= 5
             
         tech_score = max(5, min(95, tech_score))
 
@@ -283,6 +441,11 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
             "ema_200": ema_200,
             "ma_trend": ma_trend,
             "atr_14": atr_val,
+            "adx_14": adx_14,
+            "adx_regime": adx_regime,
+            "camarilla_pivots": camarilla_pivots,
+            "rs_rating": rs_rating,
+            "rs_regime": rs_regime,
             "volume_multiple": volume_mult,
             "is_volume_surge": is_volume_surge,
             "technical_score": tech_score

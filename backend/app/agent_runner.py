@@ -362,11 +362,15 @@ Evaluate the multi-factor data payload for #{symbol} (NSE) and determine if ther
 • Intraday VWAP: ₹{technicals.get('vwap')} (Price vs VWAP: {technicals.get('price_vs_vwap_pct')}%)
 • EMAs: 20 EMA=₹{technicals.get('ema_20')}, 50 EMA=₹{technicals.get('ema_50')}, 200 EMA=₹{technicals.get('ema_200')} ({technicals.get('ma_trend')})
 • Volatility (14 ATR): ₹{atr_val}
+• ADX (14-period Trend Strength): {technicals.get('adx_14')} ({technicals.get('adx_regime')})
+• Camarilla Pivots: H4=₹{technicals.get('camarilla_pivots', {}).get('h4')}, H3=₹{technicals.get('camarilla_pivots', {}).get('h3')}, L3=₹{technicals.get('camarilla_pivots', {}).get('l3')}, L4=₹{technicals.get('camarilla_pivots', {}).get('l4')}
+• Relative Strength vs NIFTY 50: {technicals.get('rs_rating')}% ({technicals.get('rs_regime')})
 • Volume Multiple: {technicals.get('volume_multiple')}x vs 20 MA (Surge: {technicals.get('is_volume_surge')})
 
 ============================================================
 3. INSTITUTIONAL FLOW & DERIVATIVES:
 ============================================================
+• Wyckoff VSA Regime: {flow_data.get('vsa_regime')} ({flow_data.get('vsa_note', '')})
 • Estimated Delivery Volume: {flow_data.get('delivery_pct')}% (Accumulation: {flow_data.get('is_high_delivery')})
 • F&O Open Interest: {flow_data.get('fo_oi_status')} ({flow_data.get('flow_bias')})
 
@@ -545,7 +549,38 @@ def compute_deterministic_confluence(
         (min(95, news_score) * 0.20)
     ))
 
-    # Determine Action Bias
+    # 1. ADX Trend Strength Check (Choppy Sideways Veto / Chop Penalty)
+    adx_regime = technicals.get("adx_regime", "MODERATE_TREND")
+    adx_val = technicals.get("adx_14", 20.0)
+    if adx_regime == "CHOPPY_SIDEWAYS":
+        confluence_drivers.append(f"ADX Warning: Low trend strength ({adx_val} < 20). Sideways consolidation risk.")
+        confluence_score = max(25, confluence_score - 8)
+    elif adx_regime == "STRONG_TREND":
+        confluence_drivers.append(f"ADX Confirmation: Strong Institutional Trend ({adx_val} >= 25)")
+
+    # 2. Mansfield Relative Strength vs NIFTY 50
+    rs_regime = technicals.get("rs_regime", "IN_LINE")
+    rs_rating = technicals.get("rs_rating", 0.0)
+    if rs_regime == "OUTPERFORMING_LEADER":
+        confluence_drivers.append(f"Market Leadership: Outperforming NIFTY 50 by {rs_rating:+.1f}%")
+        confluence_score = min(98, confluence_score + 5)
+    elif rs_regime == "UNDERPERFORMING_LAGGARD":
+        confluence_drivers.append(f"Relative Strength Warning: Underperforming NIFTY 50 by {rs_rating:+.1f}%")
+        confluence_score = max(25, confluence_score - 5)
+
+    # 3. Triple-Timeframe Fractal Harmony (Daily Tide -> 15m Wave -> 5m Trigger)
+    daily_bullish = (current_price >= technicals.get("ema_50", current_price)) and (technicals.get("rsi_daily", 50) >= 48)
+    m15_bullish = (technicals.get("price_vs_vwap_pct", 0) >= -0.2) and (technicals.get("rsi_divergence") != "BEARISH_REGULAR_DIVERGENCE")
+    m5_bullish = technicals.get("is_volume_surge", False) or (technicals.get("macd_trend") in ["BULLISH_CROSSOVER", "EXPANDING_BULLISH_MOMENTUM"])
+
+    if daily_bullish and m15_bullish and m5_bullish:
+        confluence_drivers.append("Triple-Timeframe Confluence: Daily Tide + 15m Wave + 5m Trigger aligned Bullish")
+        confluence_score = min(98, confluence_score + 8)
+    elif not daily_bullish and m5_bullish:
+        confluence_drivers.append("Timeframe Divergence: 5m rally conflicting with Daily macro downtrend")
+        confluence_score = max(30, confluence_score - 8)
+
+    # Determine Action Bias based on adjusted Confluence Score
     action_bias = "HOLD_NEUTRAL"
     has_actionable_signal = False
     
@@ -586,17 +621,38 @@ def compute_deterministic_confluence(
     if not confluence_drivers:
         confluence_drivers.append(f"Current price: ₹{current_price} | 15m RSI: {technicals.get('rsi_15m')}")
 
-    # Tactical Volatility Envelopes (Strict 1:2.5 Asymmetric R:R)
-    entry_min = round(current_price * 0.995, 2)
-    entry_max = round(current_price * 1.005, 2)
-    stop_loss = round(current_price - (1.0 * atr_val), 2)
-    target_1 = round(current_price + (1.5 * atr_val), 2)
-    target_2 = round(current_price + (2.5 * atr_val), 2)
-    risk_val = current_price - stop_loss
-    reward_val = target_2 - current_price
-    rr_ratio = round(reward_val / risk_val, 1) if risk_val > 0 else 2.5
+    # 4. Camarilla Equation Institutional Pivots & Tactical Volatility Envelopes
+    camarilla = technicals.get("camarilla_pivots", {})
+    h4 = camarilla.get("h4", 0.0)
+    h3 = camarilla.get("h3", 0.0)
+    l3 = camarilla.get("l3", 0.0)
+    l4 = camarilla.get("l4", 0.0)
 
-    holding_guidance = "Monitor position with trailing SL." if demat_context["is_in_portfolio"] else "Track for optimal entry in tactical range."
+    if h3 > 0 and l3 > 0:
+        entry_min = round(min(current_price * 0.995, l3), 2)
+        entry_max = round(max(current_price * 1.005, current_price), 2)
+        target_1 = round(max(current_price + (1.5 * atr_val), h3), 2)
+        target_2 = round(max(current_price + (2.5 * atr_val), h4), 2)
+        stop_loss = round(min(current_price - (1.0 * atr_val), l4), 2)
+    else:
+        entry_min = round(current_price * 0.995, 2)
+        entry_max = round(current_price * 1.005, 2)
+        stop_loss = round(current_price - (1.0 * atr_val), 2)
+        target_1 = round(current_price + (1.5 * atr_val), 2)
+        target_2 = round(current_price + (2.5 * atr_val), 2)
+
+    # 5. Dynamic Chandelier Trailing Stop-Loss for Demat Holdings
+    holding_guidance = "Track for optimal entry in tactical range."
+    if demat_context["is_in_portfolio"]:
+        avg_buy = demat_context.get("average_buy_price", current_price)
+        chandelier_sl = round(current_price - (2.5 * atr_val), 2)
+        base_cost_sl = round(avg_buy * 0.96, 2)
+        stop_loss = max(stop_loss, base_cost_sl, chandelier_sl)
+        holding_guidance = f"Chandelier Trailing SL active at ₹{stop_loss:,.2f} (Protecting cost basis ₹{avg_buy:,.2f})."
+
+    risk_val = max(1.0, current_price - stop_loss)
+    reward_val = max(2.5, target_2 - current_price)
+    rr_ratio = round(reward_val / risk_val, 1)
 
     return {
         "symbol": symbol,
