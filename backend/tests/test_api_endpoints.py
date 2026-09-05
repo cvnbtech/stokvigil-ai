@@ -11,7 +11,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.main import app, get_supabase
-from app.auth import get_current_user_id
+from app.auth import get_current_user_id, mask_id
 from app.config import settings
 from app.vault import vault
 
@@ -244,6 +244,38 @@ class TestApiEndpoints(unittest.TestCase):
         }
         res = self.client.post("/api/telegram/webhook", json=payload, headers=webhook_headers)
         self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "linked")
+        self.assertEqual(data["user_param"], "***-123")
+        self.assertEqual(data["chat_id"], "***5678")
+
+    # 15b. Telegram Webhook - Rejects Email linking for security
+    def test_15b_telegram_webhook_rejects_email(self):
+        webhook_headers = {"X-Telegram-Bot-Api-Secret-Token": settings.TELEGRAM_WEBHOOK_SECRET}
+        payload = {
+            "update_id": 10002,
+            "message": {
+                "message_id": 2,
+                "chat": {"id": 12345678, "type": "private"},
+                "from": {"id": 12345678, "first_name": "Attacker"},
+                "text": "/start victim@example.com"
+            }
+        }
+        res = self.client.post("/api/telegram/webhook", json=payload, headers=webhook_headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "rejected")
+        self.assertEqual(data["reason"], "email_not_permitted")
+
+    # 15c. Mask ID utility unit tests
+    def test_15c_mask_id_utility(self):
+        self.assertEqual(mask_id("987654321"), "***4321")
+        self.assertEqual(mask_id("test-user-123"), "***-123")
+        self.assertEqual(mask_id("5000"), "***5000")
+        self.assertEqual(mask_id("500"), "***500")
+        self.assertEqual(mask_id("12"), "***12")
+        self.assertEqual(mask_id(""), "***")
+        self.assertEqual(mask_id(None), "***")
 
     # 16. User Accuracy Stats - Authorized
     def test_16_accuracy_stats(self):

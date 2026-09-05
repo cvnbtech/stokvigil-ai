@@ -20,7 +20,7 @@ import pandas as pd
 
 from app.config import settings
 from app.vault import vault
-from app.auth import get_current_user_id, verify_user_access
+from app.auth import get_current_user_id, verify_user_access, mask_id
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
@@ -247,7 +247,7 @@ def register_device(
     try:
         # 1. Primary: Direct targeted update (does not touch email, 100% safe)
         res = db.table("profiles").update(update_data).eq("id", req.user_id).execute()
-        logger.info(f"✅ Device & notification preferences updated for user {req.user_id}: {update_data}")
+        logger.info(f"✅ Device & notification preferences updated for user {mask_id(req.user_id)}")
         if res.data and len(res.data) > 0:
             return {"status": "success", "profile": res.data[0]}
             
@@ -344,7 +344,7 @@ def save_user_credentials(
     try:
         res = db.table("user_credentials").upsert(payload, on_conflict="user_id").execute()
     except Exception as e:
-        logger.error(f"Error upserting credentials for user {req.user_id}: {e}")
+        logger.error(f"Error upserting credentials for user {mask_id(req.user_id)}: {e}")
         res = db.table("user_credentials").update(payload).eq("user_id", req.user_id).execute()
 
     return {
@@ -900,7 +900,7 @@ def delete_user_account(
     4. Deletes the user identity from Supabase auth.users via Admin API.
     """
     verify_user_access(req.user_id, auth_user_id)
-    logger.info(f"Initiating complete account deletion for user_id: {req.user_id}")
+    logger.info(f"Initiating complete account deletion for user_id: {mask_id(req.user_id)}")
     try:
         # 1. Clean broker credentials
         db.table("user_credentials").delete().eq("user_id", req.user_id).execute()
@@ -926,13 +926,13 @@ def delete_user_account(
         except Exception as auth_err:
             logger.warning(f"Note on auth admin deletion: {auth_err}")
 
-        logger.info(f"Successfully deleted all data and identity for user_id: {req.user_id}")
+        logger.info(f"Successfully deleted all data and identity for user_id: {mask_id(req.user_id)}")
         return {
             "status": "success",
             "message": "Your account and all associated data have been permanently deleted."
         }
     except Exception as e:
-        logger.error(f"Error deleting account for user {req.user_id}: {e}")
+        logger.error(f"Error deleting account for user {mask_id(req.user_id)}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
 
 
@@ -950,7 +950,7 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]
             for s in symbols
         ]
         db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
-        logger.info(f"Background auto-synced {len(symbols)} Demat holdings to user_watchlists for user {user_id}")
+        logger.info(f"Background auto-synced {len(symbols)} Demat holdings to user_watchlists for user {mask_id(user_id)}")
     except Exception as sync_err:
         logger.warning(f"Note on background auto-syncing Demat holdings: {sync_err}")
 
@@ -986,7 +986,7 @@ def get_user_portfolio(
 
     # Check if session token was generated TODAY (SEBI Daily Expiration Compliance)
     if token_date != today_str:
-        logger.info(f"ICICI Session Token expired for user {user_id}. Token date: {token_date}, Today: {today_str}")
+        logger.info(f"ICICI Session Token expired for user {mask_id(user_id)}. Token date: {token_date}, Today: {today_str}")
         return {
             "has_credentials": False,
             "is_expired": True,
@@ -1139,7 +1139,7 @@ async def execute_multi_user_market_scan(db: Client):
                 all_generated_alerts.extend(alerts)
                 scanned_users += 1
             except Exception as user_err:
-                logger.error(f"Error scanning user {uid}: {user_err}")
+                logger.error(f"Error scanning user {mask_id(uid)}: {user_err}")
 
         logger.info(f"✅ Background market scan finished: {synced_symbols_count} symbols, {scanned_users} users scanned, {len(all_generated_alerts)} alerts dispatched.")
     except Exception as e:
@@ -1296,7 +1296,7 @@ async def run_pre_market_briefing(
                     await send_telegram_notification(tg_id, telegram_html)
                     sent = True
                 except Exception as tg_err:
-                    logger.warning(f"Telegram pre-market dispatch failed for chat {tg_id}: {tg_err}")
+                    logger.warning(f"Telegram pre-market dispatch failed for chat {mask_id(tg_id)}: {tg_err}")
             if fcm_tok and fcm_on:
                 try:
                     await send_fcm_notification(fcm_tok, fcm_title, fcm_body, {
@@ -1443,7 +1443,7 @@ async def telegram_webhook(
     if expected:
         incoming = (x_telegram_bot_api_secret_token or "").strip().strip('"').strip("'")
         if not incoming or not hmac.compare_digest(incoming, expected):
-            logger.warning(f"Blocked Telegram webhook: Secret token header mismatch or missing. (Received: '{x_telegram_bot_api_secret_token}')")
+            logger.warning("Blocked Telegram webhook: Secret token header mismatch or missing.")
             raise HTTPException(status_code=403, detail="Unauthorized webhook source: Invalid secret token.")
     elif settings.ENVIRONMENT == "production":
         logger.critical("TELEGRAM_WEBHOOK_SECRET is unconfigured in production mode. Rejecting all webhook calls.")
@@ -1455,58 +1455,72 @@ async def telegram_webhook(
         
     chat_id = str(msg.get("chat", {}).get("id", "")).strip()
     text = msg.get("text", "").strip()
-    logger.info(f"📩 Incoming Telegram Webhook from Chat ID: {chat_id} | Text: '{text}'")
+    logger.info(f"📩 Incoming Telegram Webhook from Chat ID: {mask_id(chat_id)}")
 
     if not chat_id:
         return {"status": "ignored"}
 
     user_param = None
+    email_detected = False
+
     if text.startswith("/start") or text.startswith("/link"):
         parts = text.split(" ")
         if len(parts) > 1:
-            user_param = parts[1].strip()
-    elif len(text) >= 20 and ("-" in text or "@" in text):
-        # User directly pasted their UUID or Email
-        user_param = text.strip()
+            candidate = parts[1].strip()
+            if "@" in candidate:
+                email_detected = True
+            else:
+                user_param = candidate
+    elif len(text) >= 10:
+        if "@" in text:
+            email_detected = True
+        else:
+            user_param = text.strip()
+
+    if email_detected:
+        logger.warning(f"Rejected Telegram linking attempt using email address from Chat ID: {mask_id(chat_id)}")
+        warn_msg = (
+            "⚠️ <b>Email Linking Disabled for Account Security</b>\n\n"
+            "To protect your surveillance feed from unauthorized access, linking via email is not permitted.\n\n"
+            "👉 <b>How to Link Securely:</b>\n"
+            "1. Open the StokVigil App or Web Portal $\\to$ <b>Settings</b>.\n"
+            f"2. Save your Telegram Chat ID (<code>{chat_id}</code>) directly in the Notification Settings.\n"
+            "3. Or copy your <b>User ID</b> from the app settings and send: <code>/start YOUR_USER_ID</code>."
+        )
+        await send_telegram_notification(chat_id, warn_msg)
+        return {"status": "rejected", "reason": "email_not_permitted"}
 
     if user_param:
-        logger.info(f"🔗 Linking Telegram Chat ID: {chat_id} to user identifier: {user_param}")
+        logger.info(f"🔗 Linking Telegram Chat ID: {mask_id(chat_id)} to user identifier: {mask_id(user_param)}")
         try:
-            # 1. Try updating by UUID or Email
-            is_email = "@" in user_param
-            match_col = "email" if is_email else "id"
-            
+            # Strictly link by User ID (UUID) only
             res = db.table("profiles").update({
                 "telegram_chat_id": chat_id,
                 "telegram_enabled": True,
                 "updated_at": "now()"
-            }).eq(match_col, user_param).execute()
+            }).eq("user_id", user_param).execute()
 
             if not res.data or len(res.data) == 0:
-                # Upsert profile if row doesn't exist yet
                 upsert_payload = {
+                    "id": user_param,
                     "telegram_chat_id": chat_id,
                     "telegram_enabled": True,
                     "updated_at": "now()"
                 }
-                if is_email:
-                    upsert_payload["email"] = user_param
-                else:
-                    upsert_payload["id"] = user_param
                 db.table("profiles").upsert(upsert_payload).execute()
 
-            logger.info(f"✅ Successfully linked Telegram Chat ID {chat_id} to user {user_param}")
+            logger.info(f"✅ Successfully linked Telegram Chat ID {mask_id(chat_id)} to user {mask_id(user_param)}")
             welcome_msg = (
                 "✅ <b>StokVigil AI Successfully Linked!</b>\n\n"
                 f"Your Telegram Chat ID (<code>{chat_id}</code>) has been connected to your StokVigil AI account.\n\n"
                 "You will now receive real-time institutional alerts, 200 EMA breakout signals, and Demat notifications directly here."
             )
             await send_telegram_notification(chat_id, welcome_msg)
-            return {"status": "linked", "user_param": user_param, "chat_id": chat_id}
+            return {"status": "linked", "user_param": mask_id(user_param), "chat_id": mask_id(chat_id)}
         except Exception as e:
             logger.error(f"Error linking telegram user in Supabase: {e}")
-            await send_telegram_notification(chat_id, f"⚠️ Connection error: {e}. Please save your Chat ID in the app settings.")
-            return {"status": "error", "detail": str(e)}
+            await send_telegram_notification(chat_id, "⚠️ Connection error. Please save your Chat ID in the app settings.")
+            return {"status": "error", "detail": "Connection error"}
     else:
         help_msg = (
             f"👋 <b>Welcome to StokVigil AI Bot!</b>\n\n"
@@ -1517,4 +1531,4 @@ async def telegram_webhook(
             "3. Or tap 'Connect @StokVigilAi_bot' directly from the app."
         )
         await send_telegram_notification(chat_id, help_msg)
-        return {"status": "help_sent", "chat_id": chat_id}
+        return {"status": "help_sent", "chat_id": mask_id(chat_id)}

@@ -29,11 +29,12 @@ flowchart TD
     subgraph SecurityGate["FastAPI Security Gateway & Auth"]
         B0["Sliding-Window IP Rate Limiter (120 req/min) + Symbol Regex Whitelist"]
         B1["CORS Origin Filter (Whitelisted Domains in .env)"]
-        B2["auth.py (Supabase JWT Bearer Token Verification & Zero IDOR)"]
+        B2["auth.py (Supabase JWT Bearer, Zero IDOR & 4-Char PII Log Masking)"]
         B3["Cron Secret HMAC Constant-Time Validator (DoS & Quota Shield)"]
         B4["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
         B5["In-Memory Bounded Caches (Candles, FII/DII, Accuracy Ledger, Quotes)"]
         B6["FastAPI BackgroundTasks Worker (Concurrency Lock: _scan_in_progress)"]
+        B7["Telegram Webhook Validator (Secret Header & Email Rejection Shield)"]
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
@@ -310,11 +311,15 @@ To sustain 100,000+ client requests without database connection exhaustion, data
    - Next.js 14 Service Worker handles background push events when the browser tab is closed.
 
 ### 4.2 Multi-Tenant Telegram Bot Flow (`@StokVigilAi_bot`)
-1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=USER_ID`).
+1. **Bot Setup**: The user opens Telegram and searches for `@StokVigilAi_bot` or clicks the link in the StokVigil app (`t.me/StokVigilAi_bot?start=<USER_ID>`).
 2. **Account Linking**: The bot receives the `/start <USER_ID>` deep link payload via Webhook (`/api/telegram/webhook`).
-3. **Webhook Security**: Incoming webhooks validate the `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_WEBHOOK_SECRET` (configured via Telegram's `setWebhook` API with `secret_token`) to eliminate request spoofing.
-4. **Registration**: The FastAPI backend maps `chat_id` to the user's `profiles` record in Supabase and sets `telegram_enabled = true`.
-5. **Instant Alerts**: During 5-minute scans, high-impact alerts formatted in Telegram HTML (with badges, Demat position context, tactical levels, and inline TradingView/ICICI buttons) are pushed to the user's chat.
+3. **Anti-Hijacking Security**:
+   - Linking via email is strictly rejected (`reason: email_not_permitted`) to protect users from alert feed interception.
+   - Strictly links by internal User ID / UUID.
+4. **Webhook Secret Validation**: Incoming webhooks validate the `X-Telegram-Bot-Api-Secret-Token` header against `TELEGRAM_WEBHOOK_SECRET` (configured via Telegram's `setWebhook` API with `secret_token`) to eliminate request spoofing.
+5. **Zero Raw PII Telemetry**: In compliance with financial data privacy standards, all user IDs, UUIDs, and Telegram Chat IDs are masked across all server logs via `mask_id(val)` showing only the last 4 characters (`***XXXX`).
+6. **Registration**: The FastAPI backend maps `chat_id` to the user's `profiles` record in Supabase and sets `telegram_enabled = true`.
+7. **Instant Alerts**: During 5-minute scans, high-impact alerts formatted in Telegram HTML (with badges, Demat position context, tactical levels, and inline TradingView/ICICI buttons) are pushed to the user's chat.
 
 ---
 
@@ -335,7 +340,7 @@ G:\stokvigil-ai\
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   ├── auth.py                  <-- Supabase JWT & IDOR Shield
+│   │   ├── auth.py                  <-- Supabase JWT, IDOR Shield & 4-Char PII Masking
 │   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
 │   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Dual-Exchange & 1Y Daily Fallback
 │   │   ├── flow_tracker.py          <-- Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI
@@ -348,7 +353,7 @@ G:\stokvigil-ai\
 │   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
 │   │   └── main.py                  <-- FastAPI Entrypoint & Rate Limiter
 │   ├── tests/
-│   │   ├── test_api_endpoints.py    <-- 21 API, Auth, Security, and IDOR Unit Tests
+│   │   ├── test_api_endpoints.py    <-- 23 API, Auth, Security, Email Rejection & Masking Unit Tests
 │   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
 │   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
 │   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)

@@ -1,6 +1,7 @@
 import time
 import logging
 from typing import Dict, Any, Tuple
+from app.auth import mask_id
 
 logger = logging.getLogger("stokvigil.alert_limiter")
 
@@ -60,7 +61,7 @@ def should_dispatch_alert(
     # 3. Cooldown check
     if elapsed < DEFAULT_COOLDOWN_SECONDS:
         remaining_mins = int((DEFAULT_COOLDOWN_SECONDS - elapsed) / 60)
-        logger.info(f"Alert throttled for {symbol} (User {user_id[:8]}). Cooldown remaining: {remaining_mins}m")
+        logger.info(f"Alert throttled for {symbol} (User {mask_id(user_id)}). Cooldown remaining: {remaining_mins}m")
         return False, f"Throttled: {remaining_mins}m remaining in symbol cooldown."
         
     # Cooldown expired, update cache

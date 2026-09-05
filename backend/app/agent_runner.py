@@ -16,6 +16,7 @@ from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health
 from app.alert_limiter import should_dispatch_alert
 from app.notifications import send_fcm_notification, send_telegram_notification, format_telegram_alert, build_telegram_inline_keyboard
 from app.market_cache import market_cache
+from app.auth import mask_id
 
 logger = logging.getLogger("stokvigil.agent_runner")
 
@@ -919,7 +920,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     # 1. Fetch user profile & notification settings
     profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
     if not profile_res.data:
-        logger.warning(f"Profile not found for user {user_id}")
+        logger.warning(f"Profile not found for user {mask_id(user_id)}")
         return []
         
     profile = profile_res.data[0]
@@ -960,7 +961,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 except Exception as e:
                     logger.error(f"Error syncing holding {sym} to watchlist: {e}")
         else:
-            logger.info(f"ICICI Session Token for user {user_id} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
+            logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
@@ -1154,7 +1155,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 generated_alerts.append(res.data[0])
 
         except Exception as stock_err:
-            logger.error(f"Error evaluating symbol {symbol} for user {user_id}: {stock_err}")
+            logger.error(f"Error evaluating symbol {symbol} for user {mask_id(user_id)}: {stock_err}")
             continue
 
     return generated_alerts

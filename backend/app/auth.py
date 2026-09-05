@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Any
 from fastapi import Header, HTTPException, Depends
 from supabase import create_client, Client
 from app.config import settings
@@ -45,6 +45,21 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional
 
     return None
 
+def mask_id(val: Optional[Any]) -> str:
+    """
+    Masks user IDs, UUIDs, or chat IDs showing only the last 4 characters (e.g. ***0123).
+    Prevents leaking sensitive identifiers into server logs.
+    """
+    if val is None:
+        return "***"
+    s = str(val).strip()
+    if not s:
+        return "***"
+    if len(s) <= 4:
+        return "***" + s
+    return "***" + s[-4:]
+
+
 def verify_user_access(requested_user_id: str, authenticated_user_id: Optional[str]) -> bool:
     """
     Ensures that a user can only access and modify their own data.
@@ -56,7 +71,10 @@ def verify_user_access(requested_user_id: str, authenticated_user_id: Optional[s
         raise HTTPException(status_code=401, detail="Authentication required.")
 
     if requested_user_id != authenticated_user_id:
-        logger.warning(f"IDOR attempt detected: Authenticated user '{authenticated_user_id}' tried to access user '{requested_user_id}'.")
+        logger.warning(
+            f"IDOR attempt detected: Authenticated user '{mask_id(authenticated_user_id)}' "
+            f"tried to access user '{mask_id(requested_user_id)}'."
+        )
         raise HTTPException(
             status_code=403,
             detail="Access forbidden: You are not authorized to access or modify this account."

@@ -8,7 +8,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 ## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
 - **No Unsolicited Automated Trades**: The application never executes trades without user confirmation.
 - **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts).
-- **Bank-Grade Security**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, whitelisted CORS origins, AES-256 Fernet vault key encryption, and Android ProGuard/R8 code obfuscation.
+- **Bank-Grade Security & PII Privacy**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, Telegram webhook secret token validation (`X-Telegram-Bot-Api-Secret-Token`), anti-hijacking Telegram pairing (strictly rejecting public email addresses), complete identifier log masking (`mask_id` exposing only the last 4 characters), whitelisted CORS origins, AES-256 Fernet vault key encryption, and Android ProGuard/R8 code obfuscation.
 
 ---
 
@@ -121,7 +121,8 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 
 ### 2. Multi-Tenant Telegram Bot (`@StokVigilAi_bot`)
 - **Single Central Bot Architecture**: A single bot handle (`@StokVigilAi_bot`) serves unlimited individual users with complete tenant isolation.
-- **1-Tap Deep Link Pairing**: Clicking **`Connect Telegram →`** opens `https://t.me/StokVigilAi_bot?start=<USER_ID>`.
+- **Anti-Hijacking Telegram Pairing Security**: Telegram pairing requires the user's internal User ID / UUID. Linking via email addresses is strictly rejected and prohibited (`reason: email_not_permitted`) to protect users from alert feed interception. Incoming webhooks are verified via `X-Telegram-Bot-Api-Secret-Token`.
+- **Zero Raw PII Telemetry / Log Masking**: In compliance with financial data privacy standards, all user IDs, UUIDs, and Telegram Chat IDs are masked across all server and pipeline logs (`mask_id`), displaying only the last 4 characters (`***XXXX`).
 - **Rich HTML Cards & Interactive Cockpit Buttons**: Every alert includes color-coded badges, Demat position snapshot, Wyckoff VSA market snapshot, tactical levels (Entry, Target 1, Target 2, Stop-Loss, R:R), and interactive buttons:
   - `[📈 TradingView Chart]`: Deep link directly opening live interactive chart for NSE or BSE (`https://in.tradingview.com/chart/?symbol={EXCH}:{SYMBOL}`).
   - `[💼 ICICI Direct]`: Deep link to portfolio & order execution.
@@ -264,9 +265,9 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (56 automated unit tests across 7 suites):
+3. Run test suite (58 automated unit tests across 7 suites):
    ```bash
-   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="development"; .\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py"
+   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```
 4. Start backend server:
    ```bash

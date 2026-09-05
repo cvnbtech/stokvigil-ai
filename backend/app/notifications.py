@@ -4,6 +4,7 @@ import logging
 import httpx
 from typing import Optional, Dict, Any, List
 from app.config import settings
+from app.auth import mask_id
 
 logger = logging.getLogger("stokvigil.notifications")
 
@@ -80,7 +81,7 @@ async def send_telegram_notification(chat_id: str, formatted_html_text: str, rep
         
     bot_token = settings.TELEGRAM_BOT_TOKEN
     if not bot_token:
-        logger.info(f"[DRY RUN - Telegram Alert to Chat {chat_id}] Message:\n{formatted_html_text}")
+        logger.info(f"[DRY RUN - Telegram Alert to Chat {mask_id(chat_id)}] Message:\n{formatted_html_text}")
         return True
         
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -97,7 +98,7 @@ async def send_telegram_notification(chat_id: str, formatted_html_text: str, rep
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.post(url, json=payload)
             if res.status_code == 200:
-                logger.info(f"Telegram alert sent to Chat ID: {chat_id}")
+                logger.info(f"Telegram alert sent to Chat ID: {mask_id(chat_id)}")
                 return True
             else:
                 logger.error(f"Telegram Bot API error [{res.status_code}]: {res.text}")
