@@ -40,6 +40,8 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional
     if settings.ENVIRONMENT != "test":
         if not authorization:
             raise HTTPException(status_code=401, detail="Missing Authorization Bearer token.")
+        else:
+            raise HTTPException(status_code=401, detail="Invalid Authorization header format. Expected 'Bearer <token>'.")
 
     return None
 

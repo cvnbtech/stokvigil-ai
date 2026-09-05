@@ -54,6 +54,8 @@ class Settings(BaseSettings):
                     pass
             # Comma-separated string or single URL
             return [x.strip().strip('"').strip("'") for x in val.split(",") if x.strip()]
+        if self.ENVIRONMENT == "production":
+            return []
         return ["*"]
 
     class Config:

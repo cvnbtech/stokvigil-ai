@@ -9,16 +9,16 @@ logger = logging.getLogger("stokvigil.vault")
 
 class CryptoVault:
     def __init__(self, raw_secret_key: str = None):
-        key_source = raw_secret_key or settings.ENCRYPTION_KEY or "stokvigil_vault_default_secret_key_2026_prod="
-        
-        # Production Environment Key Audit - Safe Log Warning
+        # Production Environment Key Audit - Strict Fatal Enforcement
         if settings.ENVIRONMENT == "production":
-            if not key_source or key_source.startswith("d3d3d3"):
-                logger.warning(
-                    "WARNING: Default/placeholder ENCRYPTION_KEY detected in production mode. "
-                    "Deriving PBKDF2 key. For maximum security, provide a dedicated ENCRYPTION_KEY in your Cloud Run variables."
+            if not settings.ENCRYPTION_KEY or settings.ENCRYPTION_KEY.startswith("d3d3d3"):
+                logger.critical("FATAL: Missing or placeholder ENCRYPTION_KEY in production environment.")
+                raise RuntimeError(
+                    "FATAL SECURITY CONFIGURATION: Dedicated ENCRYPTION_KEY environment variable is required in production mode."
                 )
-                key_source = key_source or "stokvigil_vault_default_secret_key_2026_prod="
+            key_source = settings.ENCRYPTION_KEY
+        else:
+            key_source = raw_secret_key or settings.ENCRYPTION_KEY or "stokvigil_vault_default_secret_key_2026_prod="
 
         # Ensure valid 32-byte urlsafe base64 key for Fernet
         if len(key_source) != 44 or not key_source.endswith('='):

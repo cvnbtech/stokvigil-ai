@@ -123,6 +123,13 @@ CREATE POLICY "Service role full access on user_credentials"
     ON public.user_credentials FOR ALL
     USING (auth.jwt() ->> 'role' = 'service_role');
 
+-- Least-Privilege Public View: Exposes only token status metadata without raw ciphertexts
+CREATE OR REPLACE VIEW public.user_credentials_status WITH (security_invoker = true) AS
+SELECT id, user_id, token_date, updated_at
+FROM public.user_credentials;
+
+GRANT SELECT ON public.user_credentials_status TO authenticated;
+
 
 -- 4. Create User Watchlists Table
 CREATE TABLE IF NOT EXISTS public.user_watchlists (
@@ -182,3 +189,6 @@ CREATE INDEX IF NOT EXISTS idx_watchlists_user ON public.user_watchlists(user_id
 CREATE INDEX IF NOT EXISTS idx_alerts_user_date ON public.stok_alerts(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_symbol ON public.stok_alerts(symbol);
 CREATE INDEX IF NOT EXISTS idx_credentials_date ON public.user_credentials(token_date);
+CREATE INDEX IF NOT EXISTS idx_stok_alerts_created_at ON public.stok_alerts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stok_alerts_symbol_user ON public.stok_alerts(symbol, user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_telegram ON public.profiles(telegram_chat_id) WHERE telegram_enabled = true;

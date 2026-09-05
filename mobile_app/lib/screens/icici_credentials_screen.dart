@@ -169,31 +169,13 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // 1. Direct Supabase Encrypted Vault Save (Instant & 100% Reliable Upsert)
-      bool success = await SupabaseService().saveIciciCredentials(
+      // Save credentials exclusively via Backend API (Fernet AES-256 Vault)
+      bool success = await ApiService().saveIciciCredentials(
         userId: user.id,
         appKey: appKey,
         secretKey: secretKey,
         sessionToken: sessionToken,
       );
-
-      // 2. If direct Supabase failed, fallback to Backend API save
-      if (!success) {
-        success = await ApiService().saveIciciCredentials(
-          userId: user.id,
-          appKey: appKey,
-          secretKey: secretKey,
-          sessionToken: sessionToken,
-        );
-      } else {
-        // Background sync to backend Fernet vault
-        ApiService().saveIciciCredentials(
-          userId: user.id,
-          appKey: appKey,
-          secretKey: secretKey,
-          sessionToken: sessionToken,
-        ).catchError((_) => false);
-      }
 
       setState(() {
         _isLoading = false;

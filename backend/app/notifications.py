@@ -1,3 +1,4 @@
+import html as html_lib
 import json
 import logging
 import httpx
@@ -135,12 +136,15 @@ def format_telegram_alert(
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     exch_label = "BSE" if is_bse else "NSE"
 
+    safe_catalyst = html_lib.escape(catalyst_type.replace('_', ' '), quote=False)
+    safe_title = html_lib.escape(alert_title, quote=False)
+
     html = f"{header_badge}\n"
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += f"📈 <b>Ticker:</b> #{clean_sym} ({exch_label})\n"
     html += f"🎯 <b>Confluence Score:</b> <b>{confluence_score}/100</b>\n"
-    html += f"⚡ <b>Catalyst:</b> {catalyst_type.replace('_', ' ')}\n\n"
-    html += f"📌 <b>{alert_title}</b>\n\n"
+    html += f"⚡ <b>Catalyst:</b> {safe_catalyst}\n\n"
+    html += f"📌 <b>{safe_title}</b>\n\n"
 
     # Demat Position Context (if held by user in ICICI Direct)
     if demat_position and demat_position.get("is_in_portfolio"):
@@ -152,14 +156,16 @@ def format_telegram_alert(
         html += f"• Position: {qty} Qty @ Avg ₹{avg_p:,.2f}\n"
         html += f"• Current P&L: {pnl_badge} {pnl_pct:+.2f}%\n"
         if holding_guidance:
-            html += f"• <i>Guidance: {holding_guidance}</i>\n"
+            safe_guidance = html_lib.escape(str(holding_guidance), quote=False)
+            html += f"• <i>Guidance: {safe_guidance}</i>\n"
         html += "\n"
 
     # Factual Confluence Drivers
     if confluence_drivers:
         html += "🔍 <b>Multi-Factor Drivers:</b>\n"
         for driver in confluence_drivers[:4]:
-            html += f"• {driver}\n"
+            safe_driver = html_lib.escape(str(driver), quote=False)
+            html += f"• {safe_driver}\n"
         html += "\n"
 
     # Tactical Levels (Entry, Target, Stop-Loss, R:R)
@@ -189,7 +195,8 @@ def format_telegram_alert(
         if "delivery_pct" in metrics_snapshot:
             html += f"• Delivery: {metrics_snapshot['delivery_pct']}%\n"
         if "vsa_regime" in metrics_snapshot and metrics_snapshot.get("vsa_regime"):
-            html += f"• Wyckoff VSA: <b>{metrics_snapshot['vsa_regime'].replace('_', ' ')}</b>\n"
+            safe_vsa = html_lib.escape(metrics_snapshot['vsa_regime'].replace('_', ' '), quote=False)
+            html += f"• Wyckoff VSA: <b>{safe_vsa}</b>\n"
 
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += "<i>⚠️ Factual quantitative intelligence alert. Non-advisory analytical tracking.</i>"

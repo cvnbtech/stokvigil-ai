@@ -1,4 +1,5 @@
 import base64
+import hmac
 import json
 import logging
 import re
@@ -1015,9 +1016,12 @@ async def telegram_webhook(
     expected = (settings.TELEGRAM_WEBHOOK_SECRET or "").strip().strip('"').strip("'")
     if expected:
         incoming = (x_telegram_bot_api_secret_token or "").strip().strip('"').strip("'")
-        if not incoming or incoming != expected:
+        if not incoming or not hmac.compare_digest(incoming, expected):
             logger.warning(f"Blocked Telegram webhook: Secret token header mismatch or missing. (Received: '{x_telegram_bot_api_secret_token}')")
             raise HTTPException(status_code=403, detail="Unauthorized webhook source: Invalid secret token.")
+    elif settings.ENVIRONMENT == "production":
+        logger.critical("TELEGRAM_WEBHOOK_SECRET is unconfigured in production mode. Rejecting all webhook calls.")
+        raise HTTPException(status_code=503, detail="Telegram webhook service is temporarily unconfigured.")
 
     msg = payload.message or {}
     if not msg:

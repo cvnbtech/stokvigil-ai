@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 
-function renderCallbackHtml(token: string) {
+function sanitizeToken(token: string): string {
+  if (!token) return "";
+  const cleaned = token.trim();
+  // Valid ICICI session tokens are alphanumeric with underscores, hyphens, and dots
+  if (!/^[a-zA-Z0-9_\-\.]{4,128}$/.test(cleaned)) {
+    return "";
+  }
+  return cleaned;
+}
+
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderCallbackHtml(rawToken: string) {
+  const safeToken = sanitizeToken(rawToken);
+  const displayToken = escapeHtml(safeToken);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,19 +219,19 @@ function renderCallbackHtml(token: string) {
 
     <div class="token-box">
       <div class="token-label">Session Token (apisession)</div>
-      <div class="token-val" id="tokenText">${token || "No apisession detected in URL"}</div>
+      <div class="token-val" id="tokenText">${displayToken || "No valid apisession detected in URL"}</div>
     </div>
 
-    ${token ? `
+    ${safeToken ? `
     <button class="btn-copy" id="copyBtn" onclick="copyToken()">
       📋 Copy Session Token
     </button>
-    <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(token)}" class="btn-app" id="appBtn">
+    <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer">
       🔒 1-Tap Open in StokVigil App
     </a>
     ` : ""}
 
-    <a href="/?apisession=${encodeURIComponent(token)}" class="btn-portal">
+    <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" rel="noopener noreferrer">
       🌐 Open in StokVigil Web Portal →
     </a>
 
@@ -239,7 +260,7 @@ function renderCallbackHtml(token: string) {
     }
 
     function copyToken() {
-      const token = ${JSON.stringify(token)};
+      const token = ${JSON.stringify(safeToken)};
       if (!token) return;
       
       const onSuccess = () => {
@@ -287,13 +308,22 @@ function renderCallbackHtml(token: string) {
 </html>`;
 }
 
+const CALLBACK_SECURITY_HEADERS = {
+  "Content-Type": "text/html; charset=utf-8",
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; frame-ancestors 'none';",
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const apisession = searchParams.get("apisession") || searchParams.get("api_session") || "";
 
   return new NextResponse(renderCallbackHtml(apisession), {
     status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: CALLBACK_SECURITY_HEADERS,
   });
 }
 
@@ -322,6 +352,6 @@ export async function POST(request: NextRequest) {
 
   return new NextResponse(renderCallbackHtml(apisession), {
     status: 200,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
+    headers: CALLBACK_SECURITY_HEADERS,
   });
 }

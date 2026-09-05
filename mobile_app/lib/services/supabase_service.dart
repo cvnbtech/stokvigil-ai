@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
+import 'api_service.dart';
 
 class SupabaseService {
   static final SupabaseService _instance = SupabaseService._internal();
@@ -236,7 +237,7 @@ class SupabaseService {
     }
   }
 
-  // Direct Supabase Vault Save for ICICI Credentials
+  // Secure Vault Save for ICICI Credentials (Delegated to Backend AES-256 Vault)
   Future<bool> saveIciciCredentials({
     required String userId,
     required String appKey,
@@ -245,21 +246,15 @@ class SupabaseService {
   }) async {
     if (!isConfigured) return true; // Offline test mode returns true
     try {
-      final base64AppKey = base64Url.encode(utf8.encode(appKey));
-      final base64SecretKey = base64Url.encode(utf8.encode(secretKey));
-      final base64SessionToken = base64Url.encode(utf8.encode(sessionToken));
-
-      await client.from('user_credentials').upsert({
-        'user_id': userId,
-        'encrypted_app_key': base64AppKey,
-        'encrypted_secret_key': base64SecretKey,
-        'encrypted_session_token': base64SessionToken,
-        'token_date': DateTime.now().toIso8601String().split('T')[0],
-        'updated_at': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id');
-      return true;
+      // Delegate to backend API to ensure server-side Fernet AES-256 encryption
+      return await ApiService().saveIciciCredentials(
+        userId: userId,
+        appKey: appKey,
+        secretKey: secretKey,
+        sessionToken: sessionToken,
+      );
     } catch (e) {
-      debugPrint("Supabase direct save credentials error: $e");
+      debugPrint("Credential save error: $e");
       return false;
     }
   }

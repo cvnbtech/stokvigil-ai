@@ -279,5 +279,58 @@ class TestApiEndpoints(unittest.TestCase):
         data = res.json()
         self.assertEqual(data["status"], "success")
 
+    # 20. Security: Malformed Authorization Header Rejected (Non-Bearer format)
+    def test_20_malformed_auth_header_rejected(self):
+        orig_env = settings.ENVIRONMENT
+        orig_override = app.dependency_overrides.pop(get_current_user_id, None)
+        try:
+            settings.ENVIRONMENT = "production"
+            res = self.client.get(
+                "/api/user/profile?user_id=test-user-123",
+                headers={"Authorization": "Basic dXNlcjpwYXNz"}
+            )
+            self.assertEqual(res.status_code, 401)
+            self.assertIn("Invalid Authorization header format", res.json().get("detail", ""))
+        finally:
+            settings.ENVIRONMENT = orig_env
+            if orig_override is not None:
+                app.dependency_overrides[get_current_user_id] = orig_override
+
+    # 21. Security: Telegram Webhook Secret Mismatch Blocked
+    def test_21_telegram_webhook_mismatched_secret_blocked(self):
+        orig_secret = settings.TELEGRAM_WEBHOOK_SECRET
+        try:
+            settings.TELEGRAM_WEBHOOK_SECRET = "super_secure_webhook_secret_999"
+            payload = {
+                "update_id": 99999,
+                "message": {"chat": {"id": 12345}, "text": "/start test-user-123"}
+            }
+            res = self.client.post(
+                "/api/telegram/webhook",
+                json=payload,
+                headers={"X-Telegram-Bot-Api-Secret-Token": "attacker_wrong_token"}
+            )
+            self.assertEqual(res.status_code, 403)
+        finally:
+            settings.TELEGRAM_WEBHOOK_SECRET = orig_secret
+
+    # 22. Security: Telegram HTML Alert Injection & Entity Escaping
+    def test_22_telegram_alert_html_escaping(self):
+        from app.notifications import format_telegram_alert
+        card = format_telegram_alert(
+            symbol="TCS",
+            alert_title="Malicious <script>alert('pwned')</script> & Stock",
+            action_bias="BUY_WATCH",
+            confluence_score=85,
+            catalyst_type="BREAKOUT_<TAG>",
+            confluence_drivers=["Exchange Filing: Q3 Profit > 50% & Debt < 0.2"],
+            holding_guidance="Hold target < 4000 & SL > 3500"
+        )
+        self.assertNotIn("<script>", card)
+        self.assertIn("&lt;script&gt;", card)
+        self.assertIn("&amp;", card)
+        self.assertIn("&gt;", card)
+        self.assertIn("&lt;", card)
+
 if __name__ == "__main__":
     unittest.main()
