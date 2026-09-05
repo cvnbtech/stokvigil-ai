@@ -579,15 +579,24 @@ async def evaluate_single_symbol_full(
     """
     Evaluates all institutional dimensions (technicals, macro, F&O flow, forensics, news, AI confluence)
     for a single symbol and caches the analysis into RAM.
+    Uses non-blocking multithreading for external scraping to avoid freezing the asyncio event loop.
     """
     if macro_data is None:
-        macro_data = fetch_macro_market_regime()
+        macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
-    technicals = fetch_multi_timeframe_technicals(symbol)
-    financials = fetch_stock_financials(symbol)
-    flow_data = fetch_delivery_and_fo_flow(symbol, technicals.get("price_vs_vwap_pct", 0.0))
+    # Fetch technicals, financials, and news concurrently across thread pool workers
+    technicals, financials, news_items = await asyncio.gather(
+        asyncio.to_thread(fetch_multi_timeframe_technicals, symbol),
+        asyncio.to_thread(fetch_stock_financials, symbol),
+        asyncio.to_thread(fetch_stock_news, symbol)
+    )
+
+    flow_data = await asyncio.to_thread(
+        fetch_delivery_and_fo_flow, 
+        symbol, 
+        technicals.get("price_vs_vwap_pct", 0.0)
+    )
     forensics = evaluate_forensic_health(symbol, financials)
-    news_items = fetch_stock_news(symbol)
 
     analysis = await evaluate_stock_with_ai(
         symbol=symbol,
@@ -621,9 +630,9 @@ async def evaluate_single_symbol_full(
 async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     """
     Pre-computes and caches market state in RAM for all unique symbols across all user watchlists.
-    Uses bounded async concurrency (Semaphore=25) to evaluate 1,000+ stocks in under 45 seconds.
+    Uses bounded async concurrency (Semaphore=15) with thread-pool I/O to evaluate all stocks rapidly.
     """
-    macro_data = fetch_macro_market_regime()
+    macro_data = await asyncio.to_thread(fetch_macro_market_regime)
     w_res = supabase_client.table("user_watchlists").select("symbol").execute()
     symbols = list(set(item['symbol'].strip().upper() for item in (w_res.data or []) if item.get('symbol')))
 
@@ -631,9 +640,9 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
         logger.info("No active symbols found across user watchlists to pre-compute.")
         return 0
 
-    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache (Concurrency: 25)...")
+    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache (Concurrency: 15)...")
     
-    sem = asyncio.Semaphore(25)
+    sem = asyncio.Semaphore(15)
     synced_count = 0
 
     async def _worker(sym: str):
@@ -707,7 +716,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         else:
             logger.info(f"ICICI Session Token for user {user_id} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
-    macro_data = fetch_macro_market_regime()
+    macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
     # 4. Evaluate each symbol using high-speed In-Memory Cache (< 0.1ms lookup)
     for symbol in symbols:
@@ -715,14 +724,33 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             cached_pack = market_cache.get_stock(symbol)
             holding_info = holdings_map.get(symbol)
 
-            if cached_pack and not holding_info:
+            if cached_pack:
                 technicals = cached_pack.get("technicals", {})
+                financials = cached_pack.get("financials", {})
                 flow_data = cached_pack.get("flow_data", {})
-                analysis = cached_pack.get("analysis", {})
+                analysis = dict(cached_pack.get("analysis", {}))
+
+                # If user holds the stock, evaluate holding-specific trailing stop loss in-memory without re-fetching
+                if holding_info:
+                    curr_p = technicals.get("current_price") or financials.get("price") or 0.0
+                    avg_p = holding_info.get("average_price", 0.0)
+                    pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2) if avg_p > 0 else 0.0
+                    rsi_15m = technicals.get("rsi_15m", 50)
+                    
+                    if pnl_pct >= 5.0 and rsi_15m > 72:
+                        analysis["action_bias"] = "TRAILING_SL_ALERT"
+                        analysis["has_actionable_signal"] = True
+                        analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
+                        analysis["alert_title"] = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
+                        analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m}. Trailing SL active."
+                        drivers = list(analysis.get("confluence_drivers", []))
+                        drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m} (Overbought zone).")
+                        analysis["confluence_drivers"] = drivers
             else:
-                # Cache miss or holding-specific evaluation
+                # Cache miss fallback
                 fresh_pack = await evaluate_single_symbol_full(symbol, macro_data=macro_data, holding_info=holding_info)
                 technicals = fresh_pack.get("technicals", {})
+                financials = fresh_pack.get("financials", {})
                 flow_data = fresh_pack.get("flow_data", {})
                 analysis = fresh_pack.get("analysis", {})
             
