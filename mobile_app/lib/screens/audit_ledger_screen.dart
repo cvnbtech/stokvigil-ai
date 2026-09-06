@@ -6,7 +6,7 @@ import '../widgets/custom_widgets.dart';
 
 /// Public Audited Accuracy Ledger & Track Record Screen.
 /// Displays verifiable signal outcomes, Target 1 hit rates %, risk-to-reward ratios,
-/// and complete signal execution history tracked against live NSE ticks.
+/// and complete signal execution history tracked against live NSE/BSE ticks.
 class AuditLedgerScreen extends StatefulWidget {
   const AuditLedgerScreen({super.key});
 
@@ -167,7 +167,7 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    "Every surveillance alert is recorded with an immutable timestamp and audited against tick-level National Stock Exchange (NSE) execution.",
+                    "Every surveillance alert is recorded with an immutable timestamp and audited against tick-level National Stock Exchange (NSE) & Bombay Stock Exchange (BSE) execution.",
                     style: TextStyle(color: AppTheme.textSecondary, fontSize: 11.5, height: 1.4),
                   ),
                 ],
@@ -193,7 +193,7 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
                   child: _buildKpiCard(
                     title: "VERIFIED SIGNALS",
                     value: _summary != null ? "${_summary!['total_verified_signals']}" : (_isLoading ? "..." : "--"),
-                    sub: "Audited NIFTY & F&O alerts",
+                    sub: "Audited NSE/BSE & F&O alerts",
                     accentColor: AppTheme.cyan,
                   ),
                 ),
@@ -251,7 +251,7 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
                   const SizedBox(height: 6),
                   Text(
                     _summary?['audit_methodology'] ??
-                        "A signal is verified as 'TARGET_1_REACHED' only if price achieves Target 1 prior to breaching the protective stop-loss floor on NSE cash/F&O market sessions.",
+                        "A signal is verified as 'TARGET_1_REACHED' only if price achieves Target 1 prior to breaching the protective stop-loss floor on NSE/BSE cash & F&O market sessions.",
                     style: const TextStyle(color: Color(0xFFCBD5E1), fontSize: 11, height: 1.45),
                   ),
                 ],

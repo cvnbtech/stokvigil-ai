@@ -880,7 +880,7 @@ async def get_accuracy_ledger(db: Client = Depends(get_supabase)):
             "avg_risk_reward": avg_rr,
             "avg_hold_duration": avg_hold,
             "profit_factor": profit_factor,
-            "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE tick verification."
+            "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE/BSE tick verification."
         },
         "ledger": ledger_items
     }
