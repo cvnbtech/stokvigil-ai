@@ -247,4 +247,31 @@ class ApiService {
     }
     return null;
   }
+
+  Future<Map<String, dynamic>?> fetchStockCandles({
+    required String symbol,
+    String interval = "5m",
+    String period = "5d",
+  }) async {
+    final cleanSym = symbol.trim().toUpperCase();
+    if (cleanSym.isEmpty) return null;
+    try {
+      final q = Uri.encodeComponent(cleanSym);
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/api/stocks/candles?symbol=$q&interval=$interval&period=$period'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(const Duration(seconds: 25));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      } else {
+        debugPrint("API Error fetching candles for $cleanSym (HTTP ${res.statusCode}): ${res.body}");
+      }
+    } catch (e) {
+      debugPrint("API Error fetching stock candles for $cleanSym: $e");
+    }
+    return null;
+  }
 }
+

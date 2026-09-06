@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/custom_widgets.dart';
+import '../widgets/candle_chart_modal.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -498,6 +499,48 @@ Automated surveillance via StokVigil AI 🛡️''';
                                     const SizedBox(height: 12),
                                   ],
 
+                                  // Action Buttons Grid: Candles & Camarilla + Share Alpha Card
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: AppTheme.borderCyan),
+                                            backgroundColor: AppTheme.cyan.withOpacity(0.08),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                          ),
+                                          onPressed: () {
+                                            CandleChartModal.show(context, symbol: alert.symbol);
+                                          },
+                                          icon: const Text("📊", style: TextStyle(fontSize: 13)),
+                                          label: const Text(
+                                            "Candles & Camarilla",
+                                            style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 11),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          style: OutlinedButton.styleFrom(
+                                            side: const BorderSide(color: Color(0xFF10B981)),
+                                            backgroundColor: const Color(0xFF10B981).withOpacity(0.08),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                          ),
+                                          onPressed: () => _shareAlphaCard(alert, targetStr, slStr, rrStr),
+                                          icon: const Icon(Icons.share, size: 14, color: Color(0xFF10B981)),
+                                          label: const Text(
+                                            "Share Alpha Card",
+                                            style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 11),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+
                                   // 1-Tap Trade Trigger CTA Button
                                   SizedBox(
                                     width: double.infinity,
@@ -526,26 +569,6 @@ Automated surveillance via StokVigil AI 🛡️''';
                                             style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 12),
                                           ),
                                         ],
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-
-                                  // 1-Tap Share Alpha Card Button
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        side: const BorderSide(color: Color(0xFF10B981)),
-                                        backgroundColor: const Color(0xFF10B981).withOpacity(0.08),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                      ),
-                                      onPressed: () => _shareAlphaCard(alert, targetStr, slStr, rrStr),
-                                      icon: const Icon(Icons.share, size: 14, color: Color(0xFF10B981)),
-                                      label: const Text(
-                                        "⚡ 1-Tap Share Alpha Card (WhatsApp / X)",
-                                        style: TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.w900, fontSize: 12),
                                       ),
                                     ),
                                   ),

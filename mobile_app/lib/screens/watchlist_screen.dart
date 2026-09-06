@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
+import '../widgets/candle_chart_modal.dart';
 
 class WatchlistScreen extends StatefulWidget {
   const WatchlistScreen({super.key});
@@ -812,9 +813,30 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                     ),
                                     const SizedBox(width: 8),
 
-                                    Row(
-                                      children: [
-                                        // Trade Order Button
+                                     Row(
+                                       children: [
+                                         // Candles & Camarilla Chart Button
+                                         GestureDetector(
+                                           onTap: () {
+                                             CandleChartModal.show(context, symbol: symbol);
+                                           },
+                                           child: Container(
+                                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                             decoration: BoxDecoration(
+                                               color: Colors.white.withOpacity(0.06),
+                                               borderRadius: BorderRadius.circular(8),
+                                               border: Border.all(color: Colors.white.withOpacity(0.12)),
+                                             ),
+                                             child: const Row(
+                                               children: [
+                                                 Text("📊", style: TextStyle(fontSize: 12)),
+                                               ],
+                                             ),
+                                           ),
+                                         ),
+                                         const SizedBox(width: 6),
+
+                                         // Trade Order Button
                                         GestureDetector(
                                           onTap: () {
                                             TradeOrderModal.show(

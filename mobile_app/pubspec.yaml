@@ -32,3 +32,4 @@ flutter:
   assets:
     - assets/app_icon.svg
     - assets/app_icon.png
+    - assets/js/lightweight-charts.standalone.production.js
