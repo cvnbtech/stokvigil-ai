@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/candle_chart_modal.dart';
+import 'audit_ledger_screen.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -220,6 +221,15 @@ Automated surveillance via StokVigil AI 🛡️''';
         elevation: 0,
         title: const StokVigilBrandHeader(),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
+              );
+            },
+            icon: const Icon(Icons.verified_outlined, color: AppTheme.primaryEmerald),
+            tooltip: "Public Audit Ledger",
+          ),
           IconButton(onPressed: _loadAlerts, icon: const Icon(Icons.refresh, color: AppTheme.cyan)),
         ],
       ),

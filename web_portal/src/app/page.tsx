@@ -5,6 +5,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import ConfluenceRadar from "../components/ConfluenceRadar";
 import ShareAlphaCardModal, { AlphaCardData } from "../components/ShareAlphaCardModal";
 import LightweightCandleChart from "../components/LightweightCandleChart";
+import AuditLedgerView from "../components/AuditLedgerView";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://your-supabase-project.supabase.co";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy";
@@ -677,7 +678,7 @@ export default function App() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
-  const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings">("home");
+  const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [appKey, setAppKey] = useState<string>("");
   const [secretKey, setSecretKey] = useState<string>("");
@@ -1827,17 +1828,17 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Link
-              href="/transparency"
-              target="_blank"
+            <button
+              onClick={() => setTab(tab === "ledger" ? "home" : "ledger")}
               style={{
-                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
+                background: tab === "ledger" ? "rgba(16,185,129,0.25)" : "rgba(16,185,129,0.12)",
+                border: `1px solid ${tab === "ledger" ? C.emerald : "rgba(16,185,129,0.35)"}`,
                 borderRadius: 10, padding: "6px 10px", color: C.emerald, fontSize: 11, fontWeight: 800,
-                textDecoration: "none", display: "flex", alignItems: "center", gap: 5,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
               }}
             >
               🛡️ Audit Ledger
-            </Link>
+            </button>
             <button onClick={openKeyModal} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
@@ -2208,6 +2209,33 @@ export default function App() {
                   );
                 })}
               </DraggableChipBar>
+
+              {/* Public Audit Ledger Track Record Bar */}
+              <div
+                onClick={() => setTab("ledger")}
+                style={{
+                  background: "rgba(16,185,129,0.08)",
+                  border: "1px solid rgba(16,185,129,0.25)",
+                  borderRadius: 12,
+                  padding: "8px 14px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  transition: "all 0.2s ease",
+                  marginBottom: 6,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 15 }}>🛡️</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: C.emerald }}>
+                    Public Audited Accuracy Ledger & Track Record
+                  </span>
+                </div>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: C.cyan }}>
+                  View Verified Outcomes →
+                </span>
+              </div>
 
               {filteredAlerts.length === 0 ? (
                 <div style={{
@@ -3178,6 +3206,13 @@ export default function App() {
               <div style={{ textAlign: "center", fontSize: 10, color: C.gray2, padding: "4px 0" }}>
                 StokVigil AI Portal v2.4.0 • Connected to ICICI Breeze API
               </div>
+            </div>
+          )}
+
+          {/* AUDIT LEDGER TAB */}
+          {tab === "ledger" && (
+            <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
+              <AuditLedgerView onBack={() => setTab("home")} />
             </div>
           )}
         </DraggableVerticalCanvas>

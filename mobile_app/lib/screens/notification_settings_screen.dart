@@ -8,6 +8,7 @@ import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
 import 'icici_credentials_screen.dart';
+import 'audit_ledger_screen.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -954,7 +955,70 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           const SizedBox(height: 20),
 
           // ─────────────────────────────────────────────
-          // SECTION 3: SECURITY & ACCESS
+          // SECTION 3: TRANSPARENCY & AUDIT LEDGER
+          // ─────────────────────────────────────────────
+          _buildSectionHeader("🛡️ TRANSPARENCY & AUDIT LEDGER"),
+          const SizedBox(height: 10),
+
+          GlassCard(
+            borderColor: AppTheme.primaryEmerald.withOpacity(0.35),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryEmerald.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.25)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.primaryEmerald.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text("🛡️", style: TextStyle(fontSize: 16)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Public Audit Ledger & Performance",
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "View verified signal hit rates, win/loss stats & R:R ledger",
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios, color: AppTheme.primaryEmerald, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ─────────────────────────────────────────────
+          // SECTION 4: SECURITY & ACCESS
           // ─────────────────────────────────────────────
           _buildSectionHeader("🔒 SECURITY & ACCESS"),
           const SizedBox(height: 10),

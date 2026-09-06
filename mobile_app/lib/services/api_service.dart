@@ -273,5 +273,24 @@ class ApiService {
     }
     return null;
   }
+
+  Future<Map<String, dynamic>?> fetchAccuracyLedger() async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/api/market/accuracy-ledger'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body);
+      } else {
+        debugPrint("API Error fetching accuracy ledger (HTTP ${res.statusCode}): ${res.body}");
+      }
+    } catch (e) {
+      debugPrint("API Error fetching accuracy ledger: $e");
+    }
+    return null;
+  }
 }
 
