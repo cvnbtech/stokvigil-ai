@@ -85,19 +85,27 @@ def mask_telegram_token(text: Optional[Any]) -> str:
 class SensitiveDataFilter(logging.Filter):
     """
     Custom logging filter that intercepts log records across all loggers
-    and masks any Telegram Bot API token in URLs or messages so tokens are never exposed.
+    and masks any Telegram Bot API token in URLs, formatted messages, or arbitrary argument objects
+    (including httpx.URL, dicts, tuples, and exceptions) so tokens are never exposed.
     """
     def filter(self, record: logging.LogRecord) -> bool:
         try:
-            if isinstance(record.msg, str):
-                record.msg = mask_telegram_token(record.msg)
-            if record.args:
-                if isinstance(record.args, dict):
-                    record.args = {k: mask_telegram_token(v) if isinstance(v, str) else v for k, v in record.args.items()}
-                elif isinstance(record.args, tuple):
-                    record.args = tuple(mask_telegram_token(a) if isinstance(a, str) else a for a in record.args)
+            # Step 1: Render the full interpolated message regardless of argument types (e.g. httpx.URL)
+            formatted_msg = record.getMessage()
+            record.msg = mask_telegram_token(formatted_msg)
+            record.args = ()
         except Exception:
-            pass
+            # Fallback: mask record.msg and stringify/mask any argument objects individually
+            try:
+                if isinstance(record.msg, str):
+                    record.msg = mask_telegram_token(record.msg)
+                if record.args:
+                    if isinstance(record.args, dict):
+                        record.args = {k: mask_telegram_token(str(v)) for k, v in record.args.items()}
+                    elif isinstance(record.args, tuple):
+                        record.args = tuple(mask_telegram_token(str(a)) for a in record.args)
+            except Exception:
+                pass
         return True
 
 # Attach filter to root logger and key subsystems

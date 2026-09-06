@@ -20,7 +20,7 @@ import pandas as pd
 
 from app.config import settings
 from app.vault import vault
-from app.auth import get_current_user_id, verify_user_access, mask_id
+from app.auth import get_current_user_id, verify_user_access, mask_id, _filter
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
@@ -30,8 +30,11 @@ from app.technical_engine import calculate_camarilla_pivots
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("APILogger").setLevel(logging.WARNING)
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+for _h in logging.root.handlers:
+    _h.addFilter(_filter)
 logger = logging.getLogger("stokvigil.main")
 
 # Strict alphanumeric regex whitelist for stock symbols

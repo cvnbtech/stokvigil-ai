@@ -296,6 +296,42 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertEqual(mask_telegram_token(""), "")
         self.assertEqual(mask_telegram_token(None), "")
 
+    # 15e. SensitiveDataFilter tests with custom object and URL in record.args
+    def test_15e_sensitive_data_filter(self):
+        from app.auth import SensitiveDataFilter
+        import logging
+        import httpx
+
+        f = SensitiveDataFilter()
+        
+        # Test 1: LogRecord with httpx.URL in args (exactly how httpx emits logs)
+        raw_url = httpx.URL("https://api.telegram.org/bot967613667:ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4/sendMessage")
+        record = logging.LogRecord(
+            name="httpx",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=1,
+            msg='HTTP Request: %s %s "%s %d %s"',
+            args=('POST', raw_url, 'HTTP/1.1', 200, 'OK'),
+            exc_info=None
+        )
+        self.assertTrue(f.filter(record))
+        self.assertNotIn("ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4", record.getMessage())
+        self.assertIn("***sAM4", record.getMessage())
+
+        # Test 2: LogRecord with direct string in msg
+        record2 = logging.LogRecord(
+            name="test",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=2,
+            msg="Telegram error at https://api.telegram.org/bot12345/getMe",
+            args=(),
+            exc_info=None
+        )
+        self.assertTrue(f.filter(record2))
+        self.assertIn("***2345", record2.getMessage())
+
     # 16. User Accuracy Stats - Authorized
     def test_16_accuracy_stats(self):
         res = self.client.get("/api/user/accuracy-stats?user_id=test-user-123")
