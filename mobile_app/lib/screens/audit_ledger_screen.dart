@@ -540,8 +540,3 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
   }
 }
 
-extension<T> on List<T> {
-  List<T> filter(bool Function(T) test) {
-    return where(test).toList();
-  }
-}
