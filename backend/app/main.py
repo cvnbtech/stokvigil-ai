@@ -24,7 +24,7 @@ from app.auth import get_current_user_id, verify_user_access, mask_id
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
-from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram
+from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.technical_engine import calculate_camarilla_pivots
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
@@ -92,8 +92,9 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Gracefully closes all connections in the database pool on shutdown."""
+    """Gracefully closes all connections in the database pool and HTTP clients on shutdown."""
     await close_db_pool()
+    await close_telegram_client()
 
 
 @app.get("/api/health/db")

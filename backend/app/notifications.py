@@ -71,6 +71,29 @@ async def send_fcm_notification(fcm_token: str, title: str, body: str, data_payl
         logger.error(f"Error sending FCM notification: {e}")
         return False
 
+_telegram_http_client: Optional[httpx.AsyncClient] = None
+
+def get_telegram_client() -> httpx.AsyncClient:
+    """
+    Returns a shared, persistent httpx.AsyncClient with HTTP/2 and connection pooling.
+    Eliminates per-alert TCP/TLS negotiation overhead with api.telegram.org.
+    """
+    global _telegram_http_client
+    if _telegram_http_client is None or _telegram_http_client.is_closed:
+        _telegram_http_client = httpx.AsyncClient(
+            http2=True,
+            timeout=10.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50)
+        )
+    return _telegram_http_client
+
+async def close_telegram_client() -> None:
+    """Gracefully closes persistent telegram HTTP client connections."""
+    global _telegram_http_client
+    if _telegram_http_client is not None and not _telegram_http_client.is_closed:
+        await _telegram_http_client.aclose()
+        _telegram_http_client = None
+
 async def send_telegram_notification(chat_id: str, formatted_html_text: str, reply_markup: Optional[dict] = None) -> bool:
     """
     Sends styled HTML Telegram market intelligence alert straight to Telegram chat.
@@ -96,14 +119,14 @@ async def send_telegram_notification(chat_id: str, formatted_html_text: str, rep
         payload["reply_markup"] = reply_markup
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(url, json=payload)
-            if res.status_code == 200:
-                logger.info(f"Telegram alert sent to Chat ID: {mask_id(chat_id)}")
-                return True
-            else:
-                logger.error(f"Telegram Bot API error [{res.status_code}]: {mask_telegram_token(res.text)}")
-                return False
+        client = get_telegram_client()
+        res = await client.post(url, json=payload)
+        if res.status_code == 200:
+            logger.info(f"Telegram alert sent to Chat ID: {mask_id(chat_id)}")
+            return True
+        else:
+            logger.error(f"Telegram Bot API error [{res.status_code}]: {mask_telegram_token(res.text)}")
+            return False
     except Exception as e:
         logger.error(f"Exception sending Telegram notification: {mask_telegram_token(str(e))}")
         return False

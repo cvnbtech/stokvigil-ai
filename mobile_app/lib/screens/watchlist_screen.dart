@@ -117,12 +117,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           };
         }).toList();
 
-        // Background auto-sync into Supabase user_watchlists table
-        for (final dh in _dematHoldings) {
-          final sym = dh['symbol'] as String;
-          if (sym.isNotEmpty) {
-            SupabaseService().addToWatchlist(sym, isAutoSynced: true);
-          }
+        // Background auto-sync into Supabase user_watchlists table via batch upsert
+        final symbolsToSync = _dematHoldings
+            .map((dh) => (dh['symbol'] as String? ?? '').trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+        if (symbolsToSync.isNotEmpty) {
+          SupabaseService().batchAddToWatchlist(symbolsToSync, isAutoSynced: true);
         }
       }
     } catch (e) {

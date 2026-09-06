@@ -105,7 +105,6 @@ Automated surveillance via StokVigil AI 🛡️''';
   @override
   void initState() {
     super.initState();
-    _loadAlerts();
     _subscribeToAlerts();
   }
 
@@ -116,14 +115,20 @@ Automated surveillance via StokVigil AI 🛡️''';
   }
 
   void _subscribeToAlerts() {
-    _alertsSub = SupabaseService().streamAlerts().listen((liveAlerts) {
-      if (mounted && liveAlerts.isNotEmpty) {
-        setState(() {
-          _alerts = liveAlerts;
-          _isLoading = false;
-        });
-      }
-    });
+    _alertsSub = SupabaseService().streamAlerts().listen(
+      (liveAlerts) {
+        if (mounted) {
+          setState(() {
+            _alerts = liveAlerts;
+            _isLoading = false;
+          });
+        }
+      },
+      onError: (err) {
+        debugPrint("Realtime alerts stream error: $err");
+        _loadAlerts();
+      },
+    );
   }
 
   Future<void> _loadAlerts() async {

@@ -948,18 +948,24 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             session_token = vault.decrypt(cred.get("encrypted_session_token"))
             
             holdings = fetch_user_portfolio(app_key, secret_key, session_token)
+            watchlist_upserts = []
             for h in holdings:
-                sym = h['symbol']
-                symbols.add(sym)
-                holdings_map[sym] = h
-                try:
-                    supabase_client.table("user_watchlists").upsert({
+                sym = h.get('symbol')
+                if sym:
+                    symbols.add(sym)
+                    holdings_map[sym] = h
+                    watchlist_upserts.append({
                         "user_id": user_id,
                         "symbol": sym,
                         "is_auto_synced": True
-                    }, on_conflict="user_id,symbol").execute()
+                    })
+            if watchlist_upserts:
+                try:
+                    supabase_client.table("user_watchlists").upsert(
+                        watchlist_upserts, on_conflict="user_id,symbol"
+                    ).execute()
                 except Exception as e:
-                    logger.error(f"Error syncing holding {sym} to watchlist: {e}")
+                    logger.error(f"Error bulk syncing holdings to watchlist for user {mask_id(user_id)}: {e}")
         else:
             logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 

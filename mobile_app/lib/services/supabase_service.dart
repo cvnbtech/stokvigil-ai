@@ -200,6 +200,30 @@ class SupabaseService {
     }
   }
 
+  Future<bool> batchAddToWatchlist(List<String> symbols, {bool isAutoSynced = false}) async {
+    final user = currentUser;
+    if (user == null || !isConfigured || symbols.isEmpty) return false;
+    try {
+      final records = symbols
+          .where((s) => s.trim().isNotEmpty)
+          .map((s) => {
+                'user_id': user.id,
+                'symbol': s.trim().toUpperCase(),
+                'is_auto_synced': isAutoSynced,
+              })
+          .toList();
+      if (records.isEmpty) return true;
+      await client.from('user_watchlists').upsert(
+        records,
+        onConflict: 'user_id,symbol',
+      );
+      return true;
+    } catch (e) {
+      debugPrint("Error batch adding to watchlist: $e");
+      return false;
+    }
+  }
+
   Future<bool> removeFromWatchlist(dynamic id, [String? symbol]) async {
     final user = currentUser;
     if (user == null || !isConfigured) return true;

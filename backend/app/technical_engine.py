@@ -1,10 +1,20 @@
 import logging
+import concurrent.futures
 import yfinance as yf
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger("stokvigil.technical_engine")
+
+def _fetch_history_frame(sym: str, period: str, interval: str) -> pd.DataFrame:
+    """Thread-isolated historical candle fetch using a dedicated yf.Ticker instance."""
+    try:
+        t = yf.Ticker(sym)
+        return t.history(period=period, interval=interval)
+    except Exception as e:
+        logger.debug(f"Error fetching {period}/{interval} for {sym}: {e}")
+        return pd.DataFrame()
 
 def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     """Calculates Relative Strength Index (RSI) using Wilder's Smoothing."""
@@ -266,23 +276,26 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
     }
 
     try:
-        ticker = yf.Ticker(ticker_sym)
-        
-        # 1. Fetch 5-Minute Intraday Data (Last 5 days)
-        df_5m = ticker.history(period="5d", interval="5m")
-        # 2. Fetch Daily Data (Last 1 year for 200 EMA & Daily RSI)
-        df_daily = ticker.history(period="1y", interval="1d")
+        # 1 & 2. Concurrently fetch 5-minute intraday and 1-year daily candles in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            fut_5m = executor.submit(_fetch_history_frame, ticker_sym, "5d", "5m")
+            fut_daily = executor.submit(_fetch_history_frame, ticker_sym, "1y", "1d")
+            df_5m = fut_5m.result()
+            df_daily = fut_daily.result()
         
         # Fallback to BSE (.BO) if NSE returned no data and ticker was not already .BO
         if df_5m.empty and not ticker_sym.endswith(".BO"):
             clean_ticker = symbol.replace(".NS", "").strip()
             bse_sym = f"{clean_ticker}.BO"
             try:
-                bse_ticker = yf.Ticker(bse_sym)
-                df_5m_bse = bse_ticker.history(period="5d", interval="5m")
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    fut_5m_bse = executor.submit(_fetch_history_frame, bse_sym, "5d", "5m")
+                    fut_daily_bse = executor.submit(_fetch_history_frame, bse_sym, "1y", "1d")
+                    df_5m_bse = fut_5m_bse.result()
+                    df_daily_bse = fut_daily_bse.result()
                 if not df_5m_bse.empty:
                     df_5m = df_5m_bse
-                    df_daily = bse_ticker.history(period="1y", interval="1d")
+                    df_daily = df_daily_bse
                     ticker_sym = bse_sym
                     logger.info(f"Resolved {symbol} via BSE exchange ({bse_sym})")
             except Exception as e:

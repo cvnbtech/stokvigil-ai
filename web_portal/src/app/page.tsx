@@ -699,6 +699,7 @@ export default function App() {
   const [ticker, setTicker]       = useState("");
   const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
   const searchTimerRef            = useRef<NodeJS.Timeout | null>(null);
+  const lastLoadedUidRef          = useRef<string | null>(null);
   const [alertFilter, setAlertFilter] = useState<string>("all");
   const [selectedStock, setSelectedStock] = useState<HoldingItem | null>(null);
   const [showTradeModal, setShowTradeModal] = useState(false);
@@ -1099,7 +1100,7 @@ export default function App() {
   useEffect(() => {
     if (!supabase) return;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const handleSession = (session: any) => {
       if (session?.user) {
         const u = {
           id: session.user.id,
@@ -1108,30 +1109,28 @@ export default function App() {
         };
         setUser(u);
         setScreen("app");
-        loadPortfolioData(session.user.id);
-        loadAlertsData(session.user.id);
-        loadWatchlistData(session.user.id);
-        loadProfileData(session.user.id);
-      }
-    });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        const u = {
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Investor",
-          email: session.user.email || ""
-        };
-        setUser(u);
-        setScreen("app");
-        loadPortfolioData(session.user.id);
-        loadAlertsData(session.user.id);
-        loadWatchlistData(session.user.id);
-        loadProfileData(session.user.id);
+        // Deduplicate initial mount data loader storm (50% reduction in initial network requests)
+        if (lastLoadedUidRef.current !== session.user.id) {
+          lastLoadedUidRef.current = session.user.id;
+          loadPortfolioData(session.user.id);
+          loadAlertsData(session.user.id);
+          loadWatchlistData(session.user.id);
+          loadProfileData(session.user.id);
+        }
       } else {
+        lastLoadedUidRef.current = null;
         setUser(null);
         setScreen("auth");
       }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSession(session);
     });
 
     return () => subscription.unsubscribe();
