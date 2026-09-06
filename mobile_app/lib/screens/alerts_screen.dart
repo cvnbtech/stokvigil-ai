@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/candle_chart_modal.dart';
+import 'candle_chart_screen.dart';
 import 'audit_ledger_screen.dart';
 
 class AlertsScreen extends StatefulWidget {
@@ -522,6 +523,13 @@ Automated surveillance via StokVigil AI 🛡️''';
                                           ),
                                           onPressed: () {
                                             CandleChartModal.show(context, symbol: alert.symbol);
+                                          },
+                                          onLongPress: () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) => CandleChartScreen(symbol: alert.symbol),
+                                              ),
+                                            );
                                           },
                                           icon: const Text("📊", style: TextStyle(fontSize: 13)),
                                           label: const Text(

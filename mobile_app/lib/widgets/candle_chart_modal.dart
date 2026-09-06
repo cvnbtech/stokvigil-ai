@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:webview_flutter/webview_flutter.dart';
 import '../config/theme.dart';
+import '../screens/candle_chart_screen.dart';
 import '../services/api_service.dart';
 
 /// Modal bottom sheet that renders TradingView Lightweight Charts with
@@ -40,8 +43,12 @@ class _CandleChartModalState extends State<CandleChartModal> {
   void initState() {
     super.initState();
     _initWebView();
-    _loadJsBundle();
-    _loadChartData();
+    _initAndLoad();
+  }
+
+  Future<void> _initAndLoad() async {
+    await _loadJsBundle();
+    await _loadChartData();
   }
 
   void _initWebView() {
@@ -107,9 +114,16 @@ class _CandleChartModalState extends State<CandleChartModal> {
       _isLoading = false;
     });
 
+    if (_bundledJs.isEmpty) {
+      await _loadJsBundle();
+    }
+
     // Generate HTML with embedded JSON and render in WebView
     final htmlContent = _buildHtmlString(data);
-    _webViewController?.loadHtmlString(htmlContent);
+    _webViewController?.loadHtmlString(
+      htmlContent,
+      baseUrl: "https://appassets.androidplatform.net",
+    );
   }
 
   String _buildHtmlString(Map<String, dynamic> data) {
@@ -303,6 +317,20 @@ class _CandleChartModalState extends State<CandleChartModal> {
 
       chart.timeScale().fitContent();
 
+      var ro = new ResizeObserver(function(entries) {
+        for (var i = 0; i < entries.length; i++) {
+          var cr = entries[i].contentRect;
+          if (cr.width > 20 && cr.height > 20) {
+            chart.applyOptions({
+              width: Math.floor(cr.width),
+              height: Math.floor(cr.height),
+            });
+            chart.timeScale().fitContent();
+          }
+        }
+      });
+      ro.observe(container);
+
       window.addEventListener('resize', function() {
         chart.applyOptions({
           width: container.clientWidth || window.innerWidth,
@@ -400,12 +428,33 @@ class _CandleChartModalState extends State<CandleChartModal> {
                   ],
                 ),
 
-                // Close Button
-                IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                // Header Actions (Full Screen & Close)
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => CandleChartScreen(
+                              symbol: widget.symbol,
+                              initialInterval: _selectedInterval,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.fullscreen, color: AppTheme.cyan, size: 24),
+                      tooltip: "Full Screen & Landscape",
+                      padding: const EdgeInsets.only(right: 8),
+                      constraints: const BoxConstraints(),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -534,7 +583,14 @@ class _CandleChartModalState extends State<CandleChartModal> {
                         ),
                       )
                     : (_webViewController != null)
-                        ? WebViewWidget(controller: _webViewController!)
+                        ? WebViewWidget(
+                            controller: _webViewController!,
+                            gestureRecognizers: {
+                              Factory<OneSequenceGestureRecognizer>(
+                                () => EagerGestureRecognizer(),
+                              ),
+                            },
+                          )
                         : const SizedBox.shrink(),
           ),
         ],

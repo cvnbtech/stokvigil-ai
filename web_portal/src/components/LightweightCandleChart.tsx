@@ -8,6 +8,8 @@ import {
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
+  ISeriesApi,
+  IPriceLine,
 } from "lightweight-charts";
 
 interface CandleItem {
@@ -28,11 +30,63 @@ interface CamarillaLevels {
   l4: number;
 }
 
+interface CrosshairData {
+  time: any;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+}
+
 interface LightweightCandleChartProps {
   symbol: string;
   initialInterval?: string;
   backendUrl?: string;
   onClose?: () => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
+}
+
+function createCamarillaPriceLines(
+  series: ISeriesApi<"Candlestick">,
+  cam: CamarillaLevels
+): IPriceLine[] {
+  if (!cam || cam.h4 <= 0) return [];
+  return [
+    series.createPriceLine({
+      price: cam.h4,
+      color: "#ec4899",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: `H4 Breakout (₹${cam.h4})`,
+    }),
+    series.createPriceLine({
+      price: cam.h3,
+      color: "#10b981",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: `H3 Target 1 (₹${cam.h3})`,
+    }),
+    series.createPriceLine({
+      price: cam.l3,
+      color: "#06b6d4",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dotted,
+      axisLabelVisible: true,
+      title: `L3 Liquidity (₹${cam.l3})`,
+    }),
+    series.createPriceLine({
+      price: cam.l4,
+      color: "#f43f5e",
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: true,
+      title: `L4 Hard SL (₹${cam.l4})`,
+    }),
+  ];
 }
 
 export default function LightweightCandleChart({
@@ -40,9 +94,18 @@ export default function LightweightCandleChart({
   initialInterval = "5m",
   backendUrl = "",
   onClose,
+  isMaximized = false,
+  onToggleMaximize,
 }: LightweightCandleChartProps) {
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const vwapSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const slSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const camarillaLinesRef = useRef<IPriceLine[]>([]);
 
   const [interval, setInterval] = useState(initialInterval);
   const [loading, setLoading] = useState(true);
@@ -50,16 +113,65 @@ export default function LightweightCandleChart({
   const [camarilla, setCamarilla] = useState<CamarillaLevels | null>(null);
   const [lastPrice, setLastPrice] = useState<number | null>(null);
   const [priceChange, setPriceChange] = useState<number>(0);
+  const [crosshair, setCrosshair] = useState<CrosshairData | null>(null);
 
+  // Indicator Toggles
+  const [showCamarilla, setShowCamarilla] = useState(true);
+  const [showVwap, setShowVwap] = useState(true);
+  const [showChandelier, setShowChandelier] = useState(true);
+  const [showVolume, setShowVolume] = useState(true);
+
+  // Re-apply visibility when toggles change
+  useEffect(() => {
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.applyOptions({ visible: showVolume });
+    }
+    if (vwapSeriesRef.current) {
+      vwapSeriesRef.current.applyOptions({ visible: showVwap });
+    }
+    if (slSeriesRef.current) {
+      slSeriesRef.current.applyOptions({ visible: showChandelier });
+    }
+    if (candleSeriesRef.current) {
+      if (!showCamarilla) {
+        camarillaLinesRef.current.forEach((line) => {
+          try {
+            candleSeriesRef.current?.removePriceLine(line);
+          } catch (_) {}
+        });
+        camarillaLinesRef.current = [];
+      } else if (camarilla && camarillaLinesRef.current.length === 0 && camarilla.h4 > 0) {
+        camarillaLinesRef.current = createCamarillaPriceLines(candleSeriesRef.current, camarilla);
+      }
+    }
+  }, [showCamarilla, showVwap, showChandelier, showVolume, camarilla]);
+
+  // Handle Resize & Fullscreen Dimension Adjustment
+  useEffect(() => {
+    if (chartContainerRef.current && chartRef.current) {
+      const targetHeight = isMaximized ? Math.max(520, window.innerHeight - 240) : 380;
+      chartRef.current.applyOptions({
+        width: chartContainerRef.current.clientWidth,
+        height: targetHeight,
+      });
+      chartRef.current.timeScale().fitContent();
+    }
+  }, [isMaximized]);
+
+  // Fetch Chart Data & Initialize TradingView
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
     setError(null);
+    setCrosshair(null);
 
     const fetchChartData = async () => {
       try {
         const cleanSym = symbol.trim().toUpperCase();
-        const res = await fetch(`${backendUrl}/api/stocks/candles?symbol=${encodeURIComponent(cleanSym)}&interval=${interval}&period=5d`);
+        const period = interval === "1d" ? "1y" : "5d";
+        const res = await fetch(
+          `${backendUrl}/api/stocks/candles?symbol=${encodeURIComponent(cleanSym)}&interval=${interval}&period=${period}`
+        );
         if (!res.ok) {
           throw new Error(`Failed to load candle data (HTTP ${res.status})`);
         }
@@ -87,10 +199,12 @@ export default function LightweightCandleChart({
             chartRef.current = null;
           }
 
+          const targetHeight = isMaximized ? Math.max(520, window.innerHeight - 240) : 380;
           const chart = createChart(chartContainerRef.current, {
             layout: {
               background: { color: "#080B16" },
               textColor: "#94a3b8",
+              fontSize: 11,
             },
             grid: {
               vertLines: { color: "rgba(255, 255, 255, 0.04)" },
@@ -100,6 +214,8 @@ export default function LightweightCandleChart({
               borderColor: "rgba(255, 255, 255, 0.1)",
               timeVisible: true,
               secondsVisible: false,
+              fixLeftEdge: true,
+              fixRightEdge: true,
             },
             crosshair: {
               vertLine: { color: "#06b6d4", width: 1, style: LineStyle.Dashed },
@@ -107,9 +223,11 @@ export default function LightweightCandleChart({
             },
             rightPriceScale: {
               borderColor: "rgba(255, 255, 255, 0.1)",
+              scaleMargins: { top: 0.1, bottom: 0.15 },
+              alignLabels: true,
             },
             width: chartContainerRef.current.clientWidth,
-            height: 380,
+            height: targetHeight,
           });
 
           chartRef.current = chart;
@@ -123,6 +241,7 @@ export default function LightweightCandleChart({
             wickUpColor: "#10b981",
             wickDownColor: "#f43f5e",
           });
+          candleSeriesRef.current = candleSeries;
 
           candleSeries.setData(
             candles.map((c) => ({
@@ -140,8 +259,9 @@ export default function LightweightCandleChart({
             priceFormat: { type: "volume" },
             priceScaleId: "",
           });
+          volumeSeriesRef.current = volumeSeries;
           volumeSeries.priceScale().applyOptions({
-            scaleMargins: { top: 0.8, bottom: 0 },
+            scaleMargins: { top: 0.82, bottom: 0 },
           });
           volumeSeries.setData(
             candles.map((c) => ({
@@ -150,6 +270,7 @@ export default function LightweightCandleChart({
               color: c.close >= c.open ? "rgba(16, 185, 129, 0.3)" : "rgba(244, 63, 94, 0.3)",
             }))
           );
+          volumeSeries.applyOptions({ visible: showVolume });
 
           // 3. VWAP Line Series
           const vwapData = candles
@@ -161,7 +282,9 @@ export default function LightweightCandleChart({
               lineWidth: 2,
               title: "VWAP",
             });
+            vwapSeriesRef.current = vwapSeries;
             vwapSeries.setData(vwapData);
+            vwapSeries.applyOptions({ visible: showVwap });
           }
 
           // 4. Chandelier Trailing Stop Line Series
@@ -175,66 +298,59 @@ export default function LightweightCandleChart({
               lineStyle: LineStyle.Dotted,
               title: "Chandelier SL",
             });
+            slSeriesRef.current = slSeries;
             slSeries.setData(slData);
+            slSeries.applyOptions({ visible: showChandelier });
           }
 
           // 5. Overlaid Camarilla Equation Price Lines
           const cam = data.camarilla;
-          if (cam && cam.h4 > 0) {
-            candleSeries.createPriceLine({
-              price: cam.h4,
-              color: "#ec4899",
-              lineWidth: 1,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: `H4 Breakout (₹${cam.h4})`,
-            });
-            candleSeries.createPriceLine({
-              price: cam.h3,
-              color: "#10b981",
-              lineWidth: 1,
-              lineStyle: LineStyle.Dotted,
-              axisLabelVisible: true,
-              title: `H3 Target 1 (₹${cam.h3})`,
-            });
-            candleSeries.createPriceLine({
-              price: cam.l3,
-              color: "#06b6d4",
-              lineWidth: 1,
-              lineStyle: LineStyle.Dotted,
-              axisLabelVisible: true,
-              title: `L3 Liquidity Floor (₹${cam.l3})`,
-            });
-            candleSeries.createPriceLine({
-              price: cam.l4,
-              color: "#f43f5e",
-              lineWidth: 1,
-              lineStyle: LineStyle.Dashed,
-              axisLabelVisible: true,
-              title: `L4 Hard SL (₹${cam.l4})`,
-            });
+          camarillaLinesRef.current = [];
+          if (cam && showCamarilla) {
+            camarillaLinesRef.current = createCamarillaPriceLines(candleSeries, cam);
           }
+
+          // 6. Crosshair Movement Subscriber for Live OHLC HUD
+          chart.subscribeCrosshairMove((param) => {
+            if (!param || !param.time || !param.seriesData) {
+              setCrosshair(null);
+              return;
+            }
+            const cData: any = param.seriesData.get(candleSeries);
+            if (cData) {
+              const vData: any = volumeSeries ? param.seriesData.get(volumeSeries) : null;
+              setCrosshair({
+                time: param.time,
+                open: cData.open,
+                high: cData.high,
+                low: cData.low,
+                close: cData.close,
+                volume: vData?.value,
+              });
+            }
+          });
 
           chart.timeScale().fitContent();
 
-          // Handle Resize
-          const handleResize = () => {
-            if (chartContainerRef.current && chartRef.current) {
-              chartRef.current.applyOptions({
-                width: chartContainerRef.current.clientWidth,
-              });
+          // Dynamic ResizeObserver for exact window and container resolution
+          if (resizeObserverRef.current) {
+            resizeObserverRef.current.disconnect();
+          }
+          const ro = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+              const cr = entry.contentRect;
+              if (cr.width > 20 && cr.height > 20 && chartRef.current) {
+                chartRef.current.applyOptions({
+                  width: Math.floor(cr.width),
+                  height: Math.floor(cr.height),
+                });
+              }
             }
-          };
-          window.addEventListener("resize", handleResize);
+          });
+          ro.observe(chartContainerRef.current);
+          resizeObserverRef.current = ro;
 
           setLoading(false);
-          return () => {
-            window.removeEventListener("resize", handleResize);
-            if (chartRef.current) {
-              chartRef.current.remove();
-              chartRef.current = null;
-            }
-          };
         }
       } catch (err: any) {
         if (isMounted) {
@@ -248,6 +364,10 @@ export default function LightweightCandleChart({
 
     return () => {
       isMounted = false;
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
@@ -255,19 +375,24 @@ export default function LightweightCandleChart({
     };
   }, [symbol, interval, backendUrl]);
 
+  const targetCanvasHeight = isMaximized ? Math.max(520, (typeof window !== "undefined" ? window.innerHeight : 800) - 240) : 380;
+
   return (
-    <div style={{
-      background: "#080B16",
-      border: "1.5px solid rgba(6, 182, 212, 0.3)",
-      borderRadius: 20,
-      padding: 18,
-      boxShadow: "0 16px 48px rgba(0, 0, 0, 0.6)",
-      display: "flex",
-      flexDirection: "column",
-      gap: 12,
-      width: "100%",
-    }}>
-      {/* Header Bar */}
+    <div
+      style={{
+        background: "#080B16",
+        border: "1.5px solid rgba(6, 182, 212, 0.3)",
+        borderRadius: 20,
+        padding: 18,
+        boxShadow: "0 16px 48px rgba(0, 0, 0, 0.6)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        width: "100%",
+        transition: "all 0.2s ease",
+      }}
+    >
+      {/* Top Header: Symbol, Price, Controls, Maximize, Close */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span style={{ fontSize: 20, fontWeight: 900, color: "#ffffff" }}>{symbol}</span>
@@ -281,7 +406,7 @@ export default function LightweightCandleChart({
           )}
         </div>
 
-        {/* Timeframe Selectors & Close */}
+        {/* Timeframe Selectors, Maximize & Close */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {["1m", "5m", "15m", "1h", "1d"].map((tf) => (
             <button
@@ -302,9 +427,33 @@ export default function LightweightCandleChart({
             </button>
           ))}
 
+          {onToggleMaximize && (
+            <button
+              onClick={onToggleMaximize}
+              title={isMaximized ? "Restore Window" : "Maximize Full Screen"}
+              style={{
+                background: isMaximized ? "rgba(6, 182, 212, 0.25)" : "rgba(255, 255, 255, 0.05)",
+                border: `1px solid ${isMaximized ? "#06b6d4" : "rgba(255, 255, 255, 0.1)"}`,
+                borderRadius: 8,
+                width: 28,
+                height: 28,
+                color: isMaximized ? "#06b6d4" : "#94a3b8",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 14,
+                marginLeft: 4,
+              }}
+            >
+              {isMaximized ? "🗗" : "⛶"}
+            </button>
+          )}
+
           {onClose && (
             <button
               onClick={onClose}
+              title="Close Chart"
               style={{
                 background: "rgba(255, 255, 255, 0.05)",
                 border: "1px solid rgba(255, 255, 255, 0.1)",
@@ -317,7 +466,7 @@ export default function LightweightCandleChart({
                 alignItems: "center",
                 justifyContent: "center",
                 fontSize: 14,
-                marginLeft: 6
+                marginLeft: 4,
               }}
             >
               ✕
@@ -326,84 +475,151 @@ export default function LightweightCandleChart({
         </div>
       </div>
 
-      {/* Legend Bar */}
-      <div style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        fontSize: 10,
-        color: "#94a3b8",
-        flexWrap: "wrap",
-        background: "rgba(255, 255, 255, 0.02)",
-        padding: "6px 10px",
-        borderRadius: 8,
-        border: "1px solid rgba(255, 255, 255, 0.05)"
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 2, background: "#06b6d4" }}></span>
-          <span>VWAP</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 2, background: "#f59e0b", borderTop: "1px dashed #f59e0b" }}></span>
-          <span>Chandelier Trailing SL</span>
-        </div>
-        {camarilla && camarilla.h4 > 0 && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 10, height: 2, background: "#ec4899" }}></span>
-              <span>H4: ₹{camarilla.h4}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 10, height: 2, background: "#10b981" }}></span>
-              <span>H3: ₹{camarilla.h3}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 10, height: 2, background: "#06b6d4" }}></span>
-              <span>L3: ₹{camarilla.l3}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ width: 10, height: 2, background: "#f43f5e" }}></span>
-              <span>L4: ₹{camarilla.l4}</span>
-            </div>
-          </>
+      {/* Live Crosshair OHLC HUD */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          fontSize: 11,
+          color: "#94a3b8",
+          background: "rgba(13, 20, 36, 0.7)",
+          padding: "5px 10px",
+          borderRadius: 8,
+          border: "1px solid rgba(255, 255, 255, 0.05)",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ color: "#64748b", fontWeight: 700 }}>
+          {crosshair ? "CROSSHAIR:" : "LATEST:"}
+        </span>
+        <span>
+          O: <strong style={{ color: "#f8fafc" }}>₹{crosshair?.open?.toFixed(2) ?? "--"}</strong>
+        </span>
+        <span>
+          H: <strong style={{ color: "#10b981" }}>₹{crosshair?.high?.toFixed(2) ?? "--"}</strong>
+        </span>
+        <span>
+          L: <strong style={{ color: "#f43f5e" }}>₹{crosshair?.low?.toFixed(2) ?? "--"}</strong>
+        </span>
+        <span>
+          C: <strong style={{ color: "#38bdf8" }}>₹{crosshair?.close?.toFixed(2) ?? lastPrice?.toFixed(2) ?? "--"}</strong>
+        </span>
+        {crosshair?.volume !== undefined && (
+          <span>
+            Vol:{" "}
+            <strong style={{ color: "#06b6d4" }}>
+              {crosshair.volume >= 1000000
+                ? `${(crosshair.volume / 1000000).toFixed(2)}M`
+                : crosshair.volume >= 1000
+                ? `${(crosshair.volume / 1000).toFixed(1)}K`
+                : crosshair.volume}
+            </strong>
+          </span>
+        )}
+      </div>
+
+      {/* Indicator Toggles Bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 10,
+          color: "#94a3b8",
+          flexWrap: "wrap",
+        }}
+      >
+        {[
+          { label: "Camarilla Pivots", active: showCamarilla, toggle: () => setShowCamarilla(!showCamarilla), color: "#ec4899" },
+          { label: "VWAP", active: showVwap, toggle: () => setShowVwap(!showVwap), color: "#06b6d4" },
+          { label: "Chandelier SL", active: showChandelier, toggle: () => setShowChandelier(!showChandelier), color: "#f59e0b" },
+          { label: "Volume", active: showVolume, toggle: () => setShowVolume(!showVolume), color: "#10b981" },
+        ].map((ind) => (
+          <button
+            key={ind.label}
+            onClick={ind.toggle}
+            style={{
+              background: ind.active ? `${ind.color}15` : "rgba(255, 255, 255, 0.03)",
+              border: `1px solid ${ind.active ? ind.color : "rgba(255, 255, 255, 0.08)"}`,
+              color: ind.active ? "#ffffff" : "#64748b",
+              borderRadius: 6,
+              padding: "3px 8px",
+              fontSize: 10,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: ind.active ? ind.color : "#64748b",
+              }}
+            />
+            {ind.label}
+          </button>
+        ))}
+
+        {camarilla && camarilla.h4 > 0 && showCamarilla && (
+          <span style={{ fontSize: 9.5, color: "#64748b", marginLeft: "auto" }}>
+            H4: ₹{camarilla.h4} | H3: ₹{camarilla.h3} | L3: ₹{camarilla.l3} | L4: ₹{camarilla.l4}
+          </span>
         )}
       </div>
 
       {/* Chart Canvas Area */}
-      <div style={{ position: "relative", width: "100%", minHeight: 380 }}>
+      <div style={{ position: "relative", width: "100%", height: targetCanvasHeight, minHeight: 360 }}>
         {loading && (
-          <div style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 10,
-            background: "rgba(8, 11, 22, 0.8)",
-            zIndex: 10,
-          }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid #06b6d4", borderTopColor: "transparent", animation: "spin 1s linear infinite" }} />
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              background: "rgba(8, 11, 22, 0.8)",
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                border: "2px solid #06b6d4",
+                borderTopColor: "transparent",
+                animation: "spin 1s linear infinite",
+              }}
+            />
             <div style={{ fontSize: 11, color: "#94a3b8" }}>Loading Institutional Candles & Pivots...</div>
           </div>
         )}
 
         {error ? (
-          <div style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#f43f5e",
-            fontSize: 12,
-            padding: 20,
-            textAlign: "center"
-          }}>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#f43f5e",
+              fontSize: 12,
+              padding: 20,
+              textAlign: "center",
+            }}
+          >
             {error}
           </div>
         ) : (
-          <div ref={chartContainerRef} style={{ width: "100%", height: 380 }} />
+          <div ref={chartContainerRef} style={{ width: "100%", height: targetCanvasHeight }} />
         )}
       </div>
     </div>

@@ -226,11 +226,26 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
    - Multi-tier fallback (Live NSE API $\rightarrow$ Supabase `fii_dii_flows` table $\rightarrow$ Institutional proxy) with 30-minute in-memory caching.
    - Sentiment classification: `STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_DII_SUPPORT_DEFENDING`.
    - Visual sentiment bars in Web and Mobile dashboard headers.
-5. **In-App Candlestick Charts with Overlays (`GET /api/stocks/candles`)**:
-   - TradingView Lightweight Charts v5 integration in `web_portal/src/components/LightweightCandleChart.tsx`.
+5. **In-App Candlestick Charts with Camarilla Overlays (`GET /api/stocks/candles`)**:
+   - **Cross-Platform TradingView Engine**: Integrated TradingView Lightweight Charts across the Next.js Web Portal (`web_portal/src/components/LightweightCandleChart.tsx`) and the Flutter Mobile App (`mobile_app/lib/screens/candle_chart_screen.dart` & `mobile_app/lib/widgets/candle_chart_modal.dart`).
+   - **Dedicated Fullscreen Mobile Client (`CandleChartScreen`)**:
+     - **Dynamic Auto-Resolution Calibration**: Continuously adapts canvas geometry to device screen DPI, Safe Area insets, and container dimensions using JavaScript `ResizeObserver` and Flutter `LayoutBuilder`.
+     - **1-Tap Landscape / Portrait Toggle**: Instant orientation switching (`SystemChrome.setPreferredOrientations`) with automatic portrait recovery on exit.
+     - **Live Touch Crosshair OHLC HUD**: Bi-directional JavaScript `ChartChannel` bridge broadcasting touch coordinates (`O: ₹... H: ₹... L: ₹... C: ₹... Vol: ...`) into a responsive header banner.
+     - **Offline Zero-Latency Asset Preloading**: Preloads local bundled JavaScript (`assets/js/lightweight-charts.standalone.production.js`) and binds to local `baseUrl`, completely eliminating mobile WebView white-screen hanging or network CDN carrier drops.
+     - **Priority Touch Handling**: Configured with `EagerGestureRecognizer` to guarantee smooth, conflict-free pan and pinch-zoom interactions without accidental bottom sheet dismissals.
+   - **Maximized Desktop Terminal Experience (Web Portal)**:
+     - **Dynamic Maximize Mode**: One-tap `[ ⛶ / 🗗 ]` toggle expanding chart dimensions up to `calc(85vh - 240px)` / 96vw without incurring redundant network re-fetches.
+     - **Hover Crosshair HUD**: Interactive crosshair tracking price, percentage change, and volume metrics in real-time.
+   - **Interactive Quantitative Overlays & Toggles**:
+     - **Camarilla Equation Pivots**: Mathematical institutional order book levels ($H_4$ Breakout, $H_3$ Target 1, $L_3$ Liquidity Floor, $L_4$ Hard Stop-Loss).
+     - **Intraday Cumulative VWAP**: Real-time Volume-Weighted Average Price line.
+     - **Chandelier Trailing Stop**: ATR-based dynamic trailing stop risk ratchet.
+     - **Volume Histogram**: Color-coded institutional volume bars with magnitude formatting.
+     - **Interactive Toggles**: 1-tap on-chart toggles for Camarilla, VWAP, Chandelier SL, and Volume.
+   - **Multi-Timeframe Engine**: Seamless switching across `1m`, `5m`, `15m`, `1h`, and `1d` intervals backed by in-memory LRU-cached `GET /api/stocks/candles`.
    - **Dual-Exchange Support**: Automatically resolves and charts both NSE (`.NS`) and BSE (`.BO`) tickers.
-   - Overlays: Camarilla $H_4/L_4$ breakout pivots, Intraday cumulative VWAP, and ATR Chandelier Trailing Stop.
-   - In-memory bounded cache (max 200 entries, LRU batch eviction).
+   - **In-Memory Bounded Cache**: Max 200 entries with 60-second TTL and LRU batch eviction to ensure sub-millisecond chart load times.
 
 ---
 

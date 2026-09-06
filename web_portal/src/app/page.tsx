@@ -722,6 +722,7 @@ export default function App() {
   const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
   const [sharingAlert, setSharingAlert] = useState<AlphaCardData | null>(null);
   const [chartingSymbol, setChartingSymbol] = useState<string | null>(null);
+  const [isChartMaximized, setIsChartMaximized] = useState<boolean>(false);
   const [fiiDiiFlows, setFiiDiiFlows] = useState<any | null>(null);
   const [expandedRadarId, setExpandedRadarId] = useState<string | null>(null);
 
@@ -3940,13 +3941,22 @@ export default function App() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 16
+            padding: isChartMaximized ? 10 : 16,
           }}>
-            <div style={{ maxWidth: 780, width: "100%" }}>
+            <div style={{
+              maxWidth: isChartMaximized ? "96vw" : 780,
+              width: "100%",
+              transition: "all 0.25s ease",
+            }}>
               <LightweightCandleChart
                 symbol={chartingSymbol}
                 backendUrl={BACKEND_URL}
-                onClose={() => setChartingSymbol(null)}
+                isMaximized={isChartMaximized}
+                onToggleMaximize={() => setIsChartMaximized(!isChartMaximized)}
+                onClose={() => {
+                  setChartingSymbol(null);
+                  setIsChartMaximized(false);
+                }}
               />
             </div>
           </div>

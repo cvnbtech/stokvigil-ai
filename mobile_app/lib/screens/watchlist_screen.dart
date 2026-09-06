@@ -6,6 +6,7 @@ import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
 import '../widgets/candle_chart_modal.dart';
+import 'candle_chart_screen.dart';
 
 class WatchlistScreen extends StatefulWidget {
   const WatchlistScreen({super.key});
@@ -819,6 +820,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                          GestureDetector(
                                            onTap: () {
                                              CandleChartModal.show(context, symbol: symbol);
+                                           },
+                                           onLongPress: () {
+                                             Navigator.of(context).push(
+                                               MaterialPageRoute(
+                                                 builder: (_) => CandleChartScreen(symbol: symbol),
+                                               ),
+                                             );
                                            },
                                            child: Container(
                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),

@@ -177,13 +177,25 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 - **Automated Sentiment Classification**: Categorizes institutional flows into clear regimes (`STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_SUPPORT_DEFENDING`).
 - **Visual Sentiment Bar**: Integrated into the header of the Web dashboard and Mobile app.
 
-### 6. 📈 In-App Candlestick Charts with Institutional Overlays
-- **Interactive Lightweight Charts v5**: Full TradingView candlestick charts integrated directly into the web application via `GET /api/stocks/candles`.
-- **Dual-Exchange Support**: Seamlessly charts both NSE (`.NS`) and BSE (`.BO`) equities with dynamic ticker resolution.
-- **Institutional Mathematical Overlays**:
-  - **Camarilla Equation Pivots**: Dynamic $H_4, $H_3, $L_3, $L_4 institutional order book breakout and liquidity floor levels.
-  - **Intraday Cumulative VWAP**: Real-time Volume-Weighted Average Price trend line.
-  - **Chandelier Trailing Stop**: ATR-based dynamic risk ratchet plotted on the chart.
+### 6. 📈 In-App Candlestick Charts & Camarilla Institutional Overlays (Mobile & Web)
+- **Cross-Platform TradingView Engine**: Integrated TradingView Lightweight Charts across the Next.js Web Portal (`LightweightCandleChart.tsx`) and the Flutter Mobile App (`CandleChartScreen` & `CandleChartModal`).
+- **Dedicated Fullscreen Mobile Screen (`CandleChartScreen`)**:
+  - **Dynamic Auto-Resolution Calibration**: Continuously adapts canvas geometry to device screen DPI, Safe Area insets, and container dimensions using JavaScript `ResizeObserver` and Flutter `LayoutBuilder`.
+  - **1-Tap Landscape / Portrait Toggle**: Instant orientation rotation (`SystemChrome.setPreferredOrientations`) with automatic portrait recovery on exit.
+  - **Live Touch Crosshair OHLC HUD**: Bi-directional JavaScript `ChartChannel` bridge broadcasting touch coordinates (`O: ₹... H: ₹... L: ₹... C: ₹... Vol: ...`) into a responsive header banner.
+  - **Offline Zero-Latency Asset Preloading**: Preloads local bundled JavaScript (`assets/js/lightweight-charts.standalone.production.js`) and binds to local `baseUrl`, completely eliminating mobile WebView white-screen hanging or network CDN carrier drops.
+  - **Priority Touch Handling**: Configured with `EagerGestureRecognizer` to guarantee smooth, conflict-free pan and pinch-zoom interactions without accidental bottom sheet dismissals.
+- **Maximized Desktop Terminal Experience (Web Portal)**:
+  - **Dynamic Maximize Mode**: One-tap `[ ⛶ / 🗗 ]` toggle expanding chart dimensions up to `calc(85vh - 240px)` / 96vw without incurring redundant network re-fetches.
+  - **Hover Crosshair HUD**: Interactive crosshair tracking price, percentage change, and volume metrics in real-time.
+- **Interactive Quantitative Overlays & Toggles**:
+  - **Camarilla Equation Pivots**: Mathematical institutional order book levels ($H_4$ Breakout, $H_3$ Target 1, $L_3$ Liquidity Floor, $L_4$ Hard Stop-Loss).
+  - **Intraday Cumulative VWAP**: Real-time Volume-Weighted Average Price line.
+  - **Chandelier Trailing Stop**: ATR-based dynamic trailing stop risk ratchet.
+  - **Volume Histogram**: Color-coded institutional volume bars with magnitude formatting.
+  - **Interactive Toggles**: 1-tap on-chart toggles for Camarilla, VWAP, Chandelier SL, and Volume.
+- **Multi-Timeframe Engine**: Seamless switching across `1m`, `5m`, `15m`, `1h`, and `1d` intervals backed by in-memory LRU-cached `GET /api/stocks/candles`.
+- **Dual-Exchange Support**: Seamlessly resolves and charts both NSE (`.NS`) and BSE (`.BO`) equities with dynamic fallback.
 
 
 ## 👁️ Demat Portfolio Privacy Masking & Live Indicator
