@@ -202,7 +202,7 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
 
         result = []
         seen_symbols = set()
-        max_workers = min(25, max(1, len(raw_holdings)))
+        max_workers = min(10, max(1, len(raw_holdings)))
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             parsed_items = list(pool.map(_parse_holding, raw_holdings))

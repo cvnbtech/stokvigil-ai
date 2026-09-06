@@ -633,7 +633,8 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
             missing_symbols.append(sym)
 
     if missing_symbols:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=25) as pool:
+        max_workers = min(10, max(1, len(missing_symbols)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             future_to_sym = {pool.submit(_fetch_single_stock_quote, sym): sym for sym in missing_symbols}
             for future in concurrent.futures.as_completed(future_to_sym):
                 sym = future_to_sym[future]
@@ -1102,8 +1103,8 @@ def get_user_portfolio(
     total_investment = 0.0
 
     if raw_holdings:
-        # Throttled concurrency (max 6 workers) keeps memory allocation < 380MB, well below Cloud Run 1024MB limit
-        max_workers = min(6, max(1, len(raw_holdings)))
+        # Throttled concurrency (max 10 workers) keeps memory allocation well below Cloud Run 1024MB limit
+        max_workers = min(10, max(1, len(raw_holdings)))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             priced_items = list(pool.map(_price_single_holding, raw_holdings))
 
