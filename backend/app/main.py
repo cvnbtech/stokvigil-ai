@@ -944,6 +944,50 @@ def delete_user_account(
 _USER_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
 _USER_PORTFOLIO_CACHE_TTL = 15.0  # 15 seconds
 
+# In-Memory Fundamentals Cache for Portfolio Holdings (24-Hour TTL / 86400s)
+# Maps clean symbol -> {"pe_ratio": Optional[float], "debt_to_equity": Optional[float], "timestamp": float}
+_FUNDAMENTALS_CACHE: Dict[str, Dict[str, Any]] = {}
+_FUNDAMENTALS_CACHE_TTL = 86400.0  # 24 hours
+
+def _get_holding_fundamentals(symbol: str, now: float) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Retrieves authentic P/E ratio and Debt-to-Equity with 24-hour in-memory caching.
+    Checks RAM cache first, then market_cache singleton, falling back to Yahoo Finance once per day.
+    """
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    if clean_sym in _FUNDAMENTALS_CACHE:
+        cached = _FUNDAMENTALS_CACHE[clean_sym]
+        if (now - cached.get("timestamp", 0)) < _FUNDAMENTALS_CACHE_TTL:
+            return cached.get("pe_ratio"), cached.get("debt_to_equity")
+
+    # Check market_cache singleton (pre-computed during background scans)
+    cached_market_pack = market_cache.get_stock(clean_sym)
+    if cached_market_pack:
+        fin = cached_market_pack.get("financials", {})
+        pe = fin.get("pe_ratio")
+        de = fin.get("debt_to_equity")
+        if pe is not None or de is not None:
+            _FUNDAMENTALS_CACHE[clean_sym] = {"pe_ratio": pe, "debt_to_equity": de, "timestamp": now}
+            return pe, de
+
+    # Fetch authentic fundamentals from Yahoo Finance
+    try:
+        fin = fetch_stock_financials(clean_sym)
+        pe = fin.get("pe_ratio")
+        de = fin.get("debt_to_equity")
+    except Exception as e:
+        logger.warning(f"Error fetching fundamentals for {clean_sym}: {e}")
+        pe, de = None, None
+
+    # Bound cache size to 500 entries to prevent memory drift
+    if len(_FUNDAMENTALS_CACHE) > 500:
+        oldest_syms = sorted(_FUNDAMENTALS_CACHE.keys(), key=lambda k: _FUNDAMENTALS_CACHE[k].get("timestamp", 0))[:100]
+        for s in oldest_syms:
+            _FUNDAMENTALS_CACHE.pop(s, None)
+
+    _FUNDAMENTALS_CACHE[clean_sym] = {"pe_ratio": pe, "debt_to_equity": de, "timestamp": now}
+    return pe, de
+
 def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]):
     """Background task to sync Demat holdings to user_watchlists without blocking HTTP response."""
     if not symbols:
@@ -1011,8 +1055,26 @@ def get_user_portfolio(
     # High-Speed Parallel Financials & Market Pricing for 100+ stocks
     def _price_single_holding(h: Dict[str, Any]) -> Dict[str, Any]:
         sym = h['symbol']
-        fin = fetch_stock_financials(sym)
-        live_price = fin.get('price') or h.get('current_market_price') or h.get('average_price') or 0.0
+        clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+
+        # 1. High-Speed Live Market Price (<1KB quote fetch / in-memory quote cache)
+        live_price = 0.0
+        cached_quote = _QUOTE_CACHE.get(clean_sym)
+        if cached_quote and (now - cached_quote.get("timestamp", 0) < _QUOTE_CACHE_TTL):
+            live_price = float(cached_quote["data"].get("price", 0.0))
+        else:
+            quote_data = _fetch_single_stock_quote(clean_sym)
+            if quote_data and quote_data.get("price"):
+                live_price = float(quote_data["price"])
+                _cache_set_quote(clean_sym, quote_data, now)
+
+        # Fallback to ICICI broker tick / average price if live quote is unavailable
+        if live_price <= 0.0:
+            live_price = float(h.get('current_market_price') or h.get('average_price') or 0.0)
+
+        # 2. Authentic P/E Ratio and Debt-to-Equity with 24-hour in-memory cache
+        pe_ratio, debt_to_equity = _get_holding_fundamentals(clean_sym, now)
+
         qty = h.get('quantity', 0)
         avg_price = h.get('average_price', 0)
         
@@ -1025,12 +1087,12 @@ def get_user_portfolio(
             "symbol": sym,
             "quantity": qty,
             "avg_price": avg_price,
-            "current_price": live_price,
+            "current_price": round(live_price, 2),
             "current_value": round(current_val, 2),
             "pnl": round(pnl, 2),
             "pnl_percent": round(pnl_pct, 2),
-            "pe_ratio": fin.get("pe_ratio"),
-            "debt_to_equity": fin.get("debt_to_equity"),
+            "pe_ratio": pe_ratio,
+            "debt_to_equity": debt_to_equity,
             "_curr_val": current_val,
             "_inv_val": investment_val,
         }
@@ -1040,7 +1102,8 @@ def get_user_portfolio(
     total_investment = 0.0
 
     if raw_holdings:
-        max_workers = min(25, max(1, len(raw_holdings)))
+        # Throttled concurrency (max 6 workers) keeps memory allocation < 380MB, well below Cloud Run 1024MB limit
+        max_workers = min(6, max(1, len(raw_holdings)))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             priced_items = list(pool.map(_price_single_holding, raw_holdings))
 
