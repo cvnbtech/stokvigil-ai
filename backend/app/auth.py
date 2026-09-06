@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import Optional, Any
 from fastapi import Header, HTTPException, Depends
@@ -58,6 +59,54 @@ def mask_id(val: Optional[Any]) -> str:
     if len(s) <= 4:
         return "***" + s
     return "***" + s[-4:]
+
+def mask_telegram_token(text: Optional[Any]) -> str:
+    """
+    Masks Telegram bot tokens in URLs or text, revealing only the last 4 characters.
+    e.g. https://api.telegram.org/bot967613667:ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4/sendMessage
+    becomes https://api.telegram.org/bot***sAM4/sendMessage
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    def _repl(match):
+        prefix = match.group(1)
+        token = match.group(2)
+        masked = "***" + token if len(token) <= 4 else "***" + token[-4:]
+        return f"{prefix}{masked}"
+
+    s = re.sub(r'(api\.telegram\.org/bot)([^/\s?#"\']+)', _repl, s)
+    bot_token = getattr(settings, "TELEGRAM_BOT_TOKEN", None)
+    if bot_token and len(bot_token) > 4 and bot_token in s:
+        masked_tok = "***" + bot_token[-4:]
+        s = s.replace(bot_token, masked_tok)
+    return s
+
+class SensitiveDataFilter(logging.Filter):
+    """
+    Custom logging filter that intercepts log records across all loggers
+    and masks any Telegram Bot API token in URLs or messages so tokens are never exposed.
+    """
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            if isinstance(record.msg, str):
+                record.msg = mask_telegram_token(record.msg)
+            if record.args:
+                if isinstance(record.args, dict):
+                    record.args = {k: mask_telegram_token(v) if isinstance(v, str) else v for k, v in record.args.items()}
+                elif isinstance(record.args, tuple):
+                    record.args = tuple(mask_telegram_token(a) if isinstance(a, str) else a for a in record.args)
+        except Exception:
+            pass
+        return True
+
+# Attach filter to root logger and key subsystems
+_filter = SensitiveDataFilter()
+logging.getLogger().addFilter(_filter)
+logging.getLogger("httpx").addFilter(_filter)
+logging.getLogger("stokvigil.notifications").addFilter(_filter)
+logging.getLogger("stokvigil.main").addFilter(_filter)
+
 
 
 def verify_user_access(requested_user_id: str, authenticated_user_id: Optional[str]) -> bool:

@@ -11,7 +11,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.main import app, get_supabase
-from app.auth import get_current_user_id, mask_id
+from app.auth import get_current_user_id, mask_id, mask_telegram_token
 from app.config import settings
 from app.vault import vault
 
@@ -276,6 +276,25 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertEqual(mask_id("12"), "***12")
         self.assertEqual(mask_id(""), "***")
         self.assertEqual(mask_id(None), "***")
+
+    # 15d. Mask Telegram Bot Token in URLs utility tests
+    def test_15d_mask_telegram_token(self):
+        sample_url = "https://api.telegram.org/bot967613667:ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4/sendMessage"
+        masked = mask_telegram_token(sample_url)
+        self.assertEqual(masked, "https://api.telegram.org/bot***sAM4/sendMessage")
+        self.assertNotIn("ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4", masked)
+
+        # Test other endpoints and short tokens
+        self.assertEqual(
+            mask_telegram_token("https://api.telegram.org/bot12345/getMe"),
+            "https://api.telegram.org/bot***2345/getMe"
+        )
+        self.assertEqual(
+            mask_telegram_token("https://api.telegram.org/bot123/setWebhook"),
+            "https://api.telegram.org/bot***123/setWebhook"
+        )
+        self.assertEqual(mask_telegram_token(""), "")
+        self.assertEqual(mask_telegram_token(None), "")
 
     # 16. User Accuracy Stats - Authorized
     def test_16_accuracy_stats(self):

@@ -1498,7 +1498,7 @@ async def telegram_webhook(
                 "telegram_chat_id": chat_id,
                 "telegram_enabled": True,
                 "updated_at": "now()"
-            }).eq("user_id", user_param).execute()
+            }).eq("id", user_param).execute()
 
             if not res.data or len(res.data) == 0:
                 upsert_payload = {

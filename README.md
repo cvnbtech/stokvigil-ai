@@ -265,7 +265,7 @@ Users can permanently delete their account directly from the **Settings** page:
    CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
    ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
    ```
-3. Run test suite (58 automated unit tests across 7 suites):
+3. Run test suite (59 automated unit tests across 7 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

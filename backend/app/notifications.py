@@ -4,9 +4,10 @@ import logging
 import httpx
 from typing import Optional, Dict, Any, List
 from app.config import settings
-from app.auth import mask_id
+from app.auth import mask_id, mask_telegram_token
 
 logger = logging.getLogger("stokvigil.notifications")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Lazy Firebase Init
 firebase_app = None
@@ -101,10 +102,10 @@ async def send_telegram_notification(chat_id: str, formatted_html_text: str, rep
                 logger.info(f"Telegram alert sent to Chat ID: {mask_id(chat_id)}")
                 return True
             else:
-                logger.error(f"Telegram Bot API error [{res.status_code}]: {res.text}")
+                logger.error(f"Telegram Bot API error [{res.status_code}]: {mask_telegram_token(res.text)}")
                 return False
     except Exception as e:
-        logger.error(f"Exception sending Telegram notification: {e}")
+        logger.error(f"Exception sending Telegram notification: {mask_telegram_token(str(e))}")
         return False
 
 def format_telegram_alert(
