@@ -270,12 +270,12 @@ Users can permanently delete their account directly from the **Settings** page:
    SUPABASE_ANON_KEY=your-supabase-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    DATABASE_URL=postgresql://postgres.yourprojectref:yourpassword@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-   ENCRYPTION_KEY=d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3c=
+   ENCRYPTION_KEY=your_encryption_key
    GEMINI_API_KEY=your-gemini-api-key
-   TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefNoPQRsTUVwxyZ
    TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
-   CRON_SECRET_KEY=stokvigil_cron_default_secret_2026
-   ALLOWED_ORIGINS=https://stokvigil-ai.vercel.app,http://localhost:3000,http://localhost:8000
+   CRON_SECRET_KEY=cron_default_secret
+   ALLOWED_ORIGINS=https://yourapp.hostname,http://localhost:3000,http://localhost:8000
    ```
 3. Run test suite (59 automated unit tests across 7 suites):
    ```bash
