@@ -219,7 +219,7 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides an automated, secure workflow for mobile and web:
 
 1. **Broker App Configuration**: In the [ICICI Direct Breeze Portal](https://api.icicidirect.com/apiuser/home), register your App with **Redirect URL** set to:
-   - **Official URL**: `https://stokvigil-ai.vercel.app/api/auth/icici-callback`
+   - **Official URL**: `https://Yourapp.vercel.app/api/auth/icici-callback`
 2. **Permanent Key Pre-Fill & Decryption (`GET /api/user/credentials`)**:
    - `App Key` and `Secret Key` are entered **only once** and encrypted in the vault.
    - On subsequent days, opening the setup screen **automatically fetches and decrypts** the permanent keys.

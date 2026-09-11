@@ -34,19 +34,140 @@ SECTOR_MAP = {
     "HINDALCO": "NIFTY METAL",
 }
 
+import json
+import time
+import urllib.request
+from typing import Dict, Any, Tuple, Optional
+
+logger = logging.getLogger("stokvigil.macro_filter")
+
+# In-memory cache for market breadth (TTL: 60 seconds)
+_MARKET_BREADTH_CACHE: Dict[str, Any] = {}
+_MARKET_BREADTH_TS: float = 0.0
+_MARKET_BREADTH_TTL: float = 60.0
+
+def fetch_market_breadth_adr() -> Dict[str, Any]:
+    """
+    Fetches real-time Indian cash market breadth (Advance-Decline Ratio - ADR).
+    Queries official NSE All-Indices market breadth with in-memory caching and resilient fallback.
+    - STRONG_BULLISH_BREADTH: ADR >= 1.5 (High breakout follow-through probability)
+    - BALANCED_BREADTH: 0.8 <= ADR < 1.5 (Stock-specific action)
+    - MILD_BREADTH_WEAKNESS: 0.6 <= ADR < 0.8 (Caution on new long entries)
+    - SEVERE_MARKET_DISTRIBUTION: ADR < 0.60 (Blocks all long breakouts / anti-bull-trap veto)
+    """
+    global _MARKET_BREADTH_CACHE, _MARKET_BREADTH_TS
+    now = time.time()
+    if _MARKET_BREADTH_CACHE and (now - _MARKET_BREADTH_TS) < _MARKET_BREADTH_TTL:
+        return _MARKET_BREADTH_CACHE
+
+    default_breadth = {
+        "adr_ratio": 1.0,
+        "advances": 25,
+        "declines": 25,
+        "unchanged": 0,
+        "breadth_regime": "BALANCED_BREADTH",
+        "source": "DEFAULT_BALANCED"
+    }
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nseindia.com/",
+    }
+
+    try:
+        url = "https://www.nseindia.com/api/allIndices"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            if resp.status == 200:
+                raw = json.loads(resp.read().decode("utf-8"))
+                indices = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+                # Prioritize NIFTY 50 or NIFTY 500 breadth
+                target_index = next((item for item in indices if item.get("index") in ["NIFTY 50", "NIFTY 500"]), None)
+                if target_index:
+                    adv = int(target_index.get("advances", 25))
+                    dec = int(target_index.get("declines", 25))
+                    unch = int(target_index.get("unchanged", 0))
+                    adr = round(adv / max(1, dec), 2)
+                    
+                    if adr >= 1.5:
+                        regime = "STRONG_BULLISH_BREADTH"
+                    elif adr >= 0.8:
+                        regime = "BALANCED_BREADTH"
+                    elif adr >= 0.6:
+                        regime = "MILD_BREADTH_WEAKNESS"
+                    else:
+                        regime = "SEVERE_MARKET_DISTRIBUTION"
+
+                    result = {
+                        "adr_ratio": adr,
+                        "advances": adv,
+                        "declines": dec,
+                        "unchanged": unch,
+                        "breadth_regime": regime,
+                        "source": "NSE_LIVE"
+                    }
+                    _MARKET_BREADTH_CACHE = result
+                    _MARKET_BREADTH_TS = now
+                    return result
+    except Exception as e:
+        logger.debug(f"Direct NSE market breadth fetch skipped/unavailable: {e}")
+
+    # Fallback to broad market NIFTY 50 / SENSEX index movement approximation
+    try:
+        nifty = yf.Ticker("^NSEI")
+        hist = nifty.history(period="2d")
+        if len(hist) >= 2:
+            pct = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
+            if pct > 0.6:
+                adv, dec = 35, 15
+            elif pct > 0.1:
+                adv, dec = 28, 22
+            elif pct > -0.4:
+                adv, dec = 22, 28
+            elif pct > -1.0:
+                adv, dec = 15, 35
+            else:
+                adv, dec = 8, 42
+            adr = round(adv / max(1, dec), 2)
+            regime = "STRONG_BULLISH_BREADTH" if adr >= 1.5 else ("BALANCED_BREADTH" if adr >= 0.8 else ("MILD_BREADTH_WEAKNESS" if adr >= 0.6 else "SEVERE_MARKET_DISTRIBUTION"))
+            result = {
+                "adr_ratio": adr,
+                "advances": adv,
+                "declines": dec,
+                "unchanged": 0,
+                "breadth_regime": regime,
+                "source": "INDEX_PROXY"
+            }
+            _MARKET_BREADTH_CACHE = result
+            _MARKET_BREADTH_TS = now
+            return result
+    except Exception as e:
+        logger.debug(f"Market breadth index proxy fallback error: {e}")
+
+    return default_breadth
+
 def fetch_macro_market_regime() -> Dict[str, Any]:
     """
-    Fetches broad Indian market indices:
+    Fetches broad Indian market indices and breadth:
     - NIFTY 50 (^NSEI)
-    - NIFTY BANK (^NSEBANK)
+    - BSE SENSEX (^BSESN)
     - India VIX (^INDIAVIX)
+    - Advance-Decline Ratio (Market Breadth ADR)
     """
     default_res = {
         "nifty_price": 24500.0,
         "nifty_change_pct": 0.0,
         "nifty_trend": "NEUTRAL",
+        "sensex_price": 80000.0,
+        "sensex_change_pct": 0.0,
         "india_vix": 14.5,
         "vix_regime": "MODERATE_VOLATILITY",
+        "adr_ratio": 1.0,
+        "advances": 25,
+        "declines": 25,
+        "breadth_regime": "BALANCED_BREADTH",
         "allow_breakout_trades": True
     }
     
@@ -98,6 +219,15 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
         except Exception as e:
             logger.debug(f"BSE SENSEX fetch fallback: {e}")
 
+        # Market Breadth Advance-Decline Ratio (ADR)
+        breadth = fetch_market_breadth_adr()
+        adr_val = breadth.get("adr_ratio", 1.0)
+        breadth_regime = breadth.get("breadth_regime", "BALANCED_BREADTH")
+
+        # Market Breadth Veto: If severe distribution (ADR < 0.60), block breakout trades
+        if adr_val < 0.60:
+            allow_breakout = False
+
         return {
             "nifty_price": nifty_price,
             "nifty_change_pct": nifty_change_pct,
@@ -106,6 +236,10 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
             "sensex_change_pct": sensex_change_pct,
             "india_vix": vix_val,
             "vix_regime": vix_regime,
+            "adr_ratio": adr_val,
+            "advances": breadth.get("advances", 25),
+            "declines": breadth.get("declines", 25),
+            "breadth_regime": breadth_regime,
             "allow_breakout_trades": allow_breakout
         }
     except Exception as e:
@@ -202,10 +336,13 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
     lagging_sectors = sector_results[-1:] if sector_results else [{"name": "NIFTY IT", "change_pct": -0.2}]
     
     # 4. Tactical Session Guidance
-    if not allow_breakouts or vix_val > 22.0:
-        guidance = "⚠️ High volatility regime detected. Widen stop-losses, reduce position sizing, and avoid chasing early gap openings."
+    adr_val = base_macro.get("adr_ratio", 1.0)
+    breadth_regime = base_macro.get("breadth_regime", "BALANCED_BREADTH")
+
+    if not allow_breakouts or vix_val > 22.0 or adr_val < 0.60:
+        guidance = f"⚠️ High risk regime detected (VIX: {vix_val}, Market Breadth ADR: {adr_val:.2f}). Heavy market distribution. Vetoing new long breakouts."
     elif global_cues["bias"] in ["BULLISH_TAILWINDS", "MILD_POSITIVE"] and nifty_chg >= 0:
-        guidance = f"🟢 Favorable bullish tailwinds. Prioritize Smart Money Absorption breakouts above VWAP in leading sectors ({', '.join(s['name'] for s in leading_sectors)})."
+        guidance = f"🟢 Favorable bullish tailwinds (Breadth: {breadth_regime}). Prioritize Smart Money Absorption breakouts above VWAP in leading sectors ({', '.join(s['name'] for s in leading_sectors)})."
     elif global_cues["bias"] == "BEARISH_HEADWINDS" or nifty_chg < -0.4:
         guidance = "🔴 Macro headwinds prevalent. Watch for Wyckoff operator bull-traps and protect Demat profits with Chandelier Trailing Stops."
     else:
@@ -219,6 +356,8 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
         "sensex_change_pct": sensex_chg,
         "india_vix": vix_val,
         "vix_regime": vix_regime,
+        "adr_ratio": adr_val,
+        "breadth_regime": breadth_regime,
         "allow_breakout_trades": allow_breakouts,
         "global_cues": global_cues,
         "leading_sectors": leading_sectors,

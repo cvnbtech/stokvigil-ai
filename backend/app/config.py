@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     CRON_SECRET_KEY: str = "stokvigil_cron_default_secret_2026"
     CRON_SECRET: Optional[str] = None
 
+    # Admin Security Token
+    ADMIN_SECRET_KEY: Optional[str] = None
+
     @property
     def active_cron_secret(self) -> str:
         secret = self.CRON_SECRET if (self.CRON_SECRET and self.CRON_SECRET.strip()) else self.CRON_SECRET_KEY

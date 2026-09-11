@@ -46,6 +46,23 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional
 
     return None
 
+def get_optional_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
+    """
+    Extracts the authenticated user ID if a valid Bearer token is provided,
+    without raising 401 if missing. Used for endpoints with tiered public/admin access.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ")[1].strip()
+        try:
+            client = get_auth_client()
+            user_response = client.auth.get_user(token)
+            if user_response and user_response.user:
+                return str(user_response.user.id)
+        except Exception:
+            return None
+    return None
+
+
 def mask_id(val: Optional[Any]) -> str:
     """
     Masks user IDs, UUIDs, or chat IDs showing only the last 4 characters (e.g. ***0123).

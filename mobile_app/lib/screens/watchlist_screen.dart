@@ -114,8 +114,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             'chg': pnlPct >= 0 ? '+${pnlPct.toStringAsFixed(2)}%' : '${pnlPct.toStringAsFixed(2)}%',
             'is_positive': pnlPct >= 0,
             'is_auto_synced': true,
-            'signal': pnl >= 0 ? 'STRONG BUY' : 'HOLD',
-            'target': price > 0 ? (price * 1.12).toStringAsFixed(0) : "0",
+            'signal': (h['signal'] as String?) ?? 'MONITORING',
+            'target': (h['target'] as String?) ?? '--',
+            'stop_loss': (h['stop_loss'] as String?) ?? '--',
           };
         }).toList();
 
@@ -239,9 +240,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             'price': livePrice,
             'is_positive': true,
             'chg': "+0.00%",
-            'signal': 'BUY',
-            'target': livePrice > 0 ? "₹${(livePrice * 1.12).toStringAsFixed(0)}" : "₹0",
-            'stop_loss': livePrice > 0 ? "₹${(livePrice * 0.94).toStringAsFixed(0)}" : "₹0"
+            'signal': 'MONITORING',
+            'target': '--',
+            'stop_loss': '--'
           });
         }
       });
@@ -635,12 +636,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final isPos = item['is_positive'] ?? true;
                           final priceNum = (item['price'] as num? ?? 0.0).toDouble();
                           final chg = item['chg'] ?? (isPos ? "+0.00%" : "-0.00%");
-                          final signal = item['signal'] ?? 'BUY';
-                          final target = item['target'] ?? (priceNum > 0 ? "₹${(priceNum * 1.12).toStringAsFixed(0)}" : "₹0");
+                          final signal = item['signal'] ?? 'MONITORING';
+                          final target = item['target'] ?? '--';
+                          final stopLoss = item['stop_loss'] ?? '--';
                           final name = item['name'] ?? symbol;
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
 
-                          Color signalColor = const Color(0xFF06B6D4);
+                          Color signalColor = const Color(0xFF94A3B8);
                           if (signal == 'STRONG BUY') {
                             signalColor = AppTheme.primaryEmerald;
                           } else if (signal == 'BUY') {
@@ -652,6 +654,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           } else if (signal == 'SELL' || signal == 'EXIT') {
                             signalColor = AppTheme.dangerRose;
                           } else if (signal == 'HOLD' || signal == 'NEUTRAL') {
+                            signalColor = const Color(0xFFEAB308);
+                          } else {
                             signalColor = const Color(0xFF94A3B8);
                           }
 
@@ -794,20 +798,26 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               ],
                                             ),
                                           ),
-                                          RichText(
-                                            text: TextSpan(
-                                              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
-                                              children: [
-                                                const TextSpan(text: "Target: "),
-                                                TextSpan(
-                                                  text: "₹$target",
-                                                  style: const TextStyle(
-                                                    color: AppTheme.primaryEmerald,
-                                                    fontWeight: FontWeight.w900,
-                                                  ),
+                                          Builder(
+                                            builder: (context) {
+                                              final isUnset = target == '--' || target == '-' || target == '₹0' || target == '0';
+                                              final targetText = isUnset ? '--' : (target.toString().startsWith('₹') ? target.toString() : '₹$target');
+                                              return RichText(
+                                                text: TextSpan(
+                                                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
+                                                  children: [
+                                                    const TextSpan(text: "Target: "),
+                                                    TextSpan(
+                                                      text: targetText,
+                                                      style: TextStyle(
+                                                        color: isUnset ? AppTheme.textSecondary : AppTheme.primaryEmerald,
+                                                        fontWeight: FontWeight.w900,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                              ],
-                                            ),
+                                              );
+                                            },
                                           ),
                                         ],
                                       ),
@@ -852,8 +862,12 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               symbol: symbol,
                                               currentPrice: priceNum,
                                               initialType: 'BUY',
-                                              targetPrice: target,
-                                              stopLoss: (priceNum * 0.94).toStringAsFixed(0),
+                                              targetPrice: (target == '--' || target == '-' || target == '₹0' || target == '0')
+                                                  ? ''
+                                                  : target.toString().replaceAll('₹', '').trim(),
+                                              stopLoss: (stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0')
+                                                  ? ''
+                                                  : stopLoss.toString().replaceAll('₹', '').trim(),
                                             );
                                           },
                                           child: Container(

@@ -1,4 +1,4 @@
-﻿import time
+import time
 import logging
 from typing import Dict, Any, Optional, List
 
@@ -91,6 +91,60 @@ class MarketCacheManager:
             "writes": self._stats["writes"],
             "hit_ratio_pct": round((self._stats["hits"] / max(1, self._stats["hits"] + self._stats["misses"])) * 100, 2)
         }
+
+    def update_live_tick(
+        self, 
+        symbol: str, 
+        ltp: float, 
+        volume: Optional[int] = None, 
+        high: Optional[float] = None, 
+        low: Optional[float] = None
+    ) -> None:
+        """
+        Atomically updates a stock's live Last Traded Price (LTP) and sub-second metrics in RAM.
+        Enables WebSocket or zero-cost tick feeds to update tactical ranges and VWAP deviations
+        without running heavy full pipeline recalculations.
+        """
+        clean_sym = self._normalize_symbol(symbol)
+        now = time.time()
+        
+        if clean_sym in self._cache:
+            entry = self._cache[clean_sym]
+            data = entry.get("data", {})
+            data["current_price"] = round(float(ltp), 2)
+            data["last_tick_time"] = now
+            
+            # Recalculate price vs VWAP deviation if VWAP exists
+            vwap = data.get("vwap", 0.0)
+            if vwap > 0:
+                data["price_vs_vwap_pct"] = round(((float(ltp) - vwap) / vwap) * 100, 2)
+                
+            if volume is not None:
+                data["live_volume"] = volume
+            if high is not None:
+                data["day_high"] = round(float(high), 2)
+            if low is not None:
+                data["day_low"] = round(float(low), 2)
+                
+            entry["cached_at"] = now
+        else:
+            # Minimal seed entry until full pipeline runs
+            self._cache[clean_sym] = {
+                "symbol": clean_sym,
+                "data": {
+                    "symbol": clean_sym,
+                    "current_price": round(float(ltp), 2),
+                    "last_tick_time": now,
+                    "live_volume": volume or 0,
+                    "day_high": high or round(float(ltp), 2),
+                    "day_low": low or round(float(ltp), 2),
+                    "action_bias": "HOLD_NEUTRAL",
+                    "confluence_score": 50
+                },
+                "cached_at": now,
+                "expires_at": now + 300
+            }
+        self._stats["writes"] += 1
 
     def clear(self) -> None:
         """Clears all cached market records."""

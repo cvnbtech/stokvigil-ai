@@ -255,7 +255,7 @@ function Badge({ label, color = "cyan" }: { label: string; color?: "cyan" | "eme
   );
 }
 
-function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | string }) {
+function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | string }) {
   const isStrong = type === "strong_buy";
   const isBuy = type === "buy";
   const isSell = type === "sell";
@@ -267,7 +267,9 @@ function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "
       ? "rgba(6,182,212,0.18)"
       : isSell
         ? "rgba(245,158,11,0.18)"
-        : "rgba(234,179,8,0.18)";
+        : isHold
+          ? "rgba(234,179,8,0.18)"
+          : "rgba(148,163,184,0.15)";
 
   const border = isStrong
     ? "rgba(16,185,129,0.5)"
@@ -275,9 +277,11 @@ function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "
       ? "rgba(6,182,212,0.4)"
       : isSell
         ? "rgba(245,158,11,0.4)"
-        : "rgba(234,179,8,0.4)";
+        : isHold
+          ? "rgba(234,179,8,0.4)"
+          : "rgba(148,163,184,0.3)";
 
-  const color = isStrong ? C.emerald : isBuy ? C.cyan : isSell ? C.amber : "#EAB308";
+  const color = isStrong ? C.emerald : isBuy ? C.cyan : isSell ? C.amber : isHold ? "#EAB308" : C.gray2;
 
   return (
     <div style={{
@@ -319,12 +323,14 @@ interface HoldingItem {
   price: number;
   pnl: number;
   pnlPct: number;
-  dayHigh: number;
-  dayLow: number;
-  high52: number;
+  dayHigh: number | null;
+  dayLow: number | null;
+  high52: number | null;
   sector: string;
   signal: string;
-  signalType: "strong_buy" | "buy" | "sell" | "hold" | "neutral";
+  signalType: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | string;
+  target?: string | null;
+  sl?: string | null;
 }
 
 const HOLDINGS: HoldingItem[] = [];
@@ -709,9 +715,9 @@ export default function App() {
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [orderSent, setOrderSent] = useState(false);
   const [orderSending, setOrderSending] = useState(false);
-  const [limitPrice, setLimitPrice] = useState<string>("0");
-  const [targetPriceInput, setTargetPriceInput] = useState<string>("0");
-  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("0");
+  const [limitPrice, setLimitPrice] = useState<string>("");
+  const [targetPriceInput, setTargetPriceInput] = useState<string>("");
+  const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("");
   const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
   const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
   const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
@@ -787,12 +793,14 @@ export default function App() {
             price: h.current_price,
             pnl: h.pnl,
             pnlPct: h.pnl_percent,
-            dayHigh: h.current_price * 1.02,
-            dayLow: h.current_price * 0.98,
-            high52: h.current_price * 1.15,
+            dayHigh: h.day_high != null ? h.day_high : null,
+            dayLow: h.day_low != null ? h.day_low : null,
+            high52: h.high_52 != null ? h.high_52 : null,
             sector: "Equity",
-            signal: h.pnl >= 0 ? "STRONG BUY" : "HOLD",
-            signalType: h.pnl >= 0 ? "strong_buy" : "hold",
+            signal: h.signal || "MONITORING",
+            signalType: h.signal_type || "monitoring",
+            target: h.target ? (String(h.target).startsWith("₹") ? h.target : `₹${h.target}`) : "--",
+            sl: h.stop_loss ? (String(h.stop_loss).startsWith("₹") ? h.stop_loss : `₹${h.stop_loss}`) : "--",
           })));
           portfolioLoaded = true;
 
@@ -966,10 +974,10 @@ export default function App() {
             const chgPct = q.change_pct !== undefined ? q.change_pct : 0.0;
             const isPos = q.is_positive !== undefined ? q.is_positive : chgPct >= 0;
             const name = q.name || sym;
-            const signal = q.signal || (isPos ? "BUY" : "HOLD");
-            const signalType = q.signal_type || (isPos ? "buy" : "hold");
-            const target = q.target ? `₹${q.target}` : (price > 0 ? `₹${(price * 1.12).toFixed(0)}` : "₹0");
-            const sl = q.stop_loss ? `₹${q.stop_loss}` : (price > 0 ? `₹${(price * 0.94).toFixed(0)}` : "₹0");
+            const signal = q.signal || "MONITORING";
+            const signalType = q.signal_type || "monitoring";
+            const target = q.target ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
+            const sl = q.stop_loss ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
 
             return {
               id: w.id,
@@ -1375,10 +1383,10 @@ export default function App() {
           price: livePrice,
           chg: "+0.00%",
           isPositive: true,
-          signal: "BUY",
-          signalType: "buy",
-          target: livePrice > 0 ? `₹${(livePrice * 1.12).toFixed(0)}` : "₹0",
-          sl: livePrice > 0 ? `₹${(livePrice * 0.94).toFixed(0)}` : "₹0"
+          signal: "MONITORING",
+          signalType: "monitoring",
+          target: "--",
+          sl: "--"
         },
         ...prev.filter(p => p.symbol !== raw)
       ]);
@@ -1400,16 +1408,21 @@ export default function App() {
     if (user?.id) {
       try {
         const headers = await getAuthHeaders();
+        const idempotencyKey = `${user.id}-${tradeData.symbol}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
           method: "POST",
-          headers,
+          headers: {
+            ...headers,
+            "X-Idempotency-Key": idempotencyKey
+          },
           body: JSON.stringify({
             user_id: user.id,
             symbol: tradeData.symbol,
             action: tradeData.type,
             order_type: orderType,
             quantity: orderQty,
-            price: orderType === "LIMIT" ? parseFloat(limitPrice) || 0.0 : 0.0
+            price: orderType === "LIMIT" ? parseFloat(limitPrice) || 0.0 : 0.0,
+            idempotency_key: idempotencyKey
           })
         });
       } catch (e) {
@@ -2656,10 +2669,10 @@ export default function App() {
                     price: h.price || 0,
                     chg: h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`,
                     isPositive: h.pnlPct >= 0,
-                    signal: h.signal || (h.pnl >= 0 ? "STRONG BUY" : "HOLD"),
-                    signalType: h.signalType || (h.pnl >= 0 ? "strong_buy" : "hold"),
-                    target: h.price ? `₹${(h.price * 1.12).toFixed(0)}` : "₹0",
-                    sl: h.price ? `₹${(h.price * 0.94).toFixed(0)}` : "₹0"
+                    signal: h.signal || "MONITORING",
+                    signalType: h.signalType || "monitoring",
+                    target: h.target || "--",
+                    sl: h.sl || "--"
                   }));
 
                   const combinedList = [...watchlist];
@@ -2759,24 +2772,28 @@ export default function App() {
                         paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
                       }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <SignalBadge signal={item.signal || "BUY"} type={item.signalType || "buy"} />
+                          <SignalBadge signal={item.signal || "MONITORING"} type={item.signalType || "monitoring"} />
                           <span style={{ fontSize: 10, color: C.gray2 }}>
-                            Target: <b style={{ color: C.emerald }}>{item.target || "₹3,250"}</b>
+                            Target: <b style={{ color: item.target && item.target !== "--" ? C.emerald : C.gray2 }}>{item.target || "--"}</b>
                           </span>
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <button
                             onClick={() => {
+                              const cleanTarget = (item.target && item.target !== "--") ? item.target.replace(/[^\d.]/g, "") : "";
+                              const cleanSl = (item.sl && item.sl !== "--") ? item.sl.replace(/[^\d.]/g, "") : "";
                               setTradeData({
                                 symbol: item.symbol,
                                 price: item.price,
                                 type: item.signalType === "sell" ? "SELL" : "BUY",
-                                target: item.target || "₹3,250",
-                                sl: item.sl || "₹2,820"
+                                target: item.target && item.target !== "--" ? item.target : "--",
+                                sl: item.sl && item.sl !== "--" ? item.sl : "--"
                               });
+                              setTargetPriceInput(cleanTarget);
+                              setStopLossPriceInput(cleanSl);
                               setOrderQty(10);
-                              setLimitPrice(item.price.toFixed(2));
+                              setLimitPrice(item.price > 0 ? item.price.toFixed(2) : "0");
                               setShowTradeModal(true);
                             }}
                             style={{
@@ -3304,12 +3321,18 @@ export default function App() {
 
                 <div style={{ background: "#080B16", border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
                   <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 700 }}>Day Range</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: C.white, marginTop: 2 }}>₹{selectedStock.dayLow} – ₹{selectedStock.dayHigh}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.white, marginTop: 2 }}>
+                    {selectedStock.dayLow != null && selectedStock.dayHigh != null
+                      ? `₹${selectedStock.dayLow} – ₹${selectedStock.dayHigh}`
+                      : "--"}
+                  </div>
                 </div>
 
                 <div style={{ background: "#080B16", border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
                   <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 700 }}>52-Wk High</div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: C.cyan, marginTop: 2 }}>₹{selectedStock.high52}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: C.cyan, marginTop: 2 }}>
+                    {selectedStock.high52 != null ? `₹${selectedStock.high52}` : "--"}
+                  </div>
                 </div>
               </div>
 
@@ -3318,15 +3341,19 @@ export default function App() {
                   variant={selectedStock.signalType === "sell" ? "danger" : "primary"}
                   onClick={() => {
                     const isSell = selectedStock.signalType === "sell";
+                    const cleanTarget = (selectedStock.target && selectedStock.target !== "--") ? selectedStock.target.replace(/[^\d.]/g, "") : "";
+                    const cleanSl = (selectedStock.sl && selectedStock.sl !== "--") ? selectedStock.sl.replace(/[^\d.]/g, "") : "";
                     setTradeData({
                       symbol: selectedStock.symbol,
                       price: selectedStock.price,
                       type: isSell ? "SELL" : "BUY",
-                      target: "₹3,250",
-                      sl: "₹2,820",
+                      target: selectedStock.target && selectedStock.target !== "--" ? selectedStock.target : "--",
+                      sl: selectedStock.sl && selectedStock.sl !== "--" ? selectedStock.sl : "--",
                     });
+                    setTargetPriceInput(cleanTarget);
+                    setStopLossPriceInput(cleanSl);
                     setOrderQty(selectedStock.qty || 10);
-                    setLimitPrice(selectedStock.price.toFixed(2));
+                    setLimitPrice(selectedStock.price > 0 ? selectedStock.price.toFixed(2) : "0");
                     setShowTradeModal(true);
                     setSelectedStock(null);
                   }}
@@ -3630,7 +3657,7 @@ export default function App() {
                             type="number"
                             value={targetPriceInput}
                             onChange={e => setTargetPriceInput(e.target.value)}
-                            placeholder="3250"
+                            placeholder="Optional"
                             style={{
                               background: "#04060E", border: "1px solid rgba(16,185,129,0.4)", borderRadius: 6,
                               padding: "4px 8px", fontSize: 13, fontWeight: 800, color: C.emerald, outline: "none",
@@ -3646,7 +3673,7 @@ export default function App() {
                             type="number"
                             value={stopLossPriceInput}
                             onChange={e => setStopLossPriceInput(e.target.value)}
-                            placeholder="2820"
+                            placeholder="Optional"
                             style={{
                               background: "#04060E", border: "1px solid rgba(239,68,68,0.4)", borderRadius: 6,
                               padding: "4px 8px", fontSize: 13, fontWeight: 800, color: C.rose, outline: "none",

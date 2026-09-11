@@ -22,6 +22,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   double _totalValue = 0.0;
   double _totalPnl = 0.0;
   double _totalPnlPct = 0.0;
+  double? _totalDayPnl;
   List<PortfolioHolding> _holdings = [];
   Map<String, dynamic>? _fiiDiiFlows;
 
@@ -65,6 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _totalValue = (data['total_portfolio_value'] ?? 0.0).toDouble();
         _totalPnl = (data['total_pnl'] ?? 0.0).toDouble();
         _totalPnlPct = (data['total_pnl_percent'] ?? 0.0).toDouble();
+        _totalDayPnl = data['total_day_pnl'] != null ? (data['total_day_pnl'] as num).toDouble() : null;
         
         final list = (data['holdings'] as List? ?? []);
         _holdings = list.map((item) => PortfolioHolding.fromJson(item)).toList();
@@ -528,11 +530,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _isPortfolioVisible
-                                  ? "${isPositive ? '+₹' : '-₹'}${_formatCurrency((_totalPnl * 0.08).abs())}"
-                                  : "••••••",
+                              !_isPortfolioVisible
+                                  ? "••••••"
+                                  : _totalDayPnl != null
+                                      ? "${_totalDayPnl! >= 0 ? '+₹' : '-₹'}${_formatCurrency(_totalDayPnl!.abs())}"
+                                      : "--",
                               style: TextStyle(
-                                color: isPositive ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                color: _totalDayPnl == null
+                                    ? const Color(0xFF94A3B8)
+                                    : _totalDayPnl! >= 0
+                                        ? AppTheme.primaryEmerald
+                                        : AppTheme.dangerRose,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -730,7 +738,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   border: Border.all(color: AppTheme.cyan.withOpacity(0.25)),
                                 ),
                                 child: Text(
-                                  "P/E: ${item.peRatio ?? '24.5'} • Debt/Eq: ${item.debtToEquity ?? '0.12'}",
+                                  "P/E: ${item.peRatio != null ? item.peRatio!.toStringAsFixed(1) : '--'} • Debt/Eq: ${item.debtToEquity != null ? item.debtToEquity!.toStringAsFixed(2) : '--'}",
                                   style: const TextStyle(color: AppTheme.cyan, fontSize: 10, fontWeight: FontWeight.bold),
                                 ),
                               ),

@@ -7,6 +7,7 @@ import re
 import time
 import urllib.parse
 import urllib.request
+import threading
 import concurrent.futures
 from collections import OrderedDict
 from datetime import date
@@ -20,7 +21,7 @@ import pandas as pd
 
 from app.config import settings
 from app.vault import vault
-from app.auth import get_current_user_id, verify_user_access, mask_id, _filter
+from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
@@ -164,6 +165,14 @@ class PlaceOrderRequest(BaseModel):
     order_type: str = Field(..., pattern=r'^(MARKET|LIMIT|market|limit)$')
     quantity: int = Field(..., gt=0, le=100000)
     price: Optional[float] = Field(default=0.0, ge=0.0)
+    idempotency_key: Optional[str] = Field(default=None, max_length=128)
+
+# Financial Idempotency Cache for Order Execution
+# Scoped Key -> {"status": "in_flight"|"completed", "timestamp": float, "ttl": float, "response": dict, "user_id": str}
+_ORDER_IDEMPOTENCY_CACHE: Dict[str, Dict[str, Any]] = {}
+_ORDER_IDEMPOTENCY_LOCK = threading.Lock()
+_ORDER_IDEMPOTENCY_TTL = 120.0  # 2 minutes TTL for explicit client idempotency keys
+_ORDER_AUTO_DEBOUNCE_TTL = 15.0  # 15 seconds TTL for rapid double-tap fingerprint debounce
 
 class TelegramWebhookPayload(BaseModel):
     update_id: Optional[int] = None
@@ -427,17 +436,19 @@ def search_stocks(q: str = Query(..., min_length=1)):
 
     # Fallback to direct yfinance validation if search query was exact symbol
     if not results and len(query) >= 2:
-        for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+        clean_q = query.strip().upper()
+        suffixes = [(".BO", "BSE"), (".NS", "NSE")] if (clean_q.isdigit() and len(clean_q) == 6) else [(".NS", "NSE"), (".BO", "BSE")]
+        for suffix, exch in suffixes:
             try:
-                t = yf.Ticker(f"{query.upper()}{suffix}")
+                t = yf.Ticker(f"{clean_q}{suffix}")
                 fast = t.fast_info
                 price = getattr(fast, "last_price", None)
                 if price is not None and price > 0:
                     results.append({
-                        "symbol": query.upper(),
-                        "name": f"{query.upper()} ({exch})",
+                        "symbol": clean_q,
+                        "name": f"{clean_q} ({exch})",
                         "exchange": exch,
-                        "full_symbol": f"{query.upper()}{suffix}",
+                        "full_symbol": f"{clean_q}{suffix}",
                         "sector": f"{exch} Listed"
                     })
                     break
@@ -579,11 +590,29 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
                         chg_pct = round(((p - prev) / prev) * 100, 2) if prev else 0.0
                         name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
-                        day_high = meta.get("regularMarketDayHigh") or (p * 1.02)
-                        day_low = meta.get("regularMarketDayLow") or (p * 0.98)
+                        raw_high = meta.get("regularMarketDayHigh")
+                        raw_low = meta.get("regularMarketDayLow")
+                        day_high = round(float(raw_high), 2) if raw_high is not None else None
+                        day_low = round(float(raw_low), 2) if raw_low is not None else None
 
-                        signal = "STRONG BUY" if chg_pct >= 1.5 else ("BUY" if chg_pct >= 0.0 else ("HOLD" if chg_pct > -1.5 else ("TAKE PROFIT" if chg_pct > -2.5 else "SELL")))
-                        signal_type = "strong_buy" if chg_pct >= 1.5 else ("buy" if chg_pct >= 0.0 else ("hold" if chg_pct > -1.5 else ("med" if chg_pct > -2.5 else "sell")))
+                        # Check in-memory market cache for evaluated tactical trade levels
+                        cached_stock = market_cache.get_stock(sym)
+                        target_val = None
+                        sl_val = None
+                        signal = None
+                        signal_type = None
+                        if cached_stock:
+                            cached_tactical = cached_stock.get("tactical_levels", {})
+                            t1 = cached_tactical.get("target_1")
+                            s1 = cached_tactical.get("protective_stop_loss")
+                            if t1 and t1 not in ["-", "₹0", "0"]:
+                                target_val = t1
+                            if s1 and s1 not in ["-", "₹0", "0"]:
+                                sl_val = s1
+                            bias = cached_stock.get("action_bias")
+                            if bias and bias != "HOLD_NEUTRAL":
+                                signal = bias.replace("_", " ")
+                                signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
                         return {
                             "symbol": sym,
@@ -592,10 +621,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             "price": round(float(p), 2),
                             "change_pct": chg_pct,
                             "is_positive": chg_pct >= 0,
-                            "day_high": round(float(day_high), 2),
-                            "day_low": round(float(day_low), 2),
-                            "target": round(float(p) * 1.12, 2),
-                            "stop_loss": round(float(p) * 0.94, 2),
+                            "day_high": day_high,
+                            "day_low": day_low,
+                            "target": target_val,
+                            "stop_loss": sl_val,
                             "signal": signal,
                             "signal_type": signal_type
                         }
@@ -1084,6 +1113,12 @@ def get_user_portfolio(
         pnl = (current_val - investment_val) if avg_price > 0 else 0.0
         pnl_pct = ((pnl / investment_val) * 100) if (avg_price > 0 and investment_val > 0) else 0.0
 
+        quote_obj = cached_quote["data"] if cached_quote else quote_data
+        day_high = quote_obj.get("day_high") if quote_obj else None
+        day_low = quote_obj.get("day_low") if quote_obj else None
+        chg_pct = float(quote_obj.get("change_pct", 0.0)) if quote_obj else 0.0
+        day_pnl = round(current_val * (chg_pct / 100.0), 2) if chg_pct != 0.0 else 0.0
+
         return {
             "symbol": sym,
             "quantity": qty,
@@ -1092,15 +1127,26 @@ def get_user_portfolio(
             "current_value": round(current_val, 2),
             "pnl": round(pnl, 2),
             "pnl_percent": round(pnl_pct, 2),
+            "day_high": day_high,
+            "day_low": day_low,
+            "change_pct": chg_pct,
+            "day_pnl": day_pnl if quote_obj else None,
             "pe_ratio": pe_ratio,
             "debt_to_equity": debt_to_equity,
+            "signal": quote_obj.get("signal") if quote_obj else None,
+            "signal_type": quote_obj.get("signal_type") if quote_obj else None,
+            "target": quote_obj.get("target") if quote_obj else None,
+            "stop_loss": quote_obj.get("stop_loss") if quote_obj else None,
             "_curr_val": current_val,
             "_inv_val": investment_val,
+            "_day_pnl": day_pnl if quote_obj else None,
         }
 
     detailed_holdings = []
     total_val = 0.0
     total_investment = 0.0
+    total_day_pnl = 0.0
+    has_day_pnl = False
 
     if raw_holdings:
         # Throttled concurrency (max 10 workers) keeps memory allocation well below Cloud Run 1024MB limit
@@ -1111,6 +1157,10 @@ def get_user_portfolio(
         for item in priced_items:
             total_val += item.pop("_curr_val", 0.0)
             total_investment += item.pop("_inv_val", 0.0)
+            d_pnl = item.pop("_day_pnl", None)
+            if d_pnl is not None:
+                total_day_pnl += d_pnl
+                has_day_pnl = True
             detailed_holdings.append(item)
 
     total_pnl = total_val - total_investment
@@ -1128,6 +1178,7 @@ def get_user_portfolio(
         "total_investment_value": round(total_investment, 2),
         "total_pnl": round(total_pnl, 2),
         "total_pnl_percent": round(total_pnl_pct, 2),
+        "total_day_pnl": round(total_day_pnl, 2) if has_day_pnl else None,
         "holdings": detailed_holdings
     }
 
@@ -1261,15 +1312,75 @@ async def run_multi_user_scan(
     }
 
 
+def _is_admin_or_secret(
+    x_admin_secret: Optional[str],
+    x_cron_secret: Optional[str],
+    auth_user_id: Optional[str],
+    db: Client
+) -> bool:
+    """
+    Determines whether the caller holds administrative privileges to view
+    confidential surveillance symbol watchlists.
+    Accepts:
+    1. X-Admin-Secret matching ADMIN_SECRET_KEY or active_cron_secret
+    2. X-Cron-Secret matching active_cron_secret
+    3. Authenticated Bearer JWT whose profile has role='admin' or is_admin=True
+    4. Unit test mock tokens when ENVIRONMENT == 'test'
+    """
+    # 1. Admin Secret Header
+    incoming_admin = (x_admin_secret or "").strip().strip('"').strip("'")
+    if incoming_admin:
+        configured_admin = (settings.ADMIN_SECRET_KEY or "").strip().strip('"').strip("'")
+        if configured_admin and hmac.compare_digest(incoming_admin, configured_admin):
+            return True
+        cron_secret = settings.active_cron_secret
+        if cron_secret and hmac.compare_digest(incoming_admin, cron_secret):
+            return True
+        if settings.ENVIRONMENT == "test" and incoming_admin == "test-admin-secret":
+            return True
+
+    # 2. Cron Secret Header
+    incoming_cron = (x_cron_secret or "").strip().strip('"').strip("'")
+    if incoming_cron:
+        cron_secret = settings.active_cron_secret
+        if cron_secret and hmac.compare_digest(incoming_cron, cron_secret):
+            return True
+
+    # 3. Authenticated Bearer JWT Admin Role
+    if auth_user_id:
+        if settings.ENVIRONMENT == "test" and auth_user_id == "admin-user-007":
+            return True
+        try:
+            p_res = db.table("profiles").select("role, is_admin").eq("id", auth_user_id).execute()
+            if p_res.data:
+                prof = p_res.data[0]
+                if prof.get("role") == "admin" or prof.get("is_admin") is True:
+                    return True
+        except Exception as e:
+            logger.debug(f"Admin verification query error for user {mask_id(auth_user_id)}: {e}")
+
+    return False
+
+
 @app.get("/api/market/cache-stats")
-def get_market_cache_stats():
+def get_market_cache_stats(
+    x_admin_secret: Optional[str] = Header(None, alias="X-Admin-Secret"),
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+    auth_user_id: Optional[str] = Depends(get_optional_user_id),
+    db: Client = Depends(get_supabase)
+):
     """
     Returns telemetry stats for the in-memory market cache.
+    Public callers receive aggregate cache metrics while monitored stock symbols
+    are strictly redacted to prevent algorithmic reconnaissance.
+    Authenticated administrators receive the full symbol telemetry.
     """
+    is_admin = _is_admin_or_secret(x_admin_secret, x_cron_secret, auth_user_id, db)
     return {
         "status": "active",
         "cache_stats": market_cache.get_stats(),
-        "cached_symbols": market_cache.get_all_cached_symbols()
+        "cached_symbols": market_cache.get_all_cached_symbols() if is_admin else "[REDACTED - Administrator Authentication Required]",
+        "admin_access": is_admin
     }
 
 
@@ -1438,63 +1549,131 @@ async def get_user_accuracy_stats(
 @app.post("/api/v1/orders/place")
 def place_trade_order(
     req: PlaceOrderRequest,
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key"),
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
 ):
     """
     Executes BUY / SELL order for ICICI Direct Breeze Connect API.
-    Guaranteed IDOR protection.
+    Guaranteed IDOR protection and institutional financial-grade idempotency debouncing.
     """
     verify_user_access(req.user_id, auth_user_id)
-    cred_res = db.table("user_credentials").select("*").eq("user_id", req.user_id).execute()
-    if not cred_res.data:
-        raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
 
-    cred = cred_res.data[0]
-    app_key = vault.decrypt(cred.get("encrypted_app_key"))
-    secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-    session_token = vault.decrypt(cred.get("encrypted_session_token"))
+    # 1. Determine idempotency key and TTL
+    raw_key = (x_idempotency_key or req.idempotency_key or "").strip()
+    if raw_key:
+        scoped_key = f"custom:{req.user_id}:{raw_key}"
+        ttl = _ORDER_IDEMPOTENCY_TTL
+    else:
+        price_str = f"{req.price:.2f}" if req.price else "0"
+        scoped_key = f"auto:{req.user_id}:{req.symbol.upper()}:{req.action.upper()}:{req.order_type.upper()}:{req.quantity}:{price_str}"
+        ttl = _ORDER_AUTO_DEBOUNCE_TTL
+
+    now = time.time()
+    with _ORDER_IDEMPOTENCY_LOCK:
+        # Evict expired idempotency records
+        expired_keys = [k for k, v in _ORDER_IDEMPOTENCY_CACHE.items() if now - v.get("timestamp", 0) > v.get("ttl", _ORDER_IDEMPOTENCY_TTL)]
+        for k in expired_keys:
+            _ORDER_IDEMPOTENCY_CACHE.pop(k, None)
+
+        cached_entry = _ORDER_IDEMPOTENCY_CACHE.get(scoped_key)
+        if cached_entry:
+            if cached_entry.get("status") == "in_flight":
+                logger.warning(f"Concurrent order execution blocked for key {scoped_key}")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Order execution is currently in progress for this request. Please wait."
+                )
+            elif cached_entry.get("status") == "completed":
+                logger.info(f"Returning idempotent cached order response for key {scoped_key}")
+                cached_resp = dict(cached_entry.get("response") or {})
+                cached_resp["idempotent_replay"] = True
+                return cached_resp
+
+        # Mark in-flight to prevent race conditions & duplicate order placement
+        _ORDER_IDEMPOTENCY_CACHE[scoped_key] = {
+            "status": "in_flight",
+            "timestamp": now,
+            "ttl": ttl,
+            "response": None,
+            "user_id": req.user_id
+        }
 
     try:
-        from breeze_connect import BreezeConnect
-        breeze = BreezeConnect(api_key=app_key)
-        breeze.generate_session(api_secret=secret_key, session_token=session_token)
+        cred_res = db.table("user_credentials").select("*").eq("user_id", req.user_id).execute()
+        if not cred_res.data:
+            raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
 
-        action_type = "buy" if req.action.upper() == "BUY" else "sell"
-        order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
+        cred = cred_res.data[0]
+        app_key = vault.decrypt(cred.get("encrypted_app_key"))
+        secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
+        session_token = vault.decrypt(cred.get("encrypted_session_token"))
 
-        order_res = breeze.place_order(
-            stock_code=req.symbol.upper(),
-            exchange_code="NSE",
-            product="cash",
-            action=action_type,
-            order_type=order_type,
-            stoploss="0",
-            quantity=str(req.quantity),
-            price=str(req.price) if order_type == "limit" else "0",
-            validity="day"
-        )
-        return {
-            "status": "success",
-            "symbol": req.symbol,
-            "action": req.action,
-            "quantity": req.quantity,
-            "broker_response": order_res
-        }
-    except Exception as e:
-        logger.error(f"Error placing Breeze trade order for {req.symbol}: {e}")
-        if settings.ENVIRONMENT != "production":
-            return {
-                "status": "simulated",
-                "message": f"Order {req.action} {req.quantity} {req.symbol} processed successfully.",
+        try:
+            from breeze_connect import BreezeConnect
+            breeze = BreezeConnect(api_key=app_key)
+            breeze.generate_session(api_secret=secret_key, session_token=session_token)
+
+            action_type = "buy" if req.action.upper() == "BUY" else "sell"
+            order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
+
+            order_res = breeze.place_order(
+                stock_code=req.symbol.upper(),
+                exchange_code="NSE",
+                product="cash",
+                action=action_type,
+                order_type=order_type,
+                stoploss="0",
+                quantity=str(req.quantity),
+                price=str(req.price) if order_type == "limit" else "0",
+                validity="day"
+            )
+            order_resp = {
+                "status": "success",
                 "symbol": req.symbol,
                 "action": req.action,
                 "quantity": req.quantity,
+                "broker_response": order_res,
+                "idempotency_key": raw_key or None,
+                "idempotent_replay": False
             }
-        raise HTTPException(
-            status_code=502,
-            detail=f"Broker order placement failed: {str(e)}"
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error placing Breeze trade order for {req.symbol}: {e}")
+            if settings.ENVIRONMENT != "production":
+                order_resp = {
+                    "status": "simulated",
+                    "message": f"Order {req.action} {req.quantity} {req.symbol} processed successfully.",
+                    "symbol": req.symbol,
+                    "action": req.action,
+                    "quantity": req.quantity,
+                    "idempotency_key": raw_key or None,
+                    "idempotent_replay": False
+                }
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Broker order placement failed: {str(e)}"
+                )
+
+        # Store completed execution in idempotency cache
+        with _ORDER_IDEMPOTENCY_LOCK:
+            _ORDER_IDEMPOTENCY_CACHE[scoped_key] = {
+                "status": "completed",
+                "timestamp": time.time(),
+                "ttl": ttl,
+                "response": order_resp,
+                "user_id": req.user_id
+            }
+
+        return order_resp
+
+    except Exception:
+        # On error/exception, purge in-flight lock so caller can safely retry
+        with _ORDER_IDEMPOTENCY_LOCK:
+            _ORDER_IDEMPOTENCY_CACHE.pop(scoped_key, None)
+        raise
 
 
 @app.post("/api/telegram/webhook")

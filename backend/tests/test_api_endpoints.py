@@ -7,6 +7,10 @@ from fastapi.testclient import TestClient
 # Set UTF-8 encoding for Windows stdout
 sys.stdout.reconfigure(encoding='utf-8')
 
+# Set test environment to prevent vault production check abort
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -99,6 +103,8 @@ class MockSupabaseClient:
 class TestApiEndpoints(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.orig_env = settings.ENVIRONMENT
+        settings.ENVIRONMENT = "test"
         cls.mock_db = MockSupabaseClient()
         app.dependency_overrides[get_supabase] = lambda: cls.mock_db
         # By default authenticate as test-user-123
@@ -109,6 +115,7 @@ class TestApiEndpoints(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        settings.ENVIRONMENT = cls.orig_env
         app.dependency_overrides.clear()
 
     # 1. Health Check
@@ -463,6 +470,104 @@ class TestApiEndpoints(unittest.TestCase):
         finally:
             settings.ENVIRONMENT = orig_env
 
+    # 25. Security: Market Cache Stats Redacted for Public Unauthenticated Callers
+    def test_25_market_cache_stats_redacted_for_public(self):
+        res = self.client.get("/api/market/cache-stats")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "active")
+        self.assertIn("cache_stats", data)
+        self.assertEqual(data["cached_symbols"], "[REDACTED - Administrator Authentication Required]")
+        self.assertFalse(data["admin_access"])
+
+    # 26. Security: Market Cache Stats Accessible for Authenticated Administrators
+    def test_26_market_cache_stats_authorized_for_admin(self):
+        orig_admin = settings.ADMIN_SECRET_KEY
+        try:
+            settings.ADMIN_SECRET_KEY = "test-admin-secret"
+            # 1. Via X-Admin-Secret
+            res_admin = self.client.get(
+                "/api/market/cache-stats",
+                headers={"X-Admin-Secret": "test-admin-secret"}
+            )
+            self.assertEqual(res_admin.status_code, 200)
+            data_admin = res_admin.json()
+            self.assertTrue(data_admin["admin_access"])
+            self.assertIsInstance(data_admin["cached_symbols"], list)
+
+            # 2. Via X-Cron-Secret
+            res_cron = self.client.get(
+                "/api/market/cache-stats",
+                headers={"X-Cron-Secret": settings.active_cron_secret}
+            )
+            self.assertEqual(res_cron.status_code, 200)
+            data_cron = res_cron.json()
+            self.assertTrue(data_cron["admin_access"])
+            self.assertIsInstance(data_cron["cached_symbols"], list)
+        finally:
+            settings.ADMIN_SECRET_KEY = orig_admin
+
+    # 27. Security & Integrity: Order Placement Idempotency Replay
+    def test_27_order_placement_idempotency_replay(self):
+        order_payload = {
+            "user_id": "test-user-123",
+            "symbol": "INFY",
+            "action": "BUY",
+            "quantity": 10,
+            "order_type": "MARKET",
+            "idempotency_key": "test-idempotency-key-001"
+        }
+        # First attempt: Fresh execution
+        res1 = self.client.post("/api/v1/orders/place", json=order_payload)
+        self.assertEqual(res1.status_code, 200)
+        data1 = res1.json()
+        self.assertEqual(data1["status"], "simulated")
+        self.assertFalse(data1.get("idempotent_replay", False))
+
+        # Second attempt with same idempotency key: Returns cached execution with idempotent_replay=True
+        res2 = self.client.post(
+            "/api/v1/orders/place",
+            json=order_payload,
+            headers={"X-Idempotency-Key": "test-idempotency-key-001"}
+        )
+        self.assertEqual(res2.status_code, 200)
+        data2 = res2.json()
+        self.assertEqual(data2["status"], "simulated")
+        self.assertTrue(data2.get("idempotent_replay", False))
+        self.assertEqual(data2["symbol"], "INFY")
+
+    # 28. Security & Integrity: Order Placement Concurrent In-Flight Conflict
+    def test_28_order_placement_concurrent_conflict(self):
+        from app.main import _ORDER_IDEMPOTENCY_CACHE, _ORDER_IDEMPOTENCY_LOCK
+        import time
+
+        flight_key = "custom:test-user-123:inflight-key-999"
+        with _ORDER_IDEMPOTENCY_LOCK:
+            _ORDER_IDEMPOTENCY_CACHE[flight_key] = {
+                "status": "in_flight",
+                "timestamp": time.time(),
+                "ttl": 60.0,
+                "response": None,
+                "user_id": "test-user-123"
+            }
+
+        try:
+            order_payload = {
+                "user_id": "test-user-123",
+                "symbol": "INFY",
+                "action": "BUY",
+                "quantity": 10,
+                "order_type": "MARKET",
+                "idempotency_key": "inflight-key-999"
+            }
+            res = self.client.post("/api/v1/orders/place", json=order_payload)
+            self.assertEqual(res.status_code, 409)
+            self.assertIn("in progress", res.json().get("detail", "").lower())
+        finally:
+            with _ORDER_IDEMPOTENCY_LOCK:
+                _ORDER_IDEMPOTENCY_CACHE.pop(flight_key, None)
+
 
 if __name__ == "__main__":
     unittest.main()
+

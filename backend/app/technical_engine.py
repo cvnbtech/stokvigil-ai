@@ -245,7 +245,13 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
     Fetches real-time multi-timeframe intraday (5m, 15m) and daily (1D) OHLCV data.
     Computes RSI, MACD, VWAP, ATR, EMAs, Volume surges, and Divergences.
     """
-    ticker_sym = symbol if symbol.endswith(".NS") or symbol.endswith(".BO") else f"{symbol}.NS"
+    clean_sym = symbol.strip()
+    if clean_sym.endswith(".NS") or clean_sym.endswith(".BO"):
+        ticker_sym = clean_sym
+    elif clean_sym.isdigit() and len(clean_sym) == 6:
+        ticker_sym = f"{clean_sym}.BO"
+    else:
+        ticker_sym = f"{clean_sym}.NS"
     
     default_res = {
         "symbol": symbol,

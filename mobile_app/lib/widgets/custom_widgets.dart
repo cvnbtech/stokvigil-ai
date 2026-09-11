@@ -662,8 +662,8 @@ class TradeOrderModal extends StatefulWidget {
     required this.symbol,
     required this.currentPrice,
     this.initialType = 'BUY',
-    this.targetPrice = '3250',
-    this.stopLoss = '2820',
+    this.targetPrice = '',
+    this.stopLoss = '',
   });
 
   static void show(
@@ -671,8 +671,8 @@ class TradeOrderModal extends StatefulWidget {
     required String symbol,
     required double currentPrice,
     String initialType = 'BUY',
-    String targetPrice = '3250',
-    String stopLoss = '2820',
+    String targetPrice = '',
+    String stopLoss = '',
   }) {
     showModalBottomSheet(
       context: context,
@@ -1225,7 +1225,13 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                                       controller: _targetController,
                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       style: const TextStyle(color: AppTheme.primaryEmerald, fontSize: 12, fontWeight: FontWeight.w900),
-                                      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+                                      decoration: const InputDecoration(
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        hintText: 'Optional',
+                                        hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                        contentPadding: EdgeInsets.symmetric(vertical: 4),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1259,7 +1265,13 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                                       controller: _stopLossController,
                                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                       style: const TextStyle(color: AppTheme.dangerRose, fontSize: 12, fontWeight: FontWeight.w900),
-                                      decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 4)),
+                                      decoration: const InputDecoration(
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        hintText: 'Optional',
+                                        hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11),
+                                        contentPadding: EdgeInsets.symmetric(vertical: 4),
+                                      ),
                                     ),
                                   ),
                                 ],

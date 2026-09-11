@@ -303,24 +303,24 @@ Automated surveillance via StokVigil AI 🛡️''';
                             final signalType = _getSignalType(alert);
                             
                             // Sanitize dummy ₹100.00 fallback from historical database alerts
-                            final isDummy100 = (alert.target1 == "₹100.00" || alert.target1 == "100.0" || alert.target1 == "100") && 
-                                               (alert.stopLoss == "₹100.00" || alert.stopLoss == "100.0" || alert.stopLoss == "100");
+                            final isDummy100 = (alert.target1 == "₹100.00" || alert.target1 == "100.0" || alert.target1 == "100" || alert.target1 == "-") && 
+                                               (alert.stopLoss == "₹100.00" || alert.stopLoss == "100.0" || alert.stopLoss == "100" || alert.stopLoss == "-");
 
                             final String targetStr;
                             final String slStr;
-                            if (isDummy100 || alert.target1 == null) {
-                              targetStr = effectivePrice > 0 ? "₹${(effectivePrice * 1.08).toStringAsFixed(0)}" : "₹0";
+                            if (isDummy100 || alert.target1 == null || alert.target1 == "-" || alert.target1 == "₹0" || alert.target1 == "0") {
+                              targetStr = "--";
                             } else {
                               targetStr = alert.target1!;
                             }
 
-                            if (isDummy100 || alert.stopLoss == null) {
-                              slStr = effectivePrice > 0 ? "₹${(effectivePrice * 0.95).toStringAsFixed(0)}" : "₹0";
+                            if (isDummy100 || alert.stopLoss == null || alert.stopLoss == "-" || alert.stopLoss == "₹0" || alert.stopLoss == "0") {
+                              slStr = "--";
                             } else {
                               slStr = alert.stopLoss!;
                             }
 
-                            final rrStr = alert.riskReward ?? "1:2.0";
+                            final rrStr = (isDummy100 || alert.riskReward == null || alert.riskReward == "-" || alert.riskReward == "0") ? "--" : alert.riskReward!;
 
                             return GlassCard(
                               margin: const EdgeInsets.only(bottom: 16),
@@ -575,8 +575,8 @@ Automated surveillance via StokVigil AI 🛡️''';
                                           symbol: alert.symbol,
                                           currentPrice: effectivePrice.toDouble(),
                                           initialType: alert.actionBias.contains('SELL') ? 'SELL' : 'BUY',
-                                          targetPrice: targetStr,
-                                          stopLoss: slStr,
+                                          targetPrice: (targetStr == '--' || targetStr == '-' || targetStr == '₹0') ? '' : targetStr.replaceAll('₹', '').trim(),
+                                          stopLoss: (slStr == '--' || slStr == '-' || slStr == '₹0') ? '' : slStr.replaceAll('₹', '').trim(),
                                         );
                                       },
                                       child: Row(
