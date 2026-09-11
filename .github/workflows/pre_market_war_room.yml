@@ -1,24 +1,19 @@
-name: StokVigil 5-Min Market Scanner
+name: StokVigil 09:00 AM Pre-Market War Room
 
 on:
   schedule:
-    # Runs every 5 minutes during Indian Market Hours (Monday - Friday)
-    # 09:15 AM - 09:25 AM IST (03:45 - 03:55 UTC)
-    - cron: '45,50,55 3 * * 1-5'
-    # 09:30 AM - 03:25 PM IST (04:00 - 09:55 UTC)
-    - cron: '*/5 4-9 * * 1-5'
-    # 03:30 PM IST market close (10:00 UTC)
-    - cron: '0 10 * * 1-5'
-  workflow_dispatch: # Allows manual on-demand trigger from GitHub Actions UI
+    # 09:00 AM IST (03:30 UTC), Monday through Friday
+    - cron: '30 3 * * 1-5'
+  workflow_dispatch:
 
 jobs:
-  run-market-scan:
-    name: 5-Minute Surveillance Trigger
+  run-pre-market-war-room:
+    name: Pre-Market Macro Intelligence Briefing
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
-      - name: Trigger Multi-User Market Intelligence Scan
+      - name: Trigger Pre-Market War Room Briefing
         env:
           RAW_BACKEND_URL: ${{ secrets.STOKVIGIL_BACKEND_URL || vars.STOKVIGIL_BACKEND_URL }}
           RAW_CRON_SECRET: ${{ secrets.CRON_SECRET_KEY || vars.CRON_SECRET_KEY }}
@@ -36,8 +31,8 @@ jobs:
             exit 1
           fi
 
-          TARGET_URL="${BACKEND_URL}/api/cron/multi-user-scan"
-          echo "🚀 Dispatching 5-minute market scan to: ${TARGET_URL}"
+          TARGET_URL="${BACKEND_URL}/api/cron/pre-market-briefing"
+          echo "📊 Triggering 09:00 AM Pre-Market Briefing to: ${TARGET_URL}"
 
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$TARGET_URL" \
             -H "Content-Type: application/json" \
@@ -50,8 +45,8 @@ jobs:
           echo "📄 Response: $BODY"
 
           if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "❌ Market scan trigger failed with HTTP status: $HTTP_STATUS"
+            echo "❌ Pre-market briefing trigger failed with HTTP status: $HTTP_STATUS"
             exit 1
           fi
 
-          echo "✅ Market surveillance scan successfully queued and executing in background."
+          echo "✅ Pre-market war room briefing successfully aggregated and dispatched."
