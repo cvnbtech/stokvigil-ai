@@ -6,16 +6,35 @@ import '../models/models.dart';
 import 'supabase_service.dart';
 
 class ApiService {
-  static const String baseUrl = String.fromEnvironment(
-    'BACKEND_URL',
-    defaultValue: String.fromEnvironment(
-      'STOKVIGIL_BACKEND_URL',
-      defaultValue: "https://stokvigil-backend-xxxx.a.run.app",
-    ),
-  );
+  static String get baseUrl {
+    const configured = String.fromEnvironment(
+      'BACKEND_URL',
+      defaultValue: String.fromEnvironment(
+        'STOKVIGIL_BACKEND_URL',
+        defaultValue: '',
+      ),
+    );
+    if (configured.isNotEmpty && !configured.contains('xxxx.a.run.app')) {
+      return configured.replaceAll(RegExp(r'/+$'), '');
+    }
+    if (kDebugMode) {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return 'http://10.0.2.2:8000';
+      }
+      return 'http://localhost:8000';
+    }
+    return configured.isNotEmpty ? configured.replaceAll(RegExp(r'/+$'), '') : 'http://localhost:8000';
+  }
 
   Map<String, String> _getAuthHeaders() {
-    final token = SupabaseService().client.auth.currentSession?.accessToken;
+    String? token;
+    try {
+      if (SupabaseService.isConfigured) {
+        token = SupabaseService().client.auth.currentSession?.accessToken;
+      }
+    } catch (_) {
+      token = null;
+    }
     return {
       'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
@@ -69,16 +88,16 @@ class ApiService {
       final q = Uri.encodeComponent(query.trim());
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/search?q=$q'))
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final list = (data['stocks'] as List?)?.map((e) => Map<String, dynamic>.from(e)).toList() ?? [];
-        return list;
+        if (list.isNotEmpty) return list;
       }
     } catch (e) {
-      debugPrint("API Error searching stocks: $e");
+      debugPrint("API backend search fallback: $e");
     }
-    return [];
+    return _searchDirectYahoo(query.trim());
   }
 
   Future<Map<String, dynamic>> validateStock(String symbol) async {
@@ -90,40 +109,193 @@ class ApiService {
       final q = Uri.encodeComponent(sym);
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/validate?symbol=$q'))
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 4));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       }
     } on TimeoutException {
       debugPrint("API Timeout validating stock '$sym'");
-      return {
-        "is_valid": false,
-        "symbol": sym,
-        "is_timeout": true,
-        "error": "Exchange connection timed out."
-      };
     } catch (e) {
       debugPrint("API Error validating stock: $e");
     }
-    return {"is_valid": false, "symbol": sym, "error": "Could not verify '$sym' on NSE/BSE."};
+    return _validateDirectYahoo(sym);
   }
 
   Future<Map<String, dynamic>> fetchBatchQuotes(List<String> symbols) async {
     if (symbols.isEmpty) return {};
+    final clean = symbols.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet().toList();
+    if (clean.isEmpty) return {};
+
+    final quotes = <String, dynamic>{};
+    final missing = <String>[];
+
+    // Tier 1: Fetch from backend (incorporates AI signals, targets & stop loss if available)
     try {
-      final clean = symbols.map((s) => s.trim().toUpperCase()).where((s) => s.isNotEmpty).toSet().toList();
       final q = Uri.encodeComponent(clean.join(','));
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
-          .timeout(const Duration(seconds: 30));
+          .timeout(const Duration(seconds: 5));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return Map<String, dynamic>.from(data['quotes'] ?? {});
+        final bQuotes = Map<String, dynamic>.from(data['quotes'] ?? {});
+        for (final sym in clean) {
+          if (bQuotes.containsKey(sym) && bQuotes[sym] is Map && (bQuotes[sym]['price'] as num? ?? 0) > 0) {
+            quotes[sym] = bQuotes[sym];
+          } else {
+            missing.add(sym);
+          }
+        }
+      } else {
+        missing.addAll(clean);
       }
     } catch (e) {
-      debugPrint("API Error fetching batch stock quotes: $e");
+      debugPrint("API backend quotes fetch failed or offline: $e");
+      missing.addAll(clean);
     }
-    return {};
+
+    // Tier 2: Direct Yahoo Finance fallback for any still-missing symbols
+    if (missing.isNotEmpty) {
+      await Future.wait(missing.map((sym) async {
+        final directQuote = await _fetchDirectYahooQuote(sym);
+        if (directQuote != null) {
+          quotes[sym] = directQuote;
+        }
+      }));
+    }
+
+    return quotes;
+  }
+
+  Future<Map<String, dynamic>?> _fetchDirectYahooQuote(String sym) async {
+    final headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Referer': 'https://finance.yahoo.com/',
+      'Accept': 'application/json, text/plain, */*',
+    };
+
+    for (final suffix in ['.NS', '.BO']) {
+      final exch = suffix == '.NS' ? 'NSE' : 'BSE';
+      for (final host in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+        try {
+          final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(sym)}$suffix?range=1d&interval=1d');
+          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 5));
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body);
+            final resList = data['chart']?['result'] as List?;
+            if (resList != null && resList.isNotEmpty) {
+              final meta = resList[0]['meta'] as Map<String, dynamic>?;
+              final p = meta?['regularMarketPrice'];
+              if (p != null && (p as num) > 0) {
+                final price = (p as num).toDouble();
+                final prev = (meta?['chartPreviousClose'] ?? meta?['previousClose'] ?? price) as num;
+                final chgPct = prev > 0 ? (((price - prev.toDouble()) / prev.toDouble()) * 100) : 0.0;
+                final name = (meta?['shortName'] ?? meta?['longName'] ?? '$sym ($exch)').toString();
+                final dayHigh = meta?['regularMarketDayHigh'] != null ? (meta!['regularMarketDayHigh'] as num).toDouble() : null;
+                final dayLow = meta?['regularMarketDayLow'] != null ? (meta!['regularMarketDayLow'] as num).toDouble() : null;
+
+                return {
+                  'symbol': sym,
+                  'name': name,
+                  'exchange': exch,
+                  'price': double.parse(price.toStringAsFixed(2)),
+                  'change_pct': double.parse(chgPct.toStringAsFixed(2)),
+                  'is_positive': chgPct >= 0,
+                  'day_high': dayHigh != null ? double.parse(dayHigh.toStringAsFixed(2)) : null,
+                  'day_low': dayLow != null ? double.parse(dayLow.toStringAsFixed(2)) : null,
+                  'target': null,
+                  'stop_loss': null,
+                  'signal': 'MONITORING',
+                  'signal_type': 'monitoring',
+                };
+              }
+            }
+          }
+        } catch (_) {
+          // Try next host/suffix
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>> _searchDirectYahoo(String query) async {
+    final searchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+    };
+
+    for (final host in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
+      try {
+        final url = Uri.parse('https://$host/v1/finance/search?q=${Uri.encodeComponent(query)}&quotesCount=10&newsCount=0');
+        final res = await http.get(url, headers: searchHeaders).timeout(const Duration(seconds: 5));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final rawQuotes = (data['quotes'] as List?) ?? [];
+          final results = <Map<String, dynamic>>[];
+          final seen = <String>{};
+
+          for (final item in rawQuotes) {
+            final sym = (item['symbol'] ?? '').toString();
+            final quoteType = (item['quoteType'] ?? '').toString();
+            if (quoteType != 'EQUITY') continue;
+
+            String cleanSym = sym;
+            String exchange = 'NSE';
+            if (sym.endsWith('.NS')) {
+              cleanSym = sym.substring(0, sym.length - 3);
+              exchange = 'NSE';
+            } else if (sym.endsWith('.BO')) {
+              cleanSym = sym.substring(0, sym.length - 3);
+              exchange = 'BSE';
+            } else if (['NSI', 'NSE'].contains(item['exchange'])) {
+              exchange = 'NSE';
+            } else if (['BOM', 'BSE'].contains(item['exchange'])) {
+              exchange = 'BSE';
+            } else {
+              continue;
+            }
+
+            if (seen.contains(cleanSym) || cleanSym.startsWith('0P')) continue;
+            seen.add(cleanSym);
+
+            final name = (item['longname'] ?? item['shortname'] ?? cleanSym).toString();
+            final sector = (item['sector'] ?? item['industry'] ?? '$exchange Listed').toString();
+
+            results.add({
+              'symbol': cleanSym,
+              'name': name,
+              'exchange': exchange,
+              'full_symbol': sym,
+              'sector': sector,
+            });
+
+            if (results.length >= 8) break;
+          }
+
+          if (results.isNotEmpty) return results;
+        }
+      } catch (_) {}
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>> _validateDirectYahoo(String sym) async {
+    final quote = await _fetchDirectYahooQuote(sym);
+    if (quote != null && quote['price'] != null && (quote['price'] as num) > 0) {
+      return {
+        'is_valid': true,
+        'symbol': sym,
+        'name': quote['name'],
+        'exchange': quote['exchange'],
+        'price': quote['price'],
+        'full_symbol': '${quote['symbol']}.${quote['exchange'] == 'NSE' ? 'NS' : 'BO'}',
+      };
+    }
+    return {
+      'is_valid': false,
+      'symbol': sym,
+      'error': "Could not verify '$sym' on NSE/BSE. Please select from search suggestions.",
+    };
   }
 
   Future<bool> deleteUserAccount(String userId) async {

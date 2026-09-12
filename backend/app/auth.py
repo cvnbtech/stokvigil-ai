@@ -80,8 +80,8 @@ def mask_id(val: Optional[Any]) -> str:
 def mask_telegram_token(text: Optional[Any]) -> str:
     """
     Masks Telegram bot tokens in URLs or text, revealing only the last 4 characters.
-    e.g. https://api.telegram.org/bot967613667:ASS4z7iSupOe6ZzDxfSbS7bWJuYnMcVsAM4/sendMessage
-    becomes https://api.telegram.org/bot***sAM4/sendMessage
+    e.g. https://api.telegram.org/bot<TOKEN>/sendMessage
+    becomes https://api.telegram.org/bot***<SUFFIX>/sendMessage
     """
     if text is None:
         return ""

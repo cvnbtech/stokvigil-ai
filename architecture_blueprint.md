@@ -93,10 +93,12 @@ flowchart TD
 
 Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent_runner.py` compiles real-time portfolio holdings, multi-timeframe technical momentum, institutional flows, fundamental health, and live news into an evaluation prompt.
 
-### 2.1.1 High-Speed In-Memory Market Cache (`market_cache.py`)
+### 2.1.1 High-Speed In-Memory Market Cache & Concurrency Engine (`market_cache.py` & `agent_runner.py`)
 - **RAM Singleton Architecture**: Thread-safe in-memory cache (`MarketCacheManager`) storing pre-computed technical indicators, live prices, VWAP, RSI, MACD, tactical levels, and Confluence Scores in RAM (~15 MB footprint).
-- **Batch Deduplication**: Before scanning individual users, `sync_market_cache_for_all_active_symbols()` aggregates all unique symbols across all watchlists and pre-computes them in parallel using bounded async concurrency (`asyncio.Semaphore(15)`).
-- **Sub-0.02ms O(1) Latency**: Individual user scans query the RAM cache in `< 0.02ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
+- **PostgREST Limit Bypass via Direct SQL Pool**: Rather than hitting PostgREST REST pagination limits (1,000 rows max), `sync_market_cache_for_all_active_symbols()` executes a direct indexed PostgreSQL query (`SELECT DISTINCT UPPER(TRIM(symbol)) FROM user_watchlists WHERE symbol IS NOT NULL`) via the connection pool (`db_pool.fetch_all`), pre-computing unique symbols in parallel with `asyncio.Semaphore(15)`.
+- **Concurrent Multi-User Scans (`asyncio.Semaphore(10)`)**: `execute_multi_user_market_scan` schedules all active portfolio evaluations concurrently using `asyncio.gather` bounded by a 10-worker semaphore, ensuring hundreds of user portfolios are scanned in parallel without thread starvation.
+- **Sub-0.02ms O(1) Latency**: Individual user scans query the pre-computed RAM cache in `< 0.02ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
+- **Automated 30-Day Alert Retention & Pruning**: Enforces automated database housekeeping via `app.maintenance.prune_historical_alerts` during the 09:00 AM pre-market briefing and a Supabase `pg_cron` schedule running `prune_historical_stok_alerts(30)` daily at midnight UTC to keep the database well within free-tier quotas.
 
 ### 2.1.2 2-Tier Quantitative Smart Gatekeeper (`agent_runner.py`)
 To operate with institutional speed and permanently eliminate Google Gemini `429 Quota Exceeded` errors on the free tier (20 RPM limit), StokVigil enforces a two-tier evaluation architecture:
@@ -364,11 +366,12 @@ G:\stokvigil-ai\
 │   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
 │   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.02ms O(1) Lookups)
 │   │   ├── db_pool.py               <-- Supabase Transaction Pooler (PgBouncer Port 6543) using asyncpg
+│   │   ├── maintenance.py           <-- 30-Day Automated Alert Pruning (db_pool raw SQL + REST fallback)
 │   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push
 │   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
-│   │   └── main.py                  <-- FastAPI Entrypoint & Rate Limiter
+│   │   └── main.py                  <-- FastAPI Entrypoint, Concurrency Semaphore(10) & Rate Limiter
 │   ├── tests/
-│   │   ├── test_api_endpoints.py    <-- 24 API, Auth, Security, Email Rejection & Token Masking Tests
+│   │   ├── test_api_endpoints.py    <-- 33 API, Auth, Security, Email Rejection & Alert Pruning Tests
 │   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
 │   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
 │   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
@@ -380,6 +383,12 @@ G:\stokvigil-ai\
 │   ├── Dockerfile
 │   ├── cloudrun.sh
 │   └── render.yaml
+├── supabase/
+│   └── migrations/
+│       ├── 20260809_init_stokvigil.sql
+│       ├── 20260822_enhance_stokalerts.sql
+│       ├── 20260906_fii_dii_flows.sql
+│       └── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
 ├── mobile_app/
 │   ├── pubspec.yaml
 │   ├── assets/
@@ -394,8 +403,8 @@ G:\stokvigil-ai\
 │       ├── config/theme.dart
 │       ├── models/models.dart       <-- Confluence factorBreakdown & Alert Data Models
 │       ├── services/
-│       │   ├── supabase_service.dart
-│       │   ├── api_service.dart     <-- Injects JWT Bearer Tokens & FII/DII API
+│       │   ├── supabase_service.dart <-- Zero Dummy Fallback; Strict isConfigured validation
+│       │   ├── api_service.dart     <-- Injects JWT Bearer Tokens, FII/DII API & Direct Yahoo Fallback
 │       │   └── fcm_service.dart
 │       ├── utils/
 │       │   └── error_handler.dart   <-- Centralized Feedback & Snackbars
@@ -403,10 +412,10 @@ G:\stokvigil-ai\
 │       └── screens/
 │           ├── auth_screen.dart
 │           ├── icici_credentials_screen.dart
-│           ├── dashboard_screen.dart <-- FII/DII Net Flow Bar Header
+│           ├── dashboard_screen.dart <-- FII/DII Net Flow Bar Header & Strict Data Integrity ("--")
 │           ├── alerts_screen.dart    <-- Radar Toggle & Alpha Card Share Bottom Sheet
 │           ├── notification_settings_screen.dart
-│           ├── watchlist_screen.dart
+│           ├── watchlist_screen.dart <-- Real-time Ticker Search, Demat Sync & Zero Dummy Prices
 │           ├── terms_conditions_modal.dart
 │           └── onboarding_modal.dart
 ├── web_portal/
@@ -416,23 +425,45 @@ G:\stokvigil-ai\
 │   ├── tsconfig.json
 │   └── src/
 │       ├── components/
+│       │   ├── ui/
+│       │   │   ├── DesignTokens.ts        <-- Theme Palette, Supabase Client & HoldingItem Interface
+│       │   │   └── UiAtoms.tsx            <-- Card, Btn, Input, Badge, Logo, Modal & Base Elements
+│       │   ├── tabs/
+│       │   │   ├── HomeTab.tsx            <-- Portfolio Card, Privacy Masking, FII/DII Flow Bar, Holdings
+│       │   │   ├── AlertsTab.tsx          <-- Real-time Alerts Stream, Filters, Confluence Radar
+│       │   │   ├── WatchlistTab.tsx       <-- Ticker Search, Suggestions, Demat Auto-Sync, Stock Cards
+│       │   │   └── SettingsTab.tsx        <-- Breeze Keys, Telegram Pairing, Sensitivity, Account Deletion
+│       │   ├── modals/
+│       │   │   ├── TradeOrderModal.tsx    <-- ICICI Breeze Interactive Trade Order Placement
+│       │   │   ├── StockDetailModal.tsx   <-- Holding Metrics Breakdown Modal
+│       │   │   ├── IciciKeyModal.tsx      <-- Breeze API Credentials & 1-Tap Login
+│       │   │   ├── PasswordModal.tsx      <-- Password Management Modal
+│       │   │   └── DeleteAccountModal.tsx <-- Account Deletion Safeguard Modal
+│       │   ├── auth/
+│       │   │   └── AuthScreen.tsx         <-- Authentication & Mandatory Terms & Conditions Screen
 │       │   ├── ConfluenceRadar.tsx        <-- 4-Pillar SVG Confluence Radar / Spider Chart
 │       │   ├── LightweightCandleChart.tsx <-- TradingView Lightweight Charts v5 with Camarilla/VWAP/SL
 │       │   └── ShareAlphaCardModal.tsx    <-- 1-Tap 1080x1080 Offscreen Canvas Viral Card Export
 │       └── app/
 │           ├── layout.tsx
-│           ├── page.tsx             <-- Injects JWT Bearer Tokens, Radar Toggles, FII/DII Bar, Chart Modal
+│           ├── page.tsx                   <-- State Orchestrator (1,246 lines, Tab Routing & Global State)
 │           ├── globals.css
 │           ├── callback/page.tsx
 │           ├── transparency/
-│           │   └── page.tsx         <-- Public Audited Accuracy Ledger & Performance KPI Portal
+│           │   └── page.tsx               <-- Public Audited Accuracy Ledger & Performance KPI Portal
 │           └── api/
 │               ├── auth/icici-callback/route.ts
-│               └── icici/callback/route.ts
+│               ├── icici/callback/route.ts
+│               └── stocks/
+│                   ├── quotes/route.ts    <-- Batch stock quotes proxy (15s TTL Cache)
+│                   ├── search/route.ts    <-- Dynamic NSE/BSE ticker search proxy
+│                   └── validate/route.ts  <-- Real-time ticker exchange validator
 └── .github/
     └── workflows/
-        ├── 5min_cron.yml            <-- Triple Schedule: 08:50 AM Token, 09:00 AM War Room & 5-Min Scan
-        └── build_apk.yml
+        ├── 5min_cron.yml                  <-- 5-Minute Market Surveillance Scanner
+        ├── morning_token_reminder.yml     <-- 08:50 AM IST Demat Token Reminder
+        ├── pre_market_war_room.yml        <-- 09:00 AM IST Macro Briefing & 30-Day Alert Retention Pruner
+        └── build_apk.yml                  <-- Android Release APK Builder (com.app.stokvigil)
 ```
 
 ---
@@ -445,15 +476,17 @@ G:\stokvigil-ai\
 | `SUPABASE_ANON_KEY` | Vercel, Flutter, Cloud Run, CI/CD | Public / Medium | Public client key for auth and RLS queries |
 | `STOKVIGIL_BACKEND_URL` | Vercel, Flutter, CI/CD | Public / Low | Base URL for FastAPI backend API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Backend Server & CI/CD Only | 🚨 **High Secret** | Admin key for server operations (Never in client bundles) |
-| `ENCRYPTION_KEY` | Backend Server Only | 🚨 **High Secret** | 32-byte Fernet AES-256 base64 encryption key |
+| `ENCRYPTION_KEY` | Backend Server Only | 🚨 **High Secret** | 32-byte Fernet AES-256 base64 encryption key (dynamic ephemeral dev key) |
 | `GEMINI_API_KEY` | Backend Server Only | 🚨 **High Secret** | Google AI Studio key for Gemini Flash reasoning |
-| `FIREBASE_CREDENTIALS_JSON` | Backend Server Only | 🚨 **High Secret** | Firebase Admin SDK service account credentials |
+| `FIREBASE_CREDENTIALS_JSON` | Backend Server Only | 🚨 **High Secret** | Firebase Admin SDK service account credentials for push notifications |
+| `GOOGLE_SERVICES_JSON` | GitHub Actions CI/CD Only | 🚨 **High Secret** | Android client `google-services.json` used by `build_apk.yml` to compile APK |
 | `TELEGRAM_BOT_TOKEN` | Backend Server Only | 🚨 **High Secret** | Telegram Bot API authentication token |
 | `TELEGRAM_WEBHOOK_SECRET` | Backend Server Only | 🚨 **High Secret** | Secret token header for webhook authenticity |
-| `CRON_SECRET_KEY` | Backend & GitHub Actions | 🚨 **High Secret** | Secret header (`X-Cron-Secret`) for automated scanners |
+| `CRON_SECRET_KEY` | Backend & GitHub Actions | 🚨 **High Secret** | Secret header (`X-Cron-Secret`) for automated scanners (zero default secrets) |
+| `ADMIN_SECRET_KEY` | Backend & Admin Telemetry | 🚨 **High Secret** | Dedicated secret header (`X-Admin-Secret`) for restricted admin endpoints |
 | `DATABASE_URL` | Backend Server Only | 🚨 **High Secret** | Supabase Transaction Pooler (PgBouncer Port 6543) connection string with `?pgbouncer=true` |
-| `ALLOWED_ORIGINS` | Backend Server Only | Public / Low | Comma-separated CORS origin whitelist |
-| `ENVIRONMENT` | Backend Server Only | Public / Low | Deployment runtime environment (`production`/`development`) |
+| `ALLOWED_ORIGINS` | Backend Server Only | Public / Low | Comma-separated CORS origin whitelist (e.g. `https://yourapp.vercel.app,http://localhost:3000`) |
+| `ENVIRONMENT` | Backend Server Only | Public / Low | Deployment runtime environment (`production`/`development`/`test`) |
 
 | Endpoint | Method | Auth Scheme | Purpose |
 | :--- | :---: | :---: | :--- |

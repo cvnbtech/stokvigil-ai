@@ -45,6 +45,9 @@ class MockDBTable:
     def delete(self, *args, **kwargs):
         return self
 
+    def lt(self, *args, **kwargs):
+        return self
+
     def order(self, *args, **kwargs):
         return self
 
@@ -566,6 +569,14 @@ class TestApiEndpoints(unittest.TestCase):
         finally:
             with _ORDER_IDEMPOTENCY_LOCK:
                 _ORDER_IDEMPOTENCY_CACHE.pop(flight_key, None)
+    # 29. Database Maintenance: Prune Historical Alerts
+    def test_29_historical_alert_pruning(self):
+        import asyncio
+        from app.maintenance import prune_historical_alerts
+        mock_db = self.mock_db
+        res = asyncio.run(prune_historical_alerts(mock_db, retention_days=30))
+        self.assertEqual(res.get("status"), "success")
+        self.assertIn("cutoff", res)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,10 @@ sys.stdout.reconfigure(encoding='utf-8')
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Set test environment to prevent vault production check abort
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 from app.technical_engine import fetch_multi_timeframe_technicals
 from app.flow_tracker import fetch_delivery_and_fo_flow, fetch_bulk_and_block_deals
 from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health

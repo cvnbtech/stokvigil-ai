@@ -11,27 +11,39 @@ class SupabaseService {
 
   static String supabaseUrl = const String.fromEnvironment(
     'SUPABASE_URL',
-    defaultValue: "https://your-supabase-project.supabase.co",
+    defaultValue: "",
   );
   static String supabaseAnonKey = const String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue: "your-anon-key",
+    defaultValue: "",
   );
 
   static bool get isConfigured =>
       supabaseUrl.isNotEmpty &&
-      supabaseUrl != "https://your-supabase-project.supabase.co" &&
+      !supabaseUrl.contains("your-supabase-project") &&
       supabaseAnonKey.isNotEmpty &&
-      supabaseAnonKey != "your-anon-key";
+      !supabaseAnonKey.contains("your-anon-key") &&
+      !supabaseAnonKey.contains("dummy");
 
   SupabaseClient get client => Supabase.instance.client;
-  User? get currentUser => isConfigured ? Supabase.instance.client.auth.currentUser : null;
+  User? get currentUser {
+    if (!isConfigured) return null;
+    try {
+      return Supabase.instance.client.auth.currentUser;
+    } catch (_) {
+      return null;
+    }
+  }
 
   static Future<void> initialize() async {
+    if (!isConfigured) {
+      debugPrint("Supabase credentials not configured; skipping initialization.");
+      return;
+    }
     try {
       await Supabase.initialize(
-        url: isConfigured ? supabaseUrl : "https://your-supabase-project.supabase.co",
-        anonKey: isConfigured ? supabaseAnonKey : "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy",
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
       );
     } catch (e) {
       debugPrint("Supabase init info: $e");

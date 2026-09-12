@@ -1,7 +1,11 @@
 # Environment Secrets (CRITICAL: NEVER COMMIT SECRETS)
 .env
+.env.*
+.env*.local
 *.env
-backend/.env
+*.env*
+backend/.env*
+web_portal/.env*
 !.env.example
 
 # Python

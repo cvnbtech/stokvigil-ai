@@ -710,12 +710,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
                                   Text(
-                                    "₹${item.currentPrice.toStringAsFixed(2)}",
+                                    item.currentPrice > 0 ? "₹${item.currentPrice.toStringAsFixed(2)}" : "--",
                                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    "${pnlPos ? '+' : ''}₹${item.pnl.toStringAsFixed(1)} (${pnlPos ? '+' : ''}${item.pnlPct.toStringAsFixed(1)}%)",
+                                    item.currentPrice > 0
+                                        ? "${pnlPos ? '+' : ''}₹${item.pnl.toStringAsFixed(1)} (${pnlPos ? '+' : ''}${item.pnlPct.toStringAsFixed(1)}%)"
+                                        : "--",
                                     style: TextStyle(
                                       color: pnlPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                                       fontSize: 11,

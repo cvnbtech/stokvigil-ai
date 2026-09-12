@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     TELEGRAM_WEBHOOK_SECRET: str = ""
     
     # Cron Security Token (Supports both CRON_SECRET_KEY and CRON_SECRET)
-    CRON_SECRET_KEY: str = "stokvigil_cron_default_secret_2026"
+    CRON_SECRET_KEY: str = ""
     CRON_SECRET: Optional[str] = None
 
     # Admin Security Token

@@ -254,6 +254,7 @@ Users can permanently delete their account directly from the **Settings** page:
    - `supabase/migrations/20260809_init_stokvigil.sql`
    - `supabase/migrations/20260822_enhance_stokalerts.sql`
    - `supabase/migrations/20260906_fii_dii_flows.sql`
+   - `supabase/migrations/20260911_prune_old_alerts_cron.sql` (Automated 30-day alert retention policy via `pg_cron` & `prune_historical_stok_alerts`)
 3. Copy your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 2. Backend Deployment (FastAPI on Cloud Run / Local)
@@ -263,19 +264,21 @@ Users can permanently delete their account directly from the **Settings** page:
    python -m venv .venv
    .\.venv\Scripts\pip.exe install -r requirements.txt
    ```
-2. Set environment variables in `backend/.env`:
+2. Set environment variables in `backend/.env` (see `.env.example` for full reference):
    ```env
    ENVIRONMENT=production
    SUPABASE_URL=https://your-project.supabase.co
    SUPABASE_ANON_KEY=your-supabase-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    DATABASE_URL=postgresql://postgres.yourprojectref:yourpassword@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-   ENCRYPTION_KEY=your_encryption_key
+   ENCRYPTION_KEY=your-fernet-aes256-base64-key
    GEMINI_API_KEY=your-gemini-api-key
-   TELEGRAM_BOT_TOKEN=123456789:ABCdefNoPQRsTUVwxyZ
+   TELEGRAM_BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ
    TELEGRAM_WEBHOOK_SECRET=your-telegram-webhook-secret
-   CRON_SECRET_KEY=cron_default_secret
-   ALLOWED_ORIGINS=https://yourapp.hostname,http://localhost:3000,http://localhost:8000
+   CRON_SECRET_KEY=your-cron-secret-key
+   ADMIN_SECRET_KEY=your-admin-secret-key
+   ALLOWED_ORIGINS=https://yourapp.vercel.app,http://localhost:3000
+   STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    ```
 3. Run test suite (59 automated unit tests across 7 suites):
    ```bash
@@ -320,19 +323,22 @@ Users can permanently delete their account directly from the **Settings** page:
    flutter run
    ```
 
-## ⏰ Automated Indian Market Cron Workflows (`.github/workflows/5min_cron.yml`)
+## ⏰ Automated Indian Market Cron Workflows (`.github/workflows/`)
 
-The scheduled GitHub Actions runner executes three automated workflows strictly during Indian market trading days (Monday–Friday):
+The scheduled GitHub Actions runner executes automated workflows strictly during Indian market trading days (Monday–Friday):
 
-1. **08:50 AM IST Morning Demat Token Reminder (`cron: '20 3 * * 1-5'` / `03:20 UTC`)**:
+1. **08:50 AM IST Morning Demat Token Reminder ([morning_token_reminder.yml](.github/workflows/morning_token_reminder.yml)) (`cron: '20 3 * * 1-5'` / `03:20 UTC`)**:
    - Executes `POST /api/cron/morning-token-reminder` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - Dispatches high-priority push notifications and Telegram alerts 25 minutes prior to market open (09:15 AM IST), prompting users with expired session tokens to authenticate.
 
-2. **09:00 AM IST Pre-Market War Room Briefing (`cron: '30 3 * * 1-5'` / `03:30 UTC`)**:
+2. **09:00 AM IST Pre-Market War Room Briefing ([pre_market_war_room.yml](.github/workflows/pre_market_war_room.yml)) (`cron: '30 3 * * 1-5'` / `03:30 UTC`)**:
    - Executes `POST /api/cron/pre-market-briefing` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
-   - Aggregates GIFT Nifty, US/Asian markets, India VIX regime, FII/DII net flows, and sector momentum 15 minutes before cash market open. Dispatches rich HTML war room cards to Telegram and FCM push notifications.
+   - Aggregates GIFT Nifty, US/Asian markets, India VIX regime, FII/DII net flows, and sector momentum 15 minutes before cash market open. Also triggers automatic 30-day historical alert pruning via `app.maintenance.prune_historical_alerts`.
 
-3. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
+3. **5-Minute Market Surveillance Scanner ([5min_cron.yml](.github/workflows/5min_cron.yml)) (`cron: '45,50,55 3 * * 1-5'`, `*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - **Asynchronous Background Execution**: Dispatches scan asynchronously via FastAPI `BackgroundTasks` with a concurrency lock (`_scan_in_progress`), returning `200 OK` in ~50ms to completely eliminate Cloud Run 504 Gateway Timeouts.
-   - Pre-computes market state in RAM across all unique watchlist symbols in parallel and evaluates multi-tenant portfolios within seconds.
+   - **Concurrent Multi-User Evaluation**: Evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`, pre-computing distinct symbols in RAM.
+
+4. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
+   - Compiles release Android APK (`com.app.stokvigil`) on push to `main` or manual workflow dispatch, injecting `google-services.json` securely from GitHub Secrets.

@@ -572,64 +572,150 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
     if not sym or not STOCK_SYMBOL_REGEX.match(sym):
         return None
 
+    # Step 1: Check in-memory market cache first (< 0.05ms)
+    cached_stock = market_cache.get_stock(sym)
+    if cached_stock:
+        p = cached_stock.get("current_price") or cached_stock.get("price")
+        if p and float(p) > 0:
+            tech = cached_stock.get("technicals") or {}
+            prev = tech.get("prev_close") or p
+            chg_pct = tech.get("change_pct")
+            if chg_pct is None:
+                chg_pct = round(((float(p) - float(prev)) / float(prev)) * 100, 2) if prev else 0.0
+            day_high = tech.get("day_high")
+            day_low = tech.get("day_low")
+
+            cached_tactical = cached_stock.get("tactical_levels", {})
+            t1 = cached_tactical.get("target_1")
+            s1 = cached_tactical.get("protective_stop_loss")
+            target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
+            sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
+            bias = cached_stock.get("action_bias")
+            signal = None
+            signal_type = None
+            if bias and bias != "HOLD_NEUTRAL":
+                signal = bias.replace("_", " ")
+                signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+
+            return {
+                "symbol": sym,
+                "name": f"{sym} (NSE)",
+                "exchange": "NSE",
+                "price": round(float(p), 2),
+                "change_pct": round(float(chg_pct), 2),
+                "is_positive": float(chg_pct) >= 0,
+                "day_high": round(float(day_high), 2) if day_high is not None else None,
+                "day_low": round(float(day_low), 2) if day_low is not None else None,
+                "target": target_val,
+                "stop_loss": sl_val,
+                "signal": signal,
+                "signal_type": signal_type
+            }
+
+    # Step 2: Fetch via Yahoo Finance Chart API with resilient headers & dual-host fallbacks
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
+        "Referer": "https://finance.yahoo.com/"
     }
     for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+        for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
+            try:
+                url = f"https://{host}/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=6) as r:
+                    data = json.loads(r.read().decode('utf-8'))
+                    res_list = data.get("chart", {}).get("result")
+                    if res_list and len(res_list) > 0:
+                        meta = res_list[0].get("meta", {})
+                        p = meta.get("regularMarketPrice")
+                        if p is not None and float(p) > 0:
+                            prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
+                            chg_pct = round(((float(p) - float(prev)) / float(prev)) * 100, 2) if prev else 0.0
+                            name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
+                            raw_high = meta.get("regularMarketDayHigh")
+                            raw_low = meta.get("regularMarketDayLow")
+                            day_high = round(float(raw_high), 2) if raw_high is not None else None
+                            day_low = round(float(raw_low), 2) if raw_low is not None else None
+
+                            cached_stock = market_cache.get_stock(sym)
+                            target_val = None
+                            sl_val = None
+                            signal = None
+                            signal_type = None
+                            if cached_stock:
+                                cached_tactical = cached_stock.get("tactical_levels", {})
+                                t1 = cached_tactical.get("target_1")
+                                s1 = cached_tactical.get("protective_stop_loss")
+                                target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
+                                sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
+                                bias = cached_stock.get("action_bias")
+                                if bias and bias != "HOLD_NEUTRAL":
+                                    signal = bias.replace("_", " ")
+                                    signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+
+                            return {
+                                "symbol": sym,
+                                "name": name,
+                                "exchange": exch,
+                                "price": round(float(p), 2),
+                                "change_pct": chg_pct,
+                                "is_positive": chg_pct >= 0,
+                                "day_high": day_high,
+                                "day_low": day_low,
+                                "target": target_val,
+                                "stop_loss": sl_val,
+                                "signal": signal,
+                                "signal_type": signal_type
+                            }
+            except Exception:
+                continue
+
+    # Step 3: Fast yfinance history fallback
+    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as r:
-                data = json.loads(r.read().decode('utf-8'))
-                res_list = data.get("chart", {}).get("result")
-                if res_list and len(res_list) > 0:
-                    meta = res_list[0].get("meta", {})
-                    p = meta.get("regularMarketPrice")
-                    if p is not None and p > 0:
-                        prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
-                        chg_pct = round(((p - prev) / prev) * 100, 2) if prev else 0.0
-                        name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
-                        raw_high = meta.get("regularMarketDayHigh")
-                        raw_low = meta.get("regularMarketDayLow")
-                        day_high = round(float(raw_high), 2) if raw_high is not None else None
-                        day_low = round(float(raw_low), 2) if raw_low is not None else None
+            t = yf.Ticker(f"{sym}{suffix}")
+            df = t.history(period="1d", interval="1d")
+            if not df.empty:
+                last_row = df.iloc[-1]
+                p = float(last_row["Close"])
+                prev = float(last_row["Open"]) if "Open" in last_row else p
+                chg_pct = round(((p - prev) / prev) * 100, 2) if prev else 0.0
+                day_high = round(float(last_row["High"]), 2) if "High" in last_row else None
+                day_low = round(float(last_row["Low"]), 2) if "Low" in last_row else None
+                cached_stock = market_cache.get_stock(sym)
+                target_val = None
+                sl_val = None
+                signal = None
+                signal_type = None
+                if cached_stock:
+                    cached_tactical = cached_stock.get("tactical_levels", {})
+                    t1 = cached_tactical.get("target_1")
+                    s1 = cached_tactical.get("protective_stop_loss")
+                    target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
+                    sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
+                    bias = cached_stock.get("action_bias")
+                    if bias and bias != "HOLD_NEUTRAL":
+                        signal = bias.replace("_", " ")
+                        signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
-                        # Check in-memory market cache for evaluated tactical trade levels
-                        cached_stock = market_cache.get_stock(sym)
-                        target_val = None
-                        sl_val = None
-                        signal = None
-                        signal_type = None
-                        if cached_stock:
-                            cached_tactical = cached_stock.get("tactical_levels", {})
-                            t1 = cached_tactical.get("target_1")
-                            s1 = cached_tactical.get("protective_stop_loss")
-                            if t1 and t1 not in ["-", "₹0", "0"]:
-                                target_val = t1
-                            if s1 and s1 not in ["-", "₹0", "0"]:
-                                sl_val = s1
-                            bias = cached_stock.get("action_bias")
-                            if bias and bias != "HOLD_NEUTRAL":
-                                signal = bias.replace("_", " ")
-                                signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
-
-                        return {
-                            "symbol": sym,
-                            "name": name,
-                            "exchange": exch,
-                            "price": round(float(p), 2),
-                            "change_pct": chg_pct,
-                            "is_positive": chg_pct >= 0,
-                            "day_high": day_high,
-                            "day_low": day_low,
-                            "target": target_val,
-                            "stop_loss": sl_val,
-                            "signal": signal,
-                            "signal_type": signal_type
-                        }
+                return {
+                    "symbol": sym,
+                    "name": f"{sym} ({exch})",
+                    "exchange": exch,
+                    "price": round(p, 2),
+                    "change_pct": chg_pct,
+                    "is_positive": chg_pct >= 0,
+                    "day_high": day_high,
+                    "day_low": day_low,
+                    "target": target_val,
+                    "stop_loss": sl_val,
+                    "signal": signal,
+                    "signal_type": signal_type
+                }
         except Exception:
             continue
+
     return None
 
 @app.get("/api/stocks/quotes", dependencies=[Depends(check_rate_limit)])
@@ -1250,15 +1336,25 @@ async def execute_multi_user_market_scan(db: Client):
         
         scanned_users = 0
         all_generated_alerts = []
-        
-        for u in users:
+        user_sem = asyncio.Semaphore(10)
+
+        async def _evaluate_user_worker(u):
+            nonlocal scanned_users
             uid = u['id']
-            try:
-                alerts = await evaluate_user_portfolio_and_watchlists(uid, db)
-                all_generated_alerts.extend(alerts)
-                scanned_users += 1
-            except Exception as user_err:
-                logger.error(f"Error scanning user {mask_id(uid)}: {user_err}")
+            async with user_sem:
+                try:
+                    alerts = await evaluate_user_portfolio_and_watchlists(uid, db)
+                    scanned_users += 1
+                    return alerts or []
+                except Exception as user_err:
+                    logger.error(f"Error scanning user {mask_id(uid)}: {user_err}")
+                    return []
+
+        if users:
+            user_results = await asyncio.gather(*(_evaluate_user_worker(u) for u in users), return_exceptions=False)
+            for res in user_results:
+                if isinstance(res, list):
+                    all_generated_alerts.extend(res)
 
         logger.info(f"✅ Background market scan finished: {synced_symbols_count} symbols, {scanned_users} users scanned, {len(all_generated_alerts)} alerts dispatched.")
     except Exception as e:
@@ -1449,6 +1545,13 @@ async def run_pre_market_briefing(
     Shielded by X-Cron-Secret header token.
     """
     verify_cron_secret(x_cron_secret)
+
+    # Automated 30-day database retention maintenance
+    try:
+        from app.maintenance import prune_historical_alerts
+        asyncio.create_task(prune_historical_alerts(db, retention_days=30))
+    except Exception as m_err:
+        logger.warning(f"Maintenance prune note: {m_err}")
 
     today_str = str(date.today())
     war_room_data = await asyncio.to_thread(fetch_pre_market_war_room_data)

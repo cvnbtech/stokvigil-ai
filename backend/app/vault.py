@@ -16,9 +16,14 @@ class CryptoVault:
                 raise RuntimeError(
                     "FATAL SECURITY CONFIGURATION: Dedicated ENCRYPTION_KEY environment variable is required in production mode."
                 )
-            key_source = settings.ENCRYPTION_KEY
         else:
-            key_source = raw_secret_key or settings.ENCRYPTION_KEY or "stokvigil_vault_default_secret_key_2026_prod="
+            key_source = raw_secret_key or settings.ENCRYPTION_KEY
+            if not key_source:
+                if settings.ENVIRONMENT == "test":
+                    key_source = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+                else:
+                    logger.warning("No ENCRYPTION_KEY configured in development. Generating ephemeral vault key.")
+                    key_source = Fernet.generate_key().decode()
 
         # Ensure valid 32-byte urlsafe base64 key for Fernet
         if len(key_source) != 44 or not key_source.endswith('='):

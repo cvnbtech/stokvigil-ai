@@ -3,8 +3,8 @@ import os
 import unittest
 
 # Set test environment to prevent vault production check abort
-os.environ["ENVIRONMENT"] = "development"
-os.environ["ENCRYPTION_KEY"] = "stokvigil_vault_default_secret_key_2026_prod="
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

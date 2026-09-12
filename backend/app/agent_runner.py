@@ -972,8 +972,21 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     Uses bounded async concurrency (Semaphore=15) with thread-pool I/O to evaluate all stocks rapidly.
     """
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
-    w_res = supabase_client.table("user_watchlists").select("symbol").execute()
-    symbols = list(set(item['symbol'].strip().upper() for item in (w_res.data or []) if item.get('symbol')))
+    symbols = []
+    try:
+        from app.db_pool import fetch_all
+        rows = await fetch_all("SELECT DISTINCT UPPER(TRIM(symbol)) as symbol FROM user_watchlists WHERE symbol IS NOT NULL")
+        if rows is not None:
+            symbols = list(set(r['symbol'].strip().upper() for r in rows if r.get('symbol')))
+    except Exception as pool_err:
+        logger.debug(f"Pooled symbol query note: {pool_err}")
+
+    if not symbols:
+        try:
+            w_res = supabase_client.table("user_watchlists").select("symbol").limit(5000).execute()
+            symbols = list(set(item['symbol'].strip().upper() for item in (w_res.data or []) if item.get('symbol')))
+        except Exception as rest_err:
+            logger.error(f"REST symbol query failed: {rest_err}")
 
     if not symbols:
         logger.info("No active symbols found across user watchlists to pre-compute.")

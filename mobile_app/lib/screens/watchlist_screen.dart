@@ -146,15 +146,16 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
         final sym = (item['symbol']?.toString() ?? '').toUpperCase();
         if (liveQuotes.containsKey(sym)) {
           final q = liveQuotes[sym] as Map<String, dynamic>;
-          item['price'] = q['price'];
+          final price = (q['price'] as num? ?? 0.0).toDouble();
+          item['price'] = price;
           final isPos = q['is_positive'] == true;
           final chgPct = q['change_pct'] ?? 0.0;
-          item['chg'] = isPos ? "+$chgPct%" : "$chgPct%";
+          item['chg'] = price > 0 ? (isPos ? "+$chgPct%" : "$chgPct%") : "--";
           item['is_positive'] = isPos;
           item['name'] = q['name'];
           item['signal'] = q['signal'];
-          item['target'] = q['target'] != null ? "₹${q['target']}" : null;
-          item['stop_loss'] = q['stop_loss'] != null ? "₹${q['stop_loss']}" : null;
+          item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0') ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}") : null;
+          item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0') ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}") : null;
         }
       }
     }
@@ -239,7 +240,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             'name': name,
             'price': livePrice,
             'is_positive': true,
-            'chg': "+0.00%",
+            'chg': livePrice > 0 ? "+0.00%" : "--",
             'signal': 'MONITORING',
             'target': '--',
             'stop_loss': '--'
@@ -635,7 +636,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final isAuto = item['is_auto_synced'] == true;
                           final isPos = item['is_positive'] ?? true;
                           final priceNum = (item['price'] as num? ?? 0.0).toDouble();
-                          final chg = item['chg'] ?? (isPos ? "+0.00%" : "-0.00%");
+                          final chg = item['chg'] ?? (priceNum > 0 ? (isPos ? "+0.00%" : "-0.00%") : "--");
                           final signal = item['signal'] ?? 'MONITORING';
                           final target = item['target'] ?? '--';
                           final stopLoss = item['stop_loss'] ?? '--';
@@ -744,14 +745,14 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.end,
                                       children: [
                                         Text(
-                                          "₹${priceNum.toStringAsFixed(2)}",
+                                          priceNum > 0 ? "₹${priceNum.toStringAsFixed(2)}" : "--",
                                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
                                         ),
                                         const SizedBox(height: 2),
                                         Text(
-                                          "${isPos ? '▲' : '▼'} $chg",
+                                          priceNum > 0 ? "${isPos ? '▲' : '▼'} $chg" : "--",
                                           style: TextStyle(
-                                            color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                            color: priceNum > 0 ? (isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose) : AppTheme.textSecondary,
                                             fontSize: 11,
                                             fontWeight: FontWeight.w800,
                                           ),
