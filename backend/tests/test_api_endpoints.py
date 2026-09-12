@@ -578,7 +578,31 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertEqual(res.get("status"), "success")
         self.assertIn("cutoff", res)
 
+    # 30. Security: CryptoVault Production Mode Initialization
+    def test_30_cryptovault_production_initialization(self):
+        from app.vault import CryptoVault
+        orig_env = settings.ENVIRONMENT
+        orig_key = settings.ENCRYPTION_KEY
+        try:
+            # 1. Valid production key initialization
+            settings.ENVIRONMENT = "production"
+            settings.ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+            prod_vault = CryptoVault()
+            encrypted = prod_vault.encrypt("test_secret_payload_123")
+            self.assertTrue(encrypted.startswith("gAAAAA"))
+            decrypted = prod_vault.decrypt(encrypted)
+            self.assertEqual(decrypted, "test_secret_payload_123")
+
+            # 2. Missing/placeholder key in production must raise RuntimeError
+            settings.ENCRYPTION_KEY = ""
+            with self.assertRaises(RuntimeError):
+                CryptoVault()
+        finally:
+            settings.ENVIRONMENT = orig_env
+            settings.ENCRYPTION_KEY = orig_key
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

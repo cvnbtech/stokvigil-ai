@@ -16,6 +16,7 @@ class CryptoVault:
                 raise RuntimeError(
                     "FATAL SECURITY CONFIGURATION: Dedicated ENCRYPTION_KEY environment variable is required in production mode."
                 )
+            key_source = settings.ENCRYPTION_KEY
         else:
             key_source = raw_secret_key or settings.ENCRYPTION_KEY
             if not key_source:
