@@ -241,6 +241,13 @@ function renderCallbackHtml(rawToken: string) {
   </div>
 
   <script>
+    // Security: Immediately scrub sensitive session token from browser address bar & history
+    try {
+      if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (_) {}
+
     let hasCopied = false;
 
     function enableAppButton() {

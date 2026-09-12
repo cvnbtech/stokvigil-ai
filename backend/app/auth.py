@@ -22,29 +22,24 @@ def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional
     Validates Supabase JWT Bearer Token and extracts the authenticated user ID.
     Guarantees zero Broken Object Level Authorization (BOLA / IDOR) vulnerabilities.
     """
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split("Bearer ")[1].strip()
-        try:
-            client = get_auth_client()
-            user_response = client.auth.get_user(token)
-            if user_response and user_response.user:
-                return str(user_response.user.id)
-            else:
-                raise HTTPException(status_code=401, detail="Invalid or expired session token.")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"JWT Verification failed: {e}")
-            raise HTTPException(status_code=401, detail="Session authentication failed.")
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization Bearer token.")
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid Authorization header format. Expected 'Bearer <token>'.")
 
-    # Strict authentication required unless running explicitly in unit test mode
-    if settings.ENVIRONMENT != "test":
-        if not authorization:
-            raise HTTPException(status_code=401, detail="Missing Authorization Bearer token.")
+    token = authorization.split("Bearer ")[1].strip()
+    try:
+        client = get_auth_client()
+        user_response = client.auth.get_user(token)
+        if user_response and user_response.user:
+            return str(user_response.user.id)
         else:
-            raise HTTPException(status_code=401, detail="Invalid Authorization header format. Expected 'Bearer <token>'.")
-
-    return None
+            raise HTTPException(status_code=401, detail="Invalid or expired session token.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"JWT Verification failed: {e}")
+        raise HTTPException(status_code=401, detail="Session authentication failed.")
 
 def get_optional_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
     """
@@ -139,9 +134,7 @@ def verify_user_access(requested_user_id: str, authenticated_user_id: Optional[s
     Ensures that a user can only access and modify their own data.
     Strictly prevents IDOR / BOLA attacks.
     """
-    if authenticated_user_id is None:
-        if settings.ENVIRONMENT == "test":
-            return True
+    if not authenticated_user_id:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
     if requested_user_id != authenticated_user_id:
