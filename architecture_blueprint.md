@@ -280,12 +280,14 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
    - **Stage 1 (Fast Market Tick)**: Queries live exchange metadata.
    - **Stage 2 (Historical Tick Book Verification)**: Downloads the live 1-day candle. If empty (as with dummy symbols `NE`, `ASDF`, `XYZ123`), strictly returns `is_valid: false`, protecting the database from fake entries.
 3. **High-Throughput Batch Quotes (`GET /api/stocks/quotes?symbols={s1,s2}`)**:
-   - Bounded in-memory FIFO cache (up to 2,000 tickers, 5-second TTL) delivers sub-second market prices, day change %, and high/low ranges for 100+ watchlist items simultaneously.
-4. **Universal Dynamic ISIN-to-NSE Resolver (`resolve_isin_to_nse_symbol`)**:
-   - Dynamically resolves CDSL/NSDL ISIN codes (`INE...`) to official NSE trading tickers in real-time using Yahoo Finance search and in-memory caching (`_ISIN_CACHE`), guaranteeing 100% compatibility across all 2,000+ Indian equities.
+   - Persistent Keep-Alive Connection Pool (`requests.Session` with 25 pooled connections, 2.5s fast failover timeout) eliminating TCP/TLS handshake latency for concurrent stock evaluations.
+   - Market-Aware Dynamic Cache TTL (`get_quote_cache_ttl()`): 20s during live market hours (09:15–15:30 IST); 300s during off-market hours and weekends when prices are static.
+   - Dual-Key Multi-Key Indexing in RAM (`clean_symbol` + `full_symbol`), delivering sub-0.05ms O(1) cache hits regardless of query format.
+4. **Universal Dynamic ISIN & Dual-Exchange Resolver (`resolve_isin_to_nse_symbol`)**:
+   - Dynamically resolves CDSL/NSDL ISIN codes (`INE...`) to verified NSE and BSE equities with dynamic company name extraction (`shortName`/`longName`), clean symbol presentation, and exchange badge tags (`BSE` amber / `NSE` cyan), preventing internal exchange routing suffixes (`.BO`, `.NS`) from leaking into user-facing UI or database watchlists.
 5. **Sliding-Window IP Rate Limiting & Input Sanitization**:
    - Public quote and search routes enforce a 120 req/min sliding-window rate limit per client IP.
-   - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&]{1,20}$`) neutralizes injection attempts.
+   - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&.]{1,25}$`) neutralizes injection attempts while permitting valid suffixed queries.
 6. **In-App Session Token Auto-Capture (Flutter Mobile & Web Portal)**:
    - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
    - Material Design vector outline icons (`VisibilityOutlinedIcon` / `VisibilityOffOutlinedIcon`) provide clean visibility toggles on both key fields.
@@ -508,7 +510,7 @@ G:\stokvigil-ai\
 | `/api/telegram/webhook` | `POST` | Secret Header | Telegram bot interactive command handler (`/start`, `/status`, `/help`) |
 | `/api/stocks/search` | `GET` | Rate-Limited | Real-time dynamic search across live NSE & BSE traded equities |
 | `/api/stocks/validate` | `GET` | Rate-Limited | Real-time exchange validation ensuring zero dummy/misspelled tickers |
-| `/api/stocks/quotes` | `GET` | Rate-Limited | High-speed batch quotes for 100+ stocks with 5-second FIFO RAM caching |
+| `/api/stocks/quotes` | `GET` | Rate-Limited | High-speed batch quotes for 100+ stocks backed by Keep-Alive session pool & Market-Aware Dynamic TTL (20s market / 300s off-market) |
 | `/api/market/cache-stats` | `GET` | Public / CORS | Telemetry reporting in-memory market cache performance (hit ratio, writes) |
 | `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API |
 

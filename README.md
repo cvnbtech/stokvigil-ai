@@ -207,10 +207,10 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 ## 🔍 Dynamic Stock Search & Exchange Validation (Zero Hardcoding)
 - **Live Autocomplete (`GET /api/stocks/search?q={query}`)**: As users type, the system queries live NSE (`.NS`) and BSE (`.BO`) exchange feeds in real-time, displaying verified company names, symbols, and sectors.
 - **Dual-Stage Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**: Every custom stock is checked against live market tick data before being saved. Dummy, non-existent, or misspelled tickers (e.g. `NE`, `ASDFGH`) are blocked and rejected from entering the database.
-- **High-Speed Batch Quotes (`GET /api/stocks/quotes?symbols={s1,s2}`)**: Real-time pricing, day % change, and high/low ranges for 100+ stocks backed by an in-memory 5-second FIFO cache.
-- **Universal Dynamic ISIN Resolver**: Resolves CDSL/NSDL Demat ISIN numbers directly to official NSE tickers dynamically via live exchange search and RAM caching.
-- **Sliding-Window IP Rate Limiter**: Max 120 req/min rate limiting per client IP on public search/quote routes with strict alphanumeric regex sanitization (`^[A-Z0-9_\-&]{1,20}$`).
-- **Demat Auto-Sync**: Automatically imports active ICICI Demat holdings into personal watchlists with one click.
+- **High-Speed Batch Quotes (`GET /api/stocks/quotes?symbols={s1,s2}`)**: Real-time pricing, day % change, day high/low, proper company names, and dynamic exchange badges (`NSE`/`BSE`) for 100+ stocks backed by a persistent Keep-Alive connection pool (`requests.Session` with 25 pooled connections, 2.5s fast failover) and Market-Aware Dynamic RAM Caching (20s TTL during market hours, 300s TTL off-market & weekends, sub-0.05ms dual-key lookups).
+- **Universal Dynamic ISIN & Dual-Exchange Resolver**: Resolves CDSL/NSDL Demat ISIN numbers directly to verified NSE and BSE equities with dynamic company name extraction (`shortName`/`longName`), clean symbol presentation, and exchange badge tags (`BSE` amber / `NSE` cyan), preventing internal exchange routing suffixes (`.BO`, `.NS`) from leaking into user-facing UI or database watchlists.
+- **Sliding-Window IP Rate Limiter**: Max 120 req/min rate limiting per client IP on public search/quote routes with strict alphanumeric regex sanitization (`^[A-Z0-9_\-&.]{1,25}$`).
+- **Demat Auto-Sync**: Automatically imports active ICICI Demat holdings into personal watchlists with clean symbols and company names with one click.
 
 ---
 

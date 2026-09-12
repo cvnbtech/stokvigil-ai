@@ -12,6 +12,7 @@ class AppTheme {
   static const Color borderViolet = Color(0x598B5CF6); // rgba(139,92,246,0.35)
   
   static const Color cyan = Color(0xFF06B6D4);
+  static const Color primaryCyan = cyan;
   static const Color violet = Color(0xFF8B5CF6);
   static const Color primaryEmerald = Color(0xFF10B981);
   static const Color dangerRose = Color(0xFFEF4444);
