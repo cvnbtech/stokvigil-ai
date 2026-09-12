@@ -394,7 +394,23 @@ export default function LightweightCandleChart({
     >
       {/* Top Header: Symbol, Price, Controls, Maximize, Close */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* SV StokVigil Logo Badge */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              background: "linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%)",
+              border: "1px solid rgba(6, 182, 212, 0.4)",
+              borderRadius: 8,
+              padding: "2px 7px",
+              boxShadow: "0 0 12px rgba(6, 182, 212, 0.15)",
+            }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 900, color: "#06b6d4", letterSpacing: 0.5 }}>SV</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8 }}>STOKVIGIL</span>
+          </div>
           <span style={{ fontSize: 20, fontWeight: 900, color: "#ffffff" }}>{symbol}</span>
           {lastPrice !== null && (
             <span style={{ fontSize: 16, fontWeight: 800, color: priceChange >= 0 ? "#10b981" : "#f43f5e" }}>
@@ -573,7 +589,73 @@ export default function LightweightCandleChart({
       </div>
 
       {/* Chart Canvas Area */}
-      <div style={{ position: "relative", width: "100%", height: targetCanvasHeight, minHeight: 360 }}>
+      <div style={{ position: "relative", width: "100%", height: targetCanvasHeight, minHeight: 360, overflow: "hidden", borderRadius: 12 }}>
+        {/* StokVigil SV Background Watermark */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none",
+            zIndex: 1,
+            userSelect: "none",
+            opacity: 0.05,
+          }}
+        >
+          <div style={{ fontSize: 80, fontWeight: 900, letterSpacing: 6, color: "#38bdf8", lineHeight: 1 }}>SV</div>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 8, color: "#ffffff", marginTop: 4 }}>STOKVIGIL AI</div>
+        </div>
+
+        {/* Top-Left Floating Brand Overlay Pill */}
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            background: "rgba(8, 11, 22, 0.88)",
+            backdropFilter: "blur(10px)",
+            border: "1px solid rgba(6, 182, 212, 0.4)",
+            borderRadius: 8,
+            padding: "4px 10px",
+            zIndex: 2,
+            pointerEvents: "none",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.6), 0 0 10px rgba(6, 182, 212, 0.18)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 2,
+                borderRadius: 4,
+                padding: "1px 5px",
+                background: "linear-gradient(135deg, #06b6d4 0%, #10b981 100%)",
+                fontSize: 9,
+                fontWeight: 900,
+                color: "#ffffff",
+                letterSpacing: 0.5,
+              }}
+            >
+              <span style={{ fontSize: 8 }}>⚡</span>SV
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 900, color: "#ffffff", letterSpacing: 0.6 }}>STOKVIGIL AI</span>
+            <span style={{ fontSize: 9, color: "#06b6d4", fontWeight: 700 }}>•</span>
+            <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 700, letterSpacing: 0.5 }}>
+              {interval.toUpperCase()} {interval.includes("d") || interval.includes("w") ? "SWING" : "INTRADAY"}
+            </span>
+          </div>
+          <span style={{ fontSize: 8, color: "#64748b", fontWeight: 600, letterSpacing: 0.4 }}>
+            Candlesticks &amp; Camarilla Watchtower
+          </span>
+        </div>
+
         {loading && (
           <div
             style={{

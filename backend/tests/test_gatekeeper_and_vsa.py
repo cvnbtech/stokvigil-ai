@@ -135,23 +135,23 @@ class TestGatekeeperAndVSA(unittest.TestCase):
         self.assertEqual(result["tactical_levels"]["risk_reward_ratio"], "1:2.5")
 
     def test_06_telegram_inline_keyboard_urls(self):
-        """Telegram inline keyboard should contain TradingView and ICICI Direct links."""
+        """Telegram inline keyboard should contain StokVigil Chart and ICICI Direct links."""
         kb = build_telegram_inline_keyboard("RELIANCE.NS")
         self.assertIn("inline_keyboard", kb)
         buttons = kb["inline_keyboard"]
         flat_buttons = [btn for row in buttons for btn in row]
         button_texts = [b["text"] for b in flat_buttons]
         
-        self.assertTrue(any("TradingView" in t for t in button_texts))
+        self.assertTrue(any("StokVigil Chart" in t for t in button_texts))
         self.assertTrue(any("ICICI Direct" in t for t in button_texts))
         self.assertTrue(any("NSE India" in t for t in button_texts))
         
-        # Verify TradingView clean symbol link
-        tv_btn = next(b for b in flat_buttons if "TradingView" in b["text"])
+        # Verify StokVigil Chart clean symbol link
+        tv_btn = next(b for b in flat_buttons if "StokVigil Chart" in b["text"])
         self.assertIn("NSE:RELIANCE", tv_btn["url"])
 
     def test_07_bse_stock_telegram_and_exchange_routing(self):
-        """BSE stocks (.BO) should correctly route to BSE TradingView charts and BSE India links."""
+        """BSE stocks (.BO) should correctly route to BSE StokVigil charts and BSE India links."""
         from app.notifications import format_telegram_alert
         
         bse_symbol = "500325.BO"
@@ -164,8 +164,8 @@ class TestGatekeeperAndVSA(unittest.TestCase):
         bse_live = next(b for b in buttons if "BSE India" in b["text"])
         self.assertIn("bseindia.com", bse_live["url"])
         
-        # TradingView link should point to BSE
-        tv_btn = next(b for b in buttons if "TradingView" in b["text"])
+        # StokVigil chart link should point to BSE
+        tv_btn = next(b for b in buttons if "StokVigil Chart" in b["text"])
         self.assertIn("BSE:500325", tv_btn["url"])
         
         # Formatted card should state (BSE)
@@ -178,6 +178,17 @@ class TestGatekeeperAndVSA(unittest.TestCase):
             confluence_drivers=["BSE volume breakout"]
         )
         self.assertIn("(BSE)", card)
+
+    def test_07b_custom_web_portal_deep_link(self):
+        """When WEB_PORTAL_URL is configured, StokVigil Chart button should deep link to web portal."""
+        from unittest.mock import patch
+        from app.config import settings
+        
+        with patch.object(settings, "WEB_PORTAL_URL", "https://app.stokvigil.com"):
+            kb = build_telegram_inline_keyboard("TCS.NS")
+            buttons = [btn for row in kb["inline_keyboard"] for btn in row]
+            sv_btn = next(b for b in buttons if "StokVigil Chart" in b["text"])
+            self.assertEqual(sv_btn["url"], "https://app.stokvigil.com/chart?symbol=TCS&exchange=NSE")
 
     def test_08_adx_trend_filter(self):
         """14-period ADX should differentiate strong trend from choppy sideways market."""

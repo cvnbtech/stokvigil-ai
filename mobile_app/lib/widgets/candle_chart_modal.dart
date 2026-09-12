@@ -150,6 +150,7 @@ class _CandleChartModalState extends State<CandleChartModal> {
       color: #94a3b8;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
+      position: relative;
     }
     #chart {
       width: 100%;
@@ -167,6 +168,21 @@ class _CandleChartModalState extends State<CandleChartModal> {
 </head>
 <body>
   <div id="chart"></div>
+  <!-- StokVigil Brand Watermark -->
+  <div style="position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; z-index:1; opacity:0.06; user-select:none;">
+    <div style="font-size:72px; font-weight:900; letter-spacing:6px; color:#38bdf8;">SV</div>
+    <div style="font-size:12px; font-weight:800; letter-spacing:8px; color:#ffffff; margin-top:2px;">STOKVIGIL AI</div>
+  </div>
+  <!-- Floating Brand Pill Badge -->
+  <div style="position:absolute; top:8px; left:8px; display:flex; flex-direction:column; gap:2px; background:rgba(8,11,22,0.85); backdrop-filter:blur(8px); border:1px solid rgba(6,182,212,0.4); border-radius:7px; padding:3px 8px; z-index:2; pointer-events:none; box-shadow:0 3px 10px rgba(0,0,0,0.5), 0 0 8px rgba(6,182,212,0.15);">
+    <div style="display:flex; align-items:center; gap:5px;">
+      <div style="display:flex; align-items:center; gap:2px; padding:1px 4px; border-radius:3px; background:linear-gradient(135deg, #06b6d4, #10b981); font-size:8px; font-weight:900; color:#fff; letter-spacing:0.5px;"><span>⚡</span>SV</div>
+      <span style="font-size:9.5px; font-weight:900; color:#ffffff; letter-spacing:0.5px;">STOKVIGIL AI</span>
+      <span style="font-size:8px; color:#06b6d4; font-weight:700;">•</span>
+      <span style="font-size:8.5px; font-weight:700; color:#94a3b8; letter-spacing:0.4px;">${_selectedInterval.toUpperCase()}</span>
+    </div>
+    <span style="font-size:7.5px; color:#64748b; font-weight:600; letter-spacing:0.3px;">StokVigil Watchtower</span>
+  </div>
   <script>
     (function initChart() {
       if (typeof window.LightweightCharts === 'undefined') {
@@ -399,6 +415,27 @@ class _CandleChartModalState extends State<CandleChartModal> {
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF06B6D4), Color(0xFF6366F1)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        'SV',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     Text(
                       cleanSym,
                       style: const TextStyle(

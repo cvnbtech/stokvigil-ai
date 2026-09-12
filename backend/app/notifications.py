@@ -1,6 +1,7 @@
 import html as html_lib
 import json
 import logging
+import os
 import httpx
 from typing import Optional, Dict, Any, List
 from app.config import settings
@@ -230,7 +231,7 @@ def format_telegram_alert(
 def build_telegram_inline_keyboard(symbol: str) -> dict:
     """
     Builds interactive institutional inline buttons for Telegram alert:
-    1. Direct live TradingView interactive technical chart (NSE or BSE)
+    1. Direct live StokVigil interactive chart (Web PWA or exchange routed)
     2. Deep link to ICICI Direct Portfolio / Order execution
     3. Official NSE / BSE India quote & corporate actions
     """
@@ -243,10 +244,18 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
         if is_bse else
         f"https://www.nseindia.com/get-quotes/equity?symbol={clean_sym}"
     )
+
+    # Deep link to custom StokVigil Web PWA if configured, otherwise direct exchange chart
+    web_portal_base = (getattr(settings, "WEB_PORTAL_URL", None) or os.getenv("WEB_PORTAL_URL", "")).strip()
+    if web_portal_base:
+        chart_url = f"{web_portal_base.rstrip('/')}/chart?symbol={clean_sym}&exchange={chart_exchange}"
+    else:
+        chart_url = f"https://in.tradingview.com/chart/?symbol={chart_exchange}:{clean_sym}"
+
     return {
         "inline_keyboard": [
             [
-                {"text": "📈 TradingView Chart", "url": f"https://in.tradingview.com/chart/?symbol={chart_exchange}:{clean_sym}"},
+                {"text": "📊 StokVigil Chart", "url": chart_url},
                 {"text": "💼 ICICI Direct", "url": "https://secure.icicidirect.com"}
             ],
             [

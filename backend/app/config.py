@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_WEBHOOK_SECRET: str = ""
     
+    # Web Portal / Deep Link URL (e.g. https://app.stokvigil.com)
+    WEB_PORTAL_URL: str = ""
+    
     # Cron Security Token (Supports both CRON_SECRET_KEY and CRON_SECRET)
     CRON_SECRET_KEY: str = ""
     CRON_SECRET: Optional[str] = None
@@ -63,7 +66,7 @@ class Settings(BaseSettings):
         return ["*"]
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", "../.env")
         extra = "allow"
 
 settings = Settings()
