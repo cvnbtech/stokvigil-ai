@@ -28,7 +28,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
   void _shareAlphaCard(StokAlert alert, String targetStr, String slStr, String rrStr) {
     final shareText = '''⚡ STOKVIGIL AI ALPHA SIGNAL ⚡
 
-🎯 Symbol: #${alert.symbol} (NSE)
+🎯 Symbol: #${alert.cleanSymbol} (${alert.exchange})
 📈 Confluence Score: ${alert.impactScore}/100
 🔥 Catalyst: ${alert.catalystType}
 
@@ -58,7 +58,28 @@ Automated surveillance via StokVigil AI 🛡️''';
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text("1-TAP SHAREABLE ALPHA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppTheme.cyan)),
-                    Text(alert.symbol, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                    Row(
+                      children: [
+                        Text(alert.cleanSymbol, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                          ),
+                          child: Text(
+                            alert.exchange,
+                            style: TextStyle(
+                              color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
                 Container(
@@ -359,19 +380,47 @@ Automated surveillance via StokVigil AI 🛡️''';
                                   const SizedBox(height: 12),
 
                                   // Symbol & Title
-                                  RichText(
-                                    text: TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: "[${alert.symbol}] ",
-                                          style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 15),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                        margin: const EdgeInsets.only(right: 6, top: 1),
+                                        decoration: BoxDecoration(
+                                          color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.12),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
                                         ),
-                                        TextSpan(
-                                          text: alert.alertTitle,
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, height: 1.3),
+                                        child: Text(
+                                          alert.exchange,
+                                          style: TextStyle(
+                                            color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 9,
+                                          ),
                                         ),
-                                      ],
-                                    ),
+                                      ),
+                                      Expanded(
+                                        child: RichText(
+                                          text: TextSpan(
+                                            children: [
+                                              TextSpan(
+                                                text: "[${alert.cleanSymbol}] ",
+                                                style: TextStyle(
+                                                  color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 14.5,
+                                                ),
+                                              ),
+                                              TextSpan(
+                                                text: alert.alertTitle,
+                                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, height: 1.3),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   const SizedBox(height: 12),
 

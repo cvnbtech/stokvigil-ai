@@ -17,7 +17,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled, whitelisted CORS).
 - **Backend API**: Python 3.11 + FastAPI containerized for Google Cloud Run (2M free requests/mo) / Render.
 - **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC).
-- **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-2.5-flash` / `gemini-1.5-flash` with the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
+- **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-3.7-flash` / `gemini-3.6-flash` / `gemini-3.5-flash-lite` (via Interactions API & `generate_content`) with the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
 - **Quantitative Engines**:
   - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation.
   - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
@@ -97,8 +97,8 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
 - **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
 
 ### 7. Model Hierarchy
-1. **Primary Model**: `gemini-2.5-flash` via official `google-genai` SDK — Ultra low-latency financial catalyst reasoning with strict JSON schema.
-2. **Fallback Model**: `gemini-1.5-flash` — High-efficiency secondary engine.
+1. **Primary Model**: `gemini-3.7-flash` via official `google-genai` SDK Interactions API — Ultra low-latency financial catalyst reasoning with strict JSON schema.
+2. **Secondary Models**: `gemini-3.6-flash` and `gemini-3.5-flash-lite` — High-efficiency secondary fallback engines.
 3. **Deterministic Rule Engine**: 100% offline mathematical engine ensuring continuous uptime if external network APIs are unavailable.
 
 ### Multi-Dimensional Signal Classifications

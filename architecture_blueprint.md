@@ -179,8 +179,8 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 4. **24h Catalysts & Macro Context (20%)**: Order wins, Quarterly earnings surprises, NIFTY 50 / SENSEX / Sector trend, and India VIX regime.
 
 ### Model Execution Fallback Chain
-1. **Primary Model**: `gemini-2.5-flash` via official `google-genai` SDK — Ultra low-latency structured JSON analysis.
-2. **Secondary Model**: `gemini-1.5-flash` — High-speed structured JSON fallback.
+1. **Primary Model**: `gemini-3.7-flash` via official `google-genai` SDK Interactions API — Ultra low-latency structured JSON analysis.
+2. **Secondary Models**: `gemini-3.6-flash` and `gemini-3.5-flash-lite` — High-speed structured JSON fallback.
 3. **Deterministic Rule Engine**: 100% offline mathematical algorithm ensuring zero downtime.
 
 ### Multi-Timeframe & Macro Veto Guardrails

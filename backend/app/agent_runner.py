@@ -210,9 +210,17 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
             except (ValueError, TypeError):
                 cmp = avg_p
 
+            stock_name = str(item.get('stock_name') or item.get('company_name') or item.get('stock_description') or '').strip()
+            bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+            is_bse = clean_symbol.endswith(".BO") or str(item.get('exchange_code', '')).upper() == "BSE" or (bare_symbol.isdigit() and len(bare_symbol) == 6)
+
             if clean_symbol and qty > 0:
                 return {
                     "symbol": clean_symbol,
+                    "clean_symbol": bare_symbol,
+                    "name": stock_name or bare_symbol,
+                    "stock_name": stock_name or bare_symbol,
+                    "exchange": "BSE" if is_bse else "NSE",
                     "quantity": qty,
                     "average_price": avg_p,
                     "current_market_price": cmp,
@@ -283,8 +291,11 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
         profit_margins = info.get('profitMargins')
         return_on_equity = info.get('returnOnEquity')
         
+        company_name = info.get('shortName') or info.get('longName')
+        
         return {
             "symbol": clean_sym,
+            "name": company_name,
             "price": current_price,
             "pe_ratio": round(pe_ratio, 2) if pe_ratio else None,
             "forward_pe": round(forward_pe, 2) if forward_pe else None,
@@ -330,6 +341,51 @@ def fetch_stock_news(symbol: str) -> List[Dict[str, str]]:
 # ==========================================
 # 2. SENIOR TRADING ANALYST AI ENGINE
 # ==========================================
+
+def _clean_json_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:]
+    elif cleaned.startswith("```"):
+        cleaned = cleaned[3:]
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3]
+    return cleaned.strip()
+
+
+def _parse_and_validate_ai_response(
+    raw_text: str,
+    technicals: Dict[str, Any],
+    flow_data: Dict[str, Any],
+    forensics: Dict[str, Any],
+    symbol: str,
+    model_name: str
+) -> Optional[Dict[str, Any]]:
+    if not raw_text:
+        return None
+    try:
+        cleaned = _clean_json_text(raw_text)
+        parsed = json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            return None
+        # Only retain factor_breakdown if genuinely evaluated by the AI model.
+        # Zero hardcoded or fabricated values — never invent fake scores.
+        raw_factors = parsed.get("factor_breakdown")
+        if isinstance(raw_factors, dict) and any(raw_factors.values()):
+            clean_factors = {}
+            for k in ["technicals", "flow", "forensics", "catalysts"]:
+                val = raw_factors.get(k)
+                if val is not None and isinstance(val, (int, float)) and 0 <= val <= 100:
+                    clean_factors[k] = int(val)
+            parsed["factor_breakdown"] = clean_factors if clean_factors else None
+        else:
+            parsed["factor_breakdown"] = None
+
+        return parsed
+    except Exception as parse_err:
+        logger.warning(f"Failed to parse AI JSON response for {symbol} ({model_name}): {parse_err}")
+        return None
+
 
 async def evaluate_stock_with_ai(
     symbol: str,
@@ -457,26 +513,45 @@ Output ONLY valid JSON matching this exact structure:
 
     if settings.GEMINI_API_KEY:
         # Modern Official Google GenAI SDK (google.genai)
+        # Google Gemini 3 models (gemini-2.5-* and older models are deprecated by Google)
+        gemini_models = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
         try:
             from google import genai
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            for model_name in ['gemini-3.6-flash', 'gemini-2.5-flash']:
+
+            # 1. Attempt Google-recommended Interactions API first
+            for model_name in gemini_models:
+                try:
+                    interaction = client.interactions.create(
+                        model=model_name,
+                        input=prompt,
+                        response_format=[{"type": "text", "mime_type": "application/json"}]
+                    )
+                    raw_text = getattr(interaction, "output_text", None) or ""
+                    parsed = _parse_and_validate_ai_response(
+                        raw_text, technicals, flow_data, forensics, symbol, f"Interactions/{model_name}"
+                    )
+                    if parsed:
+                        logger.info(f"Successfully evaluated {symbol} using Google GenAI Interactions API '{model_name}'.")
+                        return parsed
+                except Exception as inter_err:
+                    logger.debug(f"Interactions API '{model_name}' attempt for {symbol}: {inter_err}")
+
+            # 2. Attempt models.generate_content across supported Gemini 3 models
+            for model_name in gemini_models:
                 try:
                     response = client.models.generate_content(
                         model=model_name,
                         contents=prompt,
                         config={"response_mime_type": "application/json"}
                     )
-                    parsed = json.loads(response.text)
-                    if "factor_breakdown" not in parsed:
-                        parsed["factor_breakdown"] = {
-                            "technicals": technicals.get("technical_score", 65),
-                            "flow": flow_data.get("flow_score", 60),
-                            "forensics": forensics.get("forensic_score", 70),
-                            "catalysts": min(95, max(40, parsed.get("confluence_score", 75)))
-                        }
-                    logger.info(f"Successfully evaluated {symbol} using Google GenAI SDK '{model_name}'.")
-                    return parsed
+                    raw_text = getattr(response, "text", None) or ""
+                    parsed = _parse_and_validate_ai_response(
+                        raw_text, technicals, flow_data, forensics, symbol, f"GenerateContent/{model_name}"
+                    )
+                    if parsed:
+                        logger.info(f"Successfully evaluated {symbol} using Google GenAI SDK '{model_name}'.")
+                        return parsed
                 except Exception as model_err:
                     logger.warning(f"GenAI SDK '{model_name}' attempt failed for {symbol}: {model_err}")
                     continue
@@ -485,20 +560,23 @@ Output ONLY valid JSON matching this exact structure:
             try:
                 import google.generativeai as legacy_genai
                 legacy_genai.configure(api_key=settings.GEMINI_API_KEY)
-                model = legacy_genai.GenerativeModel('gemini-3.6-flash')
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json"}
-                )
-                parsed = json.loads(response.text)
-                if "factor_breakdown" not in parsed:
-                    parsed["factor_breakdown"] = {
-                        "technicals": technicals.get("technical_score", 65),
-                        "flow": flow_data.get("flow_score", 60),
-                        "forensics": forensics.get("forensic_score", 70),
-                        "catalysts": min(95, max(40, parsed.get("confluence_score", 75)))
-                    }
-                return parsed
+                for model_name in ['gemini-3.7-flash', 'gemini-3.6-flash']:
+                    try:
+                        model = legacy_genai.GenerativeModel(model_name)
+                        response = model.generate_content(
+                            prompt,
+                            generation_config={"response_mime_type": "application/json"}
+                        )
+                        raw_text = getattr(response, "text", None) or ""
+                        parsed = _parse_and_validate_ai_response(
+                            raw_text, technicals, flow_data, forensics, symbol, f"Legacy/{model_name}"
+                        )
+                        if parsed:
+                            logger.info(f"Successfully evaluated {symbol} using legacy AI model '{model_name}'.")
+                            return parsed
+                    except Exception as leg_err:
+                        logger.warning(f"Legacy model '{model_name}' fallback failed for {symbol}: {leg_err}")
+                        continue
             except Exception as leg_err:
                 logger.warning(f"Legacy model fallback failed for {symbol}: {leg_err}")
         except Exception as e:
@@ -580,7 +658,7 @@ def compute_deterministic_confluence(
 
     tech_score = technicals.get("technical_score", 50)
     flow_score = flow_data.get("flow_score", 50)
-    forensic_score = forensics.get("forensic_score", 60)
+    forensic_score = forensics.get("forensic_score", 50)
     
     # News & Catalyst Scoring
     news_score = 50
@@ -948,8 +1026,17 @@ async def evaluate_single_symbol_full(
             holding_info=holding_info
         )
 
+    stock_name = (
+        financials.get("name") or 
+        (holding_info.get("name") if holding_info else None) or 
+        (holding_info.get("stock_name") if holding_info else None) or 
+        symbol.replace(".BO", "").replace(".NS", "")
+    )
+
     pack = {
         "symbol": symbol,
+        "clean_symbol": symbol.replace(".BO", "").replace(".NS", "").strip().upper(),
+        "name": stock_name,
         "technicals": technicals,
         "financials": financials,
         "flow_data": flow_data,
@@ -1056,12 +1143,16 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             watchlist_upserts = []
             for h in holdings:
                 sym = h.get('symbol')
+                clean_s = h.get('clean_symbol') or (sym.replace(".BO", "").replace(".NS", "").strip().upper() if sym else "")
                 if sym:
                     symbols.add(sym)
                     holdings_map[sym] = h
+                    if clean_s:
+                        symbols.add(clean_s)
+                        holdings_map[clean_s] = h
                     watchlist_upserts.append({
                         "user_id": user_id,
-                        "symbol": sym,
+                        "symbol": clean_s or sym,
                         "is_auto_synced": True
                     })
             if watchlist_upserts:
@@ -1211,12 +1302,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         "vwap": technicals.get("vwap"),
                         "delivery_pct": flow_data.get("delivery_pct"),
                         "vsa_regime": flow_data.get("vsa_regime"),
-                        "factor_breakdown": analysis.get("factor_breakdown") or {
-                            "technicals": technicals.get("technical_score", 65),
-                            "flow": flow_data.get("flow_score", 60),
-                            "forensics": forensics.get("forensic_score", 75),
-                            "catalysts": min(95, max(40, confluence_score))
-                        }
+                        "factor_breakdown": analysis.get("factor_breakdown")
                     },
                     holding_guidance=holding_guidance
                 )
@@ -1235,15 +1321,29 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             }
             resolved_catalyst = normalized_catalyst if normalized_catalyst in VALID_CATALYST_TYPES else "NEWS_CATALYST"
 
+            clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+            is_bse = symbol.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+            exch = "BSE" if is_bse else "NSE"
+            stock_name = (
+                financials.get("name") or 
+                (holding_info.get("name") if holding_info else None) or 
+                (holding_info.get("stock_name") if holding_info else None) or 
+                clean_sym
+            )
+
             # Persist Alert in Supabase Ledger
             alert_record = {
                 "user_id": user_id,
-                "symbol": symbol,
+                "symbol": clean_sym,
                 "alert_title": alert_title,
                 "catalyst_type": resolved_catalyst,
                 "impact_score": confluence_score,
                 "factual_reasons": confluence_drivers,
                 "metrics_snapshot": {
+                    "clean_symbol": clean_sym,
+                    "full_symbol": symbol,
+                    "company_name": stock_name,
+                    "exchange": exch,
                     "action_bias": action_bias,
                     "tactical_levels": tactical_levels,
                     "technicals": technicals,
@@ -1251,12 +1351,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     "financials": financials,
                     "macro_data": macro_data,
                     "demat_position": demat_pos,
-                    "factor_breakdown": analysis.get("factor_breakdown") or {
-                        "technicals": technicals.get("technical_score", 65),
-                        "flow": flow_data.get("flow_score", 60),
-                        "forensics": forensics.get("forensic_score", 75),
-                        "catalysts": min(95, max(40, confluence_score))
-                    }
+                    "factor_breakdown": analysis.get("factor_breakdown")
                 },
                 "sent_via_fcm": fcm_sent,
                 "sent_via_telegram": telegram_sent,

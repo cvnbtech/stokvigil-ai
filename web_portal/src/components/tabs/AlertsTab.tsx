@@ -209,7 +209,21 @@ export default function AlertsTab({
             </div>
 
             <div style={{ fontSize: 13.5, fontWeight: 900, color: C.white, marginBottom: 10, lineHeight: 1.4 }}>
-              <span style={{ color: C.cyan, marginRight: 6 }}>[{a.symbol}]</span>
+              <span style={{
+                color: a.exchange === "BSE" || a.symbol?.endsWith(".BO") ? C.amber : C.cyan,
+                marginRight: 6
+              }}>
+                [{(a.symbol || "").replace(/\.(BO|NS)$/i, '')}]
+              </span>
+              <span style={{
+                fontSize: 9.5, fontWeight: 800,
+                color: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? C.amber : C.cyan,
+                background: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
+                border: `1px solid ${(a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
+                borderRadius: 4, padding: "1px 5px", marginRight: 8, verticalAlign: "middle"
+              }}>
+                {a.exchange || (a.symbol?.endsWith(".BO") ? "BSE" : "NSE")}
+              </span>
               {a.title}
             </div>
 

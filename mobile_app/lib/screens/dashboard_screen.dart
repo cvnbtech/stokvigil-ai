@@ -674,7 +674,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       ),
                                       child: Center(
                                         child: Text(
-                                          item.symbol.substring(0, item.symbol.length > 2 ? 2 : item.symbol.length),
+                                          item.cleanSymbol.substring(0, item.cleanSymbol.length > 2 ? 2 : item.cleanSymbol.length),
                                           style: TextStyle(
                                             color: pnlPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
                                             fontWeight: FontWeight.w900,
@@ -688,14 +688,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            item.symbol,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  item.displayName,
+                                                  overflow: TextOverflow.ellipsis,
+                                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: item.exch == 'BSE' ? Colors.amber.withOpacity(0.15) : AppTheme.primaryCyan.withOpacity(0.15),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: item.exch == 'BSE' ? Colors.amber.withOpacity(0.4) : AppTheme.primaryCyan.withOpacity(0.4),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  item.exch,
+                                                  style: TextStyle(
+                                                    color: item.exch == 'BSE' ? Colors.amber : AppTheme.primaryCyan,
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w800,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            "Qty: ${item.quantity.toInt()} • Avg: ₹${item.avgPrice}",
+                                            "${item.cleanSymbol} • Qty: ${item.quantity.toInt()} • Avg: ₹${item.avgPrice}",
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
                                           ),

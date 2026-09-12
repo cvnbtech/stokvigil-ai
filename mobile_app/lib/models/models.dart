@@ -29,6 +29,8 @@ class UserProfile {
 
 class PortfolioHolding {
   final String symbol;
+  final String? name;
+  final String? exchange;
   final double quantity;
   final double avgPrice;
   final double currentPrice;
@@ -40,9 +42,14 @@ class PortfolioHolding {
 
   double get currentVal => currentValue;
   double get pnlPct => pnlPercent;
+  String get cleanSymbol => symbol.replaceAll('.BO', '').replaceAll('.NS', '').trim().toUpperCase();
+  String get exch => exchange ?? (symbol.toUpperCase().endsWith('.BO') ? 'BSE' : 'NSE');
+  String get displayName => (name != null && name!.isNotEmpty && name != symbol && !name!.endsWith('.BO')) ? name! : cleanSymbol;
 
   PortfolioHolding({
     required this.symbol,
+    this.name,
+    this.exchange,
     required this.quantity,
     required this.avgPrice,
     required this.currentPrice,
@@ -57,8 +64,11 @@ class PortfolioHolding {
         pnlPercent = pnlPercent ?? pnlPct ?? 0.0;
 
   factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
+    final sym = (json['clean_symbol'] ?? json['symbol'] ?? '').toString();
     return PortfolioHolding(
-      symbol: json['symbol'] ?? '',
+      symbol: sym,
+      name: json['name'] ?? json['stock_name'],
+      exchange: json['exchange'],
       quantity: (json['quantity'] ?? 0).toDouble(),
       avgPrice: (json['avg_price'] ?? 0).toDouble(),
       currentPrice: (json['current_price'] ?? 0).toDouble(),
@@ -84,6 +94,9 @@ class StokAlert {
   final bool sentViaTelegram;
   final DateTime createdAt;
 
+  String get cleanSymbol => symbol.replaceAll('.BO', '').replaceAll('.NS', '').trim().toUpperCase();
+  String get exchange => metricsSnapshot['exchange'] ?? (symbol.toUpperCase().endsWith('.BO') ? 'BSE' : 'NSE');
+  String get companyName => metricsSnapshot['company_name'] ?? metricsSnapshot['stock_name'] ?? cleanSymbol;
   String get actionBias => metricsSnapshot['action_bias'] ?? 'HOLD_NEUTRAL';
   Map<String, dynamic> get tacticalLevels => Map<String, dynamic>.from(metricsSnapshot['tactical_levels'] ?? {});
   String? get entryRange => tacticalLevels['entry_range'];

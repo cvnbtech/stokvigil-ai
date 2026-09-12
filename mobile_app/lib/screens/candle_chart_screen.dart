@@ -484,7 +484,9 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cleanSym = widget.symbol.trim().toUpperCase();
+    final rawSym = widget.symbol.trim().toUpperCase();
+    final cleanSym = rawSym.replaceAll('.BO', '').replaceAll('.NS', '');
+    final exchange = rawSym.endsWith('.BO') ? 'BSE' : 'NSE';
     final candles = (_candlePayload?['candles'] as List?) ?? [];
 
     num? lastPrice;
@@ -541,6 +543,23 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
                             color: Colors.white,
                             fontWeight: FontWeight.w900,
                             fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                          ),
+                          child: Text(
+                            exchange,
+                            style: TextStyle(
+                              color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                            ),
                           ),
                         ),
                         if (lastPrice != null) ...[

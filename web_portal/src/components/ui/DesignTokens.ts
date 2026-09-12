@@ -37,6 +37,10 @@ export const C = {
 
 export interface HoldingItem {
   symbol: string;
+  name?: string;
+  exchange?: string;
+  clean_symbol?: string;
+  full_symbol?: string;
   qty: number;
   avg: number;
   price: number;

@@ -9,8 +9,11 @@ import urllib.parse
 import urllib.request
 import threading
 import concurrent.futures
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from collections import OrderedDict
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,8 +41,8 @@ for _h in logging.root.handlers:
     _h.addFilter(_filter)
 logger = logging.getLogger("stokvigil.main")
 
-# Strict alphanumeric regex whitelist for stock symbols
-STOCK_SYMBOL_REGEX = re.compile(r'^[A-Z0-9_\-&]{1,20}$')
+# Strict alphanumeric regex whitelist for stock symbols (supports .NS and .BO exchange suffixes)
+STOCK_SYMBOL_REGEX = re.compile(r'^[A-Z0-9_\-&.]{1,25}$')
 
 # In-Memory Sliding Window Rate Limiter (Max 120 req/min per client IP)
 _RATE_LIMIT_BUCKETS: Dict[str, List[float]] = {}
@@ -465,17 +468,21 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
     Strictly returns is_valid: False for dummy or non-traded symbols (e.g. NE, ASDF).
     """
     sym = symbol.strip().upper()
-    if len(sym) < 2:
+    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+    is_explicit_bse = sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+    candidate_suffixes = [(".BO", "BSE"), (".NS", "NSE")] if is_explicit_bse else [(".NS", "NSE"), (".BO", "BSE")]
+
+    if len(clean_sym) < 2 and not clean_sym.isdigit():
         return {
             "is_valid": False,
-            "symbol": sym,
+            "symbol": clean_sym or sym,
             "error": f"'{sym}' is too short. Please enter a valid stock symbol."
         }
 
     if not STOCK_SYMBOL_REGEX.match(sym):
         return {
             "is_valid": False,
-            "symbol": sym,
+            "symbol": clean_sym or sym,
             "error": f"'{sym}' contains invalid characters. Use valid alphanumeric stock symbols."
         }
 
@@ -486,7 +493,7 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
 
     # 1. Fast quote API multi-exchange lookup (NSE and BSE)
     try:
-        symbols_param = f"{sym}.NS,{sym}.BO"
+        symbols_param = f"{clean_sym}.BO,{clean_sym}.NS" if is_explicit_bse else f"{clean_sym}.NS,{clean_sym}.BO"
         url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols_param}"
         req = urllib.request.Request(url, headers=search_headers)
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -497,10 +504,11 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
                 price = q.get("regularMarketPrice")
                 if price is not None and price > 0:
                     exch = "NSE" if q_sym.endswith(".NS") else "BSE"
-                    name = q.get("shortName") or q.get("longName") or f"{sym} ({exch})"
+                    name = q.get("shortName") or q.get("longName") or f"{clean_sym} ({exch})"
                     return {
                         "is_valid": True,
-                        "symbol": sym,
+                        "symbol": clean_sym,
+                        "clean_symbol": clean_sym,
                         "name": name,
                         "exchange": exch,
                         "price": price,
@@ -510,9 +518,9 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
         logger.warning(f"Fast quote validation for {sym} failed: {e}")
 
     # 2. Fast chart API validation
-    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+    for suffix, exch in candidate_suffixes:
         try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
+            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_sym}{suffix}?range=1d&interval=1d"
             req = urllib.request.Request(url, headers=search_headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
@@ -521,47 +529,96 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
                     meta = res_list[0].get("meta", {})
                     price = meta.get("regularMarketPrice")
                     if price is not None and price > 0:
-                        name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
+                        name = meta.get("shortName") or meta.get("longName") or f"{clean_sym} ({exch})"
                         return {
                             "is_valid": True,
-                            "symbol": sym,
+                            "symbol": clean_sym,
+                            "clean_symbol": clean_sym,
                             "name": name,
                             "exchange": exch,
                             "price": price,
-                            "full_symbol": f"{sym}{suffix}"
+                            "full_symbol": f"{clean_sym}{suffix}"
                         }
         except Exception:
             pass
 
     # 3. Direct fast_info ticker check
-    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+    for suffix, exch in candidate_suffixes:
         try:
-            t = yf.Ticker(f"{sym}{suffix}")
+            t = yf.Ticker(f"{clean_sym}{suffix}")
             fast = t.fast_info
             price = getattr(fast, "last_price", None)
             if price is not None and price > 0:
+                clean_name = f"{clean_sym} ({exch})"
+                try:
+                    clean_name = getattr(fast, "short_name", None) or getattr(fast, "long_name", None) or clean_name
+                except Exception:
+                    pass
                 return {
                     "is_valid": True,
-                    "symbol": sym,
-                    "name": f"{sym} ({exch})",
+                    "symbol": clean_sym,
+                    "clean_symbol": clean_sym,
+                    "name": clean_name,
                     "exchange": exch,
                     "price": float(price),
-                    "full_symbol": f"{sym}{suffix}"
+                    "full_symbol": f"{clean_sym}{suffix}"
                 }
         except Exception:
             continue
 
     return {
         "is_valid": False,
-        "symbol": sym,
+        "symbol": clean_sym or sym,
         "error": f"'{sym}' is not a valid listed stock on NSE or BSE."
     }
 
 
 # In-memory bounded quote cache with max 2000 items (FIFO eviction) to prevent memory exhaustion
 _QUOTE_CACHE: OrderedDict[str, Dict[str, Any]] = OrderedDict()
-_QUOTE_CACHE_TTL = 5.0  # 5 seconds TTL
+_QUOTE_CACHE_TTL = 20.0  # Default 20 seconds during market hours
 _MAX_QUOTE_CACHE_SIZE = 2000
+
+# Indian Standard Time (IST = UTC+5:30) for accurate market hour detection
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def is_indian_market_open() -> bool:
+    """
+    Checks if Indian stock exchanges (NSE & BSE) are currently open for regular trading.
+    Regular trading hours: Monday through Friday, 09:15 AM to 03:30 PM IST.
+    """
+    now_ist = datetime.now(IST)
+    # Weekday check: Monday is 0, Sunday is 6. Weekends (Saturday=5, Sunday=6) are closed.
+    if now_ist.weekday() >= 5:
+        return False
+
+    market_open = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+    return market_open <= now_ist <= market_close
+
+def get_quote_cache_ttl() -> float:
+    """
+    Dynamic Market-Aware Cache TTL:
+    - Active Market Hours (Mon-Fri 09:15-15:30 IST): 20.0 seconds.
+      Ensures prices are fresh for intraday tracking while eliminating external API thrashing on tab switching.
+    - Off-Market Hours & Weekends: 300.0 seconds (5 minutes).
+      Closing prices are completely static, avoiding redundant network latency and returning in < 0.05ms.
+    """
+    return 20.0 if is_indian_market_open() else 300.0
+
+# Singleton Keep-Alive HTTP Session with connection pooling across all worker threads
+_QUOTE_HTTP_SESSION = requests.Session()
+_adapter = HTTPAdapter(
+    pool_connections=25,
+    pool_maxsize=25,
+    max_retries=Retry(total=1, backoff_factor=0.2, status_forcelist=[502, 503, 504])
+)
+_QUOTE_HTTP_SESSION.mount("https://", _adapter)
+_QUOTE_HTTP_SESSION.mount("http://", _adapter)
+_QUOTE_HTTP_SESSION.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://finance.yahoo.com/"
+})
 
 def _cache_set_quote(sym: str, data: Dict[str, Any], timestamp: float):
     if len(_QUOTE_CACHE) >= _MAX_QUOTE_CACHE_SIZE:
@@ -572,8 +629,12 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
     if not sym or not STOCK_SYMBOL_REGEX.match(sym):
         return None
 
+    clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+    is_explicit_bse = sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+    candidate_suffixes = [(".BO", "BSE"), (".NS", "NSE")] if is_explicit_bse else [(".NS", "NSE"), (".BO", "BSE")]
+
     # Step 1: Check in-memory market cache first (< 0.05ms)
-    cached_stock = market_cache.get_stock(sym)
+    cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
     if cached_stock:
         p = cached_stock.get("current_price") or cached_stock.get("price")
         if p and float(p) > 0:
@@ -597,10 +658,15 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 signal = bias.replace("_", " ")
                 signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
+            exch = "BSE" if is_explicit_bse else "NSE"
+            cached_name = cached_stock.get("name") or (f"{clean_sym} (BSE)" if is_explicit_bse else f"{clean_sym} (NSE)")
+
             return {
-                "symbol": sym,
-                "name": f"{sym} (NSE)",
-                "exchange": "NSE",
+                "symbol": clean_sym,
+                "full_symbol": f"{clean_sym}.BO" if is_explicit_bse else f"{clean_sym}.NS",
+                "clean_symbol": clean_sym,
+                "name": cached_name,
+                "exchange": exch,
                 "price": round(float(p), 2),
                 "change_pct": round(float(chg_pct), 2),
                 "is_positive": float(chg_pct) >= 0,
@@ -612,19 +678,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 "signal_type": signal_type
             }
 
-    # Step 2: Fetch via Yahoo Finance Chart API with resilient headers & dual-host fallbacks
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://finance.yahoo.com/"
-    }
-    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+    # Step 2: Fetch via Yahoo Finance Chart API with pooled Keep-Alive session & dual-host fallbacks
+    for suffix, exch in candidate_suffixes:
         for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
             try:
-                url = f"https://{host}/v8/finance/chart/{sym}{suffix}?range=1d&interval=1d"
-                req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=6) as r:
-                    data = json.loads(r.read().decode('utf-8'))
+                url = f"https://{host}/v8/finance/chart/{clean_sym}{suffix}?range=1d&interval=1d"
+                res = _QUOTE_HTTP_SESSION.get(url, timeout=2.5)
+                if res.status_code == 200:
+                    data = res.json()
                     res_list = data.get("chart", {}).get("result")
                     if res_list and len(res_list) > 0:
                         meta = res_list[0].get("meta", {})
@@ -632,13 +693,13 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         if p is not None and float(p) > 0:
                             prev = meta.get("chartPreviousClose") or meta.get("previousClose") or p
                             chg_pct = round(((float(p) - float(prev)) / float(prev)) * 100, 2) if prev else 0.0
-                            name = meta.get("shortName") or meta.get("longName") or f"{sym} ({exch})"
+                            name = meta.get("shortName") or meta.get("longName") or f"{clean_sym} ({exch})"
                             raw_high = meta.get("regularMarketDayHigh")
                             raw_low = meta.get("regularMarketDayLow")
                             day_high = round(float(raw_high), 2) if raw_high is not None else None
                             day_low = round(float(raw_low), 2) if raw_low is not None else None
 
-                            cached_stock = market_cache.get_stock(sym)
+                            cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
                             target_val = None
                             sl_val = None
                             signal = None
@@ -655,7 +716,9 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                     signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
                             return {
-                                "symbol": sym,
+                                "symbol": clean_sym,
+                                "full_symbol": f"{clean_sym}{suffix}",
+                                "clean_symbol": clean_sym,
                                 "name": name,
                                 "exchange": exch,
                                 "price": round(float(p), 2),
@@ -672,9 +735,9 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 continue
 
     # Step 3: Fast yfinance history fallback
-    for suffix, exch in [(".NS", "NSE"), (".BO", "BSE")]:
+    for suffix, exch in candidate_suffixes:
         try:
-            t = yf.Ticker(f"{sym}{suffix}")
+            t = yf.Ticker(f"{clean_sym}{suffix}")
             df = t.history(period="1d", interval="1d")
             if not df.empty:
                 last_row = df.iloc[-1]
@@ -683,7 +746,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 chg_pct = round(((p - prev) / prev) * 100, 2) if prev else 0.0
                 day_high = round(float(last_row["High"]), 2) if "High" in last_row else None
                 day_low = round(float(last_row["Low"]), 2) if "Low" in last_row else None
-                cached_stock = market_cache.get_stock(sym)
+                clean_name = f"{clean_sym} ({exch})"
+                try:
+                    fast = t.fast_info
+                    clean_name = getattr(fast, "short_name", None) or getattr(fast, "long_name", None) or clean_name
+                except Exception:
+                    pass
+
+                cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
                 target_val = None
                 sl_val = None
                 signal = None
@@ -700,8 +770,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
                 return {
-                    "symbol": sym,
-                    "name": f"{sym} ({exch})",
+                    "symbol": clean_sym,
+                    "full_symbol": f"{clean_sym}{suffix}",
+                    "clean_symbol": clean_sym,
+                    "name": clean_name,
                     "exchange": exch,
                     "price": round(p, 2),
                     "change_pct": chg_pct,
@@ -722,7 +794,7 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
 def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separated stock symbols")):
     """
     Fetches real-time market prices, day % change, and metadata for multiple stocks.
-    Supports 200+ stocks concurrently with 5-second RAM caching.
+    Supports 200+ stocks concurrently with market-aware dynamic RAM caching & Keep-Alive pooling.
     """
     import time
     import concurrent.futures
@@ -736,19 +808,30 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
     # Filter strictly valid symbols using regex whitelist
     unique_symbols = [s for s in list(dict.fromkeys(raw_symbols)) if STOCK_SYMBOL_REGEX.match(s)]
     now = time.time()
+    current_ttl = get_quote_cache_ttl()
     results: Dict[str, Dict[str, Any]] = {}
     missing_symbols: List[str] = []
 
-    # Check in-memory cache first (<1ms)
+    # Check in-memory cache first with dual-key matching (<0.05ms)
     for sym in unique_symbols:
         cached = _QUOTE_CACHE.get(sym)
-        if cached and (now - cached["timestamp"] < _QUOTE_CACHE_TTL):
+        if not cached:
+            clean_s = sym.replace(".NS", "").replace(".BO", "").strip()
+            cached = _QUOTE_CACHE.get(clean_s)
+
+        if cached and (now - cached["timestamp"] < current_ttl):
             results[sym] = cached["data"]
+            clean_k = cached["data"].get("clean_symbol")
+            if clean_k and clean_k not in results:
+                results[clean_k] = cached["data"]
+            full_k = cached["data"].get("full_symbol")
+            if full_k and full_k not in results:
+                results[full_k] = cached["data"]
         else:
             missing_symbols.append(sym)
 
     if missing_symbols:
-        max_workers = min(10, max(1, len(missing_symbols)))
+        max_workers = min(15, max(1, len(missing_symbols)))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             future_to_sym = {pool.submit(_fetch_single_stock_quote, sym): sym for sym in missing_symbols}
             for future in concurrent.futures.as_completed(future_to_sym):
@@ -756,8 +839,23 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
                 try:
                     q_data = future.result()
                     if q_data:
+                        # 1. Store under queried symbol
                         results[sym] = q_data
                         _cache_set_quote(sym, q_data, now)
+
+                        # 2. Dual-index by clean symbol (e.g. RELIANCE, TMCV)
+                        clean_k = q_data.get("clean_symbol")
+                        if clean_k:
+                            if clean_k not in results:
+                                results[clean_k] = q_data
+                            _cache_set_quote(clean_k, q_data, now)
+
+                        # 3. Dual-index by full exchange symbol (e.g. RELIANCE.NS, TMCV.BO)
+                        full_k = q_data.get("full_symbol")
+                        if full_k:
+                            if full_k not in results:
+                                results[full_k] = q_data
+                            _cache_set_quote(full_k, q_data, now)
                 except Exception as e:
                     logger.warning(f"Error fetching quote for {sym}: {e}")
 
@@ -1110,8 +1208,8 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]
         return
     try:
         sync_payload = [
-            {"user_id": user_id, "symbol": s.upper(), "is_auto_synced": True}
-            for s in symbols
+            {"user_id": user_id, "symbol": s.replace(".BO", "").replace(".NS", "").strip().upper(), "is_auto_synced": True}
+            for s in symbols if s
         ]
         db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
         logger.info(f"Background auto-synced {len(symbols)} Demat holdings to user_watchlists for user {mask_id(user_id)}")
@@ -1175,14 +1273,21 @@ def get_user_portfolio(
 
         # 1. High-Speed Live Market Price (<1KB quote fetch / in-memory quote cache)
         live_price = 0.0
-        cached_quote = _QUOTE_CACHE.get(clean_sym)
-        if cached_quote and (now - cached_quote.get("timestamp", 0) < _QUOTE_CACHE_TTL):
+        current_ttl = get_quote_cache_ttl()
+        cached_quote = _QUOTE_CACHE.get(clean_sym) or _QUOTE_CACHE.get(sym)
+        if cached_quote and (now - cached_quote.get("timestamp", 0) < current_ttl):
             live_price = float(cached_quote["data"].get("price", 0.0))
         else:
             quote_data = _fetch_single_stock_quote(clean_sym)
             if quote_data and quote_data.get("price"):
                 live_price = float(quote_data["price"])
                 _cache_set_quote(clean_sym, quote_data, now)
+                clean_k = quote_data.get("clean_symbol")
+                full_k = quote_data.get("full_symbol")
+                if clean_k:
+                    _cache_set_quote(clean_k, quote_data, now)
+                if full_k:
+                    _cache_set_quote(full_k, quote_data, now)
 
         # Fallback to ICICI broker tick / average price if live quote is unavailable
         if live_price <= 0.0:
@@ -1205,8 +1310,24 @@ def get_user_portfolio(
         chg_pct = float(quote_obj.get("change_pct", 0.0)) if quote_obj else 0.0
         day_pnl = round(current_val * (chg_pct / 100.0), 2) if chg_pct != 0.0 else 0.0
 
+        is_bse = sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6) or h.get("exchange") == "BSE"
+        exch = "BSE" if is_bse else (quote_obj.get("exchange", "NSE") if quote_obj else "NSE")
+        
+        proper_name = None
+        q_name = quote_obj.get("name") if quote_obj else None
+        if q_name and not q_name.endswith("(NSE)") and not q_name.endswith("(BSE)"):
+            proper_name = q_name
+        if not proper_name:
+            proper_name = h.get("name") or h.get("stock_name")
+        if not proper_name or proper_name == sym:
+            proper_name = q_name or clean_sym
+
         return {
-            "symbol": sym,
+            "symbol": clean_sym,
+            "clean_symbol": clean_sym,
+            "full_symbol": sym,
+            "name": proper_name,
+            "exchange": exch,
             "quantity": qty,
             "avg_price": avg_price,
             "current_price": round(live_price, 2),

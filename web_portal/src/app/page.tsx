@@ -144,33 +144,45 @@ export default function App() {
         setTotalPnl(data.total_pnl || 0);
         setTotalPnlPct(data.total_pnl_percent || 0);
         if (data.holdings && data.holdings.length > 0) {
-          setHoldings(data.holdings.map((h: any) => ({
-            symbol: h.symbol,
-            qty: h.quantity,
-            avg: h.avg_price,
-            price: h.current_price,
-            pnl: h.pnl,
-            pnlPct: h.pnl_percent,
-            dayHigh: h.day_high != null ? h.day_high : null,
-            dayLow: h.day_low != null ? h.day_low : null,
-            high52: h.high_52 != null ? h.high_52 : null,
-            sector: "Equity",
-            signal: h.signal || "MONITORING",
-            signalType: h.signal_type || "monitoring",
-            target: h.target ? (String(h.target).startsWith("₹") ? h.target : `₹${h.target}`) : "--",
-            sl: h.stop_loss ? (String(h.stop_loss).startsWith("₹") ? h.stop_loss : `₹${h.stop_loss}`) : "--",
-          })));
+          setHoldings(data.holdings.map((h: any) => {
+            const cleanSym = (h.clean_symbol || h.symbol || "").replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+            const exch = h.exchange || ((h.full_symbol || h.symbol || "").toUpperCase().endsWith(".BO") ? "BSE" : "NSE");
+            const displayName = h.name && h.name !== h.symbol && !h.name.endsWith(".BO") ? h.name : cleanSym;
+            return {
+              symbol: cleanSym,
+              clean_symbol: cleanSym,
+              full_symbol: h.full_symbol || h.symbol,
+              name: displayName,
+              exchange: exch,
+              qty: h.quantity,
+              avg: h.avg_price,
+              price: h.current_price,
+              pnl: h.pnl,
+              pnlPct: h.pnl_percent,
+              dayHigh: h.day_high != null ? h.day_high : null,
+              dayLow: h.day_low != null ? h.day_low : null,
+              high52: h.high_52 != null ? h.high_52 : null,
+              sector: `${exch} Equity`,
+              signal: h.signal || "MONITORING",
+              signalType: h.signal_type || "monitoring",
+              target: h.target ? (String(h.target).startsWith("₹") ? h.target : `₹${h.target}`) : "--",
+              sl: h.stop_loss ? (String(h.stop_loss).startsWith("₹") ? h.stop_loss : `₹${h.stop_loss}`) : "--",
+            };
+          }));
           portfolioLoaded = true;
 
           // Auto-sync Demat holdings into user_watchlists table
           if (supabase && uid) {
             try {
               for (const h of data.holdings) {
-                await supabase.from('user_watchlists').upsert({
-                  user_id: uid,
-                  symbol: h.symbol.toUpperCase(),
-                  is_auto_synced: true,
-                }, { onConflict: 'user_id,symbol' });
+                const cleanS = (h.clean_symbol || h.symbol || "").replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+                if (cleanS) {
+                  await supabase.from('user_watchlists').upsert({
+                    user_id: uid,
+                    symbol: cleanS,
+                    is_auto_synced: true,
+                  }, { onConflict: 'user_id,symbol' });
+                }
               }
               loadWatchlistData(uid);
             } catch (err) {
@@ -266,9 +278,17 @@ export default function App() {
               catalysts: Number(rawSnap.factor_breakdown.catalysts)
             } : null;
 
+            const rawAlertSym = (a.symbol || "").toUpperCase();
+            const cleanAlertSym = rawAlertSym.replace(/\.(BO|NS)$/i, "").trim();
+            const alertExch = rawSnap.exchange || (rawAlertSym.endsWith(".BO") ? "BSE" : "NSE");
+            const compName = rawSnap.company_name || rawSnap.financials?.name || rawSnap.stock_name || cleanAlertSym;
+
             return {
               id: a.id,
-              symbol: a.symbol,
+              symbol: cleanAlertSym,
+              fullSymbol: rawAlertSym,
+              exchange: alertExch,
+              companyName: compName,
               impact: a.impact_score != null ? a.impact_score : (a.confluence_score != null ? a.confluence_score : "-"),
               impactColor: (a.impact_score || 0) >= 80 ? "emerald" : "amber",
               catalyst: a.catalyst_type || "CATALYST",
@@ -324,12 +344,14 @@ export default function App() {
           }
 
           setWatchlist(data.map((w: any) => {
-            const sym = w.symbol.toUpperCase();
-            const q = quotesMap[sym] || {};
+            const rawSym = w.symbol.toUpperCase();
+            const cleanSym = rawSym.replace(/\.(BO|NS)$/i, "").trim();
+            const q = quotesMap[cleanSym] || quotesMap[rawSym] || {};
             const price = q.price !== undefined ? q.price : 0;
             const chgPct = q.change_pct !== undefined ? q.change_pct : 0.0;
             const isPos = q.is_positive !== undefined ? q.is_positive : chgPct >= 0;
-            const name = q.name || sym;
+            const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
+            const name = (q.name && q.name !== rawSym && !q.name.endsWith(".BO")) ? q.name : cleanSym;
             const signal = q.signal || "MONITORING";
             const signalType = q.signal_type || "monitoring";
             const target = q.target ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
@@ -337,7 +359,9 @@ export default function App() {
 
             return {
               id: w.id,
-              symbol: sym,
+              symbol: cleanSym,
+              fullSymbol: rawSym,
+              exchange: exch,
               name,
               auto: w.is_auto_synced || false,
               price,
@@ -715,10 +739,12 @@ export default function App() {
     setTickerSuggestions([]);
     setTicker("");
 
+    const cleanRaw = raw.replace(/\.(BO|NS)$/i, "").trim();
+
     if (user?.id && supabase) {
       await supabase.from('user_watchlists').upsert({
         user_id: user.id,
-        symbol: raw,
+        symbol: cleanRaw,
         is_auto_synced: false
       }, { onConflict: 'user_id,symbol' });
       loadWatchlistData(user.id);
@@ -726,8 +752,8 @@ export default function App() {
       setWatchlist(prev => [
         {
           id: Date.now().toString(),
-          symbol: raw,
-          name: stockName,
+          symbol: cleanRaw,
+          name: stockName && stockName !== raw ? stockName : cleanRaw,
           auto: false,
           price: livePrice,
           chg: livePrice > 0 ? "+0.00%" : "--",
@@ -737,7 +763,7 @@ export default function App() {
           target: "--",
           sl: "--"
         },
-        ...prev.filter(p => p.symbol !== raw)
+        ...prev.filter(p => p.symbol !== cleanRaw)
       ]);
     }
   };

@@ -244,10 +244,28 @@ export default function HomeTab({
                   border: `1px solid ${C.borderCyan}`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 10, fontWeight: 900, color: C.cyan,
-                }}>{h.symbol.slice(0, 2)}</div>
+                }}>{(h.clean_symbol || h.symbol).replace(/\.(BO|NS)$/i, '').slice(0, 2)}</div>
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>{h.symbol}</div>
-                  <div style={{ fontSize: 11, color: C.gray1 }}>Qty {h.qty} · Avg ₹{h.avg}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: C.white, display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {h.name && h.name !== h.symbol && !h.name.endsWith('.BO') ? h.name : (h.clean_symbol || h.symbol.replace(/\.(BO|NS)$/i, ''))}
+                    </span>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800,
+                      color: (h.exchange === "BSE" || h.symbol.endsWith(".BO")) ? C.amber : C.cyan,
+                      background: (h.exchange === "BSE" || h.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
+                      border: `1px solid ${(h.exchange === "BSE" || h.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
+                      borderRadius: 4, padding: "1px 5px", flexShrink: 0
+                    }}>
+                      {h.exchange || (h.symbol.endsWith(".BO") ? "BSE" : "NSE")}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: C.gray1, marginTop: 2 }}>
+                    <span style={{ fontWeight: 700, color: C.gray2, marginRight: 6 }}>
+                      {(h.clean_symbol || h.symbol).replace(/\.(BO|NS)$/i, '')}
+                    </span>
+                    Qty {h.qty} · Avg ₹{h.avg}
+                  </div>
                 </div>
               </div>
               <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>

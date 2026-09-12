@@ -103,13 +103,18 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       if (portfolioData != null && portfolioData['holdings'] is List) {
         final list = portfolioData['holdings'] as List;
         _dematHoldings = list.map((h) {
-          final sym = (h['symbol'] ?? '').toString().toUpperCase();
+          final rawSym = (h['symbol'] ?? '').toString().toUpperCase();
+          final cleanSym = (h['clean_symbol'] ?? rawSym.replaceAll('.BO', '').replaceAll('.NS', '')).toString().toUpperCase();
+          final companyName = (h['name'] ?? h['stock_name'] ?? cleanSym).toString();
+          final exchange = (h['exchange'] ?? (rawSym.endsWith('.BO') ? 'BSE' : 'NSE')).toString();
           final pnlPct = (h['pnl_percent'] as num? ?? 0).toDouble();
           final pnl = (h['pnl'] as num? ?? 0).toDouble();
           final price = (h['current_price'] as num? ?? 0.0).toDouble();
           return {
-            'symbol': sym,
-            'name': '$sym (Demat Holding)',
+            'symbol': cleanSym,
+            'full_symbol': rawSym,
+            'exchange': exchange,
+            'name': companyName,
             'price': price,
             'chg': pnlPct >= 0 ? '+${pnlPct.toStringAsFixed(2)}%' : '${pnlPct.toStringAsFixed(2)}%',
             'is_positive': pnlPct >= 0,
@@ -151,8 +156,12 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           final isPos = q['is_positive'] == true;
           final chgPct = q['change_pct'] ?? 0.0;
           item['chg'] = price > 0 ? (isPos ? "+$chgPct%" : "$chgPct%") : "--";
-          item['is_positive'] = isPos;
-          item['name'] = q['name'];
+          if (q['name'] != null && q['name'].toString().isNotEmpty) {
+            item['name'] = q['name'];
+          }
+          if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
+            item['exchange'] = q['exchange'];
+          }
           item['signal'] = q['signal'];
           item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0') ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}") : null;
           item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0') ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}") : null;
@@ -632,7 +641,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                             itemCount: displayedList.length,
                             itemBuilder: (context, index) {
                               final item = displayedList[index];
-                          final symbol = (item['symbol'] as String? ?? '').toUpperCase();
+                          final rawSymbol = (item['symbol'] as String? ?? '').toUpperCase();
+                          final symbol = rawSymbol.replaceAll('.BO', '').replaceAll('.NS', '').trim();
+                          final exchange = (item['exchange'] as String?) ?? (rawSymbol.endsWith('.BO') ? 'BSE' : 'NSE');
                           final isAuto = item['is_auto_synced'] == true;
                           final isPos = item['is_positive'] ?? true;
                           final priceNum = (item['price'] as num? ?? 0.0).toDouble();
@@ -640,7 +651,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final signal = item['signal'] ?? 'MONITORING';
                           final target = item['target'] ?? '--';
                           final stopLoss = item['stop_loss'] ?? '--';
-                          final name = item['name'] ?? symbol;
+                          final rawName = (item['name'] as String? ?? '').trim();
+                          final name = (rawName.isNotEmpty && !rawName.contains('(Demat Holding)')) ? rawName : symbol;
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
 
                           Color signalColor = const Color(0xFF94A3B8);
@@ -710,6 +722,23 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                       ),
                                                     ),
                                                     const SizedBox(width: 6),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                      decoration: BoxDecoration(
+                                                        color: exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.12),
+                                                        borderRadius: BorderRadius.circular(4),
+                                                        border: Border.all(color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                                                      ),
+                                                      child: Text(
+                                                        exchange,
+                                                        style: TextStyle(
+                                                          color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                                                          fontSize: 8.5,
+                                                          fontWeight: FontWeight.w900,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 4),
                                                     Container(
                                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                                       decoration: BoxDecoration(

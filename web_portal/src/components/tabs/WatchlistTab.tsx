@@ -219,19 +219,26 @@ export default function WatchlistTab({
       {/* Watchlist Cards Stack */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {(() => {
-          const holdingItems: any[] = holdings.map(h => ({
-            id: `demat-${h.symbol}`,
-            symbol: h.symbol,
-            name: `${h.symbol} (Demat Holding)`,
-            auto: true,
-            price: h.price || 0,
-            chg: (h.price && h.price > 0) ? (h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`) : "--",
-            isPositive: h.pnlPct >= 0,
-            signal: h.signal || "MONITORING",
-            signalType: h.signalType || "monitoring",
-            target: h.target || "--",
-            sl: h.sl || "--"
-          }));
+          const holdingItems: any[] = holdings.map(h => {
+            const cleanSym = (h.clean_symbol || h.symbol).replace(/\.(BO|NS)$/i, '').trim();
+            const exch = h.exchange || (h.symbol.endsWith(".BO") ? "BSE" : "NSE");
+            const properName = h.name && h.name !== h.symbol && !h.name.endsWith(".BO") ? h.name : cleanSym;
+            return {
+              id: `demat-${cleanSym}`,
+              symbol: cleanSym,
+              fullSymbol: h.full_symbol || h.symbol,
+              name: properName,
+              exchange: exch,
+              auto: true,
+              price: h.price || 0,
+              chg: (h.price && h.price > 0) ? (h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`) : "--",
+              isPositive: h.pnlPct >= 0,
+              signal: h.signal || "MONITORING",
+              signalType: h.signalType || "monitoring",
+              target: h.target || "--",
+              sl: h.sl || "--"
+            };
+          });
 
           const combinedList = [...watchlist];
           if (dematAutoSync) {
@@ -291,11 +298,22 @@ export default function WatchlistTab({
                     display: "flex", alignItems: "center", justifyContent: "center",
                     fontSize: 11, fontWeight: 900, color: item.isPositive ? C.emerald : C.rose,
                   }}>
-                    {item.symbol.slice(0, 2)}
+                    {item.symbol.replace(/\.(BO|NS)$/i, '').slice(0, 2)}
                   </div>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14, fontWeight: 900, color: C.white }}>{item.symbol}</span>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: C.white }}>
+                        {item.symbol.replace(/\.(BO|NS)$/i, '')}
+                      </span>
+                      <span style={{
+                        fontSize: 9, fontWeight: 800,
+                        color: (item.exchange === "BSE" || item.symbol.endsWith(".BO")) ? C.amber : C.cyan,
+                        background: (item.exchange === "BSE" || item.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
+                        border: `1px solid ${(item.exchange === "BSE" || item.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
+                        borderRadius: 4, padding: "1px 5px",
+                      }}>
+                        {item.exchange || (item.symbol.endsWith(".BO") ? "BSE" : "NSE")}
+                      </span>
                       <span style={{
                         fontSize: 9.5, fontWeight: 700,
                         color: item.auto ? C.cyan : C.gray2,
@@ -305,7 +323,9 @@ export default function WatchlistTab({
                         {item.auto ? "📊 Demat Auto-Sync" : "📌 Custom"}
                       </span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>{item.name || item.symbol}</div>
+                    <div style={{ fontSize: 11, color: C.gray2, marginTop: 2, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {item.name && !item.name.endsWith('.BO') ? item.name : item.symbol.replace(/\.(BO|NS)$/i, '')}
+                    </div>
                   </div>
                 </div>
 

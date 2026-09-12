@@ -28,10 +28,28 @@ export default function StockDetailModal({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontSize: 16, fontWeight: 900, color: C.white }}>{selectedStock.symbol}</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: C.white }}>
+                {selectedStock.name && selectedStock.name !== selectedStock.symbol && !selectedStock.name.endsWith('.BO')
+                  ? selectedStock.name
+                  : (selectedStock.clean_symbol || selectedStock.symbol.replace(/\.(BO|NS)$/i, ''))}
+              </div>
               <SignalBadge signal={selectedStock.signal} type={selectedStock.signalType} />
             </div>
-            <div style={{ fontSize: 11, color: C.cyan, fontWeight: 700, marginTop: 2 }}>{selectedStock.sector}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+              <span style={{ fontSize: 12, fontWeight: 800, color: C.cyan }}>
+                {(selectedStock.clean_symbol || selectedStock.symbol).replace(/\.(BO|NS)$/i, '')}
+              </span>
+              <span style={{
+                fontSize: 9, fontWeight: 800,
+                color: (selectedStock.exchange === "BSE" || selectedStock.symbol.endsWith(".BO")) ? C.amber : C.cyan,
+                background: (selectedStock.exchange === "BSE" || selectedStock.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
+                border: `1px solid ${(selectedStock.exchange === "BSE" || selectedStock.symbol.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
+                borderRadius: 4, padding: "1px 5px"
+              }}>
+                {selectedStock.exchange || (selectedStock.symbol.endsWith(".BO") ? "BSE" : "NSE")}
+              </span>
+              <span style={{ fontSize: 11, color: C.gray2 }}>· {selectedStock.sector}</span>
+            </div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: C.gray1, fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
