@@ -156,6 +156,16 @@ class _CandleChartModalState extends State<CandleChartModal> {
       width: 100%;
       height: 100%;
     }
+    /* Suppress TradingView Attribution Logo / Link */
+    a[href*="tradingview"],
+    [class*="tv-attr"],
+    [id*="tv-attr"],
+    .tv-attribution {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
   </style>
   $scriptTag
   <script>
@@ -188,6 +198,7 @@ class _CandleChartModalState extends State<CandleChartModal> {
         layout: {
           background: { color: '#080B16' },
           textColor: '#94a3b8',
+          attributionLogo: false,
         },
         grid: {
           vertLines: { color: 'rgba(255, 255, 255, 0.04)' },

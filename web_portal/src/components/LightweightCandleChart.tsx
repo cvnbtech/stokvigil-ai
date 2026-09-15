@@ -205,6 +205,7 @@ export default function LightweightCandleChart({
               background: { color: "#080B16" },
               textColor: "#94a3b8",
               fontSize: 11,
+              attributionLogo: false,
             },
             grid: {
               vertLines: { color: "rgba(255, 255, 255, 0.04)" },
@@ -656,7 +657,20 @@ export default function LightweightCandleChart({
             {error}
           </div>
         ) : (
-          <div ref={chartContainerRef} style={{ width: "100%", height: targetCanvasHeight }} />
+          <>
+            <style jsx global>{`
+              div[ref] a[href*="tradingview"],
+              a[href*="tradingview"],
+              [class*="tv-attr"],
+              [id*="tv-attr"] {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+              }
+            `}</style>
+            <div ref={chartContainerRef} style={{ width: "100%", height: targetCanvasHeight }} />
+          </>
         )}
       </div>
     </div>

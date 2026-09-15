@@ -225,6 +225,16 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
       width: 100%;
       height: 100%;
     }
+    /* Suppress TradingView Attribution Logo / Link */
+    a[href*="tradingview"],
+    [class*="tv-attr"],
+    [id*="tv-attr"],
+    .tv-attribution {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
   </style>
   $scriptContent
   <script>
@@ -266,6 +276,7 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
           background: { color: '#080B16' },
           textColor: '#94a3b8',
           fontSize: (window.innerWidth < 400 ? 10 : 11),
+          attributionLogo: false,
         },
         grid: {
           vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
