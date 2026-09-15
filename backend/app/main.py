@@ -1430,19 +1430,24 @@ async def get_user_alerts(
 _scan_in_progress = False
 
 
-async def execute_multi_user_market_scan(db: Client):
+async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
     """
-    Asynchronous background worker executing full multi-user market intelligence scan.
-    Prevents HTTP 504 gateway timeouts while keeping all analysis and alert logic intact.
+    Executes full multi-user market intelligence scan.
+    Returns structured execution telemetry including scanned symbols, users, and dispatched alerts.
     """
     global _scan_in_progress
     if _scan_in_progress:
         logger.info("⚡ Multi-user market scan is already running. Skipping duplicate task.")
-        return
+        return {
+            "status": "skipped",
+            "message": "Market scan already in progress.",
+            "timestamp": str(date.today())
+        }
 
     _scan_in_progress = True
+    today_str = str(date.today())
     try:
-        logger.info("🚀 Background multi-user market intelligence scan started...")
+        logger.info("🚀 Multi-user market intelligence scan started...")
         # Step 1: Pre-compute market indicators for all unique watchlist symbols into RAM (Deduplication)
         synced_symbols_count = await sync_market_cache_for_all_active_symbols(db)
         logger.info(f"⚡ In-Memory Market Cache refreshed: {synced_symbols_count} unique symbols pre-computed.")
@@ -1478,8 +1483,21 @@ async def execute_multi_user_market_scan(db: Client):
                     all_generated_alerts.extend(res)
 
         logger.info(f"✅ Background market scan finished: {synced_symbols_count} symbols, {scanned_users} users scanned, {len(all_generated_alerts)} alerts dispatched.")
+        return {
+            "status": "completed",
+            "message": f"Market intelligence scan completed: {synced_symbols_count} symbols, {scanned_users} users scanned, {len(all_generated_alerts)} alerts dispatched.",
+            "synced_symbols_count": synced_symbols_count,
+            "scanned_users": scanned_users,
+            "alerts_dispatched": len(all_generated_alerts),
+            "timestamp": today_str
+        }
     except Exception as e:
         logger.error(f"❌ Error in background market scan: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": today_str
+        }
     finally:
         _scan_in_progress = False
 
@@ -1508,25 +1526,17 @@ def verify_cron_secret(x_cron_secret: Optional[str]) -> None:
 
 @app.post("/api/cron/multi-user-scan")
 async def run_multi_user_scan(
-    background_tasks: BackgroundTasks,
     x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
     db: Client = Depends(get_supabase)
 ):
     """
     5-Minute Cron Endpoint triggered during Indian market hours.
     Shielded by exact X-Cron-Secret header token.
-    Dispatches scan asynchronously in the background to prevent 504 upstream request timeouts.
+    Executes scan synchronously during the HTTP request to guarantee 100% CPU allocation
+    under Cloud Run Free Tier, preventing container freezing while streaming real-time logs.
     """
     verify_cron_secret(x_cron_secret)
-
-    today_str = str(date.today())
-    background_tasks.add_task(execute_multi_user_market_scan, db)
-
-    return {
-        "status": "completed",
-        "message": "Market intelligence scan dispatched successfully in background.",
-        "timestamp": today_str
-    }
+    return await execute_multi_user_market_scan(db)
 
 
 def _is_admin_or_secret(

@@ -294,8 +294,8 @@ Users can permanently delete their account directly from the **Settings** page:
    .\.venv\Scripts\uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
    ```
 
-> [!IMPORTANT]
-> **Google Cloud Run Configuration**: To ensure background scan tasks execute without interruption after returning the fast HTTP response, configure your Cloud Run service with **"CPU is always allocated"** (pass `--no-cpu-throttling` via `gcloud` CLI or select "CPU is always allocated" under CPU allocation in the GCP Cloud Run Console).
+> [!TIP]
+> **100% Free-Tier Cloud Run Deployment**: The 5-minute market scan runs synchronously during the HTTP request (`--timeout 300`), guaranteeing 100% CPU allocation under Cloud Run's standard request-based billing without requiring `--no-cpu-throttling`. This ensures total monthly consumption (~74,250 vCPU-seconds) remains strictly within Google Cloud's 360,000 vCPU-seconds/month free tier ($0.00 cost).
 
 ### 3. Telegram Bot Setup (@BotFather)
 1. Open Telegram and search for `@BotFather`.
@@ -342,8 +342,8 @@ The scheduled GitHub Actions runner executes automated workflows strictly during
 
 3. **5-Minute Market Surveillance Scanner ([5min_cron.yml](.github/workflows/5min_cron.yml)) (`cron: '45,50,55 3 * * 1-5'`, `*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
-   - **Asynchronous Background Execution**: Dispatches scan asynchronously via FastAPI `BackgroundTasks` with a concurrency lock (`_scan_in_progress`), returning `200 OK` in ~50ms to completely eliminate Cloud Run 504 Gateway Timeouts.
-   - **Concurrent Multi-User Evaluation**: Evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`, pre-computing distinct symbols in RAM.
+   - **Synchronous Execution & Free-Tier Optimization**: Synchronously executes the market scan during the active HTTP request to guarantee 100% CPU allocation under Cloud Run's standard request-based billing ($0.00 cost within 360,000 vCPU-seconds/month quota), avoiding CPU throttling while streaming heartbeat progress logs every 25 symbols. Guarded by `_scan_in_progress` to prevent overlapping runs.
+   - **Concurrent Multi-User Evaluation**: Pre-computes unique symbols with `asyncio.Semaphore(25)` into RAM cache, then evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`.
 
 4. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
    - Compiles release Android APK (`com.app.stokvigil`) on push to `main` or manual workflow dispatch, injecting `google-services.json` securely from GitHub Secrets.

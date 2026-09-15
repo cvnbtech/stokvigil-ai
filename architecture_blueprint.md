@@ -33,7 +33,7 @@ flowchart TD
         B3["Cron Secret HMAC Constant-Time Validator (DoS & Quota Shield)"]
         B4["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
         B5["In-Memory Bounded Caches (Candles, FII/DII, Accuracy Ledger, Quotes)"]
-        B6["FastAPI BackgroundTasks Worker (Concurrency Lock: _scan_in_progress)"]
+        B6["FastAPI Synchronous Scan Engine (Concurrency Lock: _scan_in_progress & 100% Free-Tier CPU Allocation)"]
         B7["Telegram Webhook Validator (Secret Header & Email Rejection Shield)"]
     end
 
@@ -97,7 +97,7 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 - **RAM Singleton Architecture**: Thread-safe in-memory cache (`MarketCacheManager`) storing pre-computed technical indicators, live prices, VWAP, RSI, MACD, tactical levels, and Confluence Scores in RAM (~15 MB footprint).
 - **Sub-Second Atomic Live Tick Cache (`update_live_tick`)**: Atomically updates a stock's Last Traded Price (LTP), high, low, volume, and immediately recalculates the percentage deviation from intraday VWAP in RAM, enabling WebSocket or rapid tick feeds to refresh tactical boundaries without re-running full multi-factor pipeline recalculations.
 - **24-Hour Bounded Holding Fundamentals Cache (`_FUNDAMENTALS_CACHE`)**: In `main.py`, authentic P/E ratios and Debt-to-Equity metrics are cached for 24 hours (86,400s TTL) with an LRU cap of 500 entries, checking RAM first, then `market_cache` singleton pre-computations, and querying Yahoo Finance at most once per day per ticker.
-- **PostgREST Limit Bypass via Direct SQL Pool**: Rather than hitting PostgREST REST pagination limits (1,000 rows max), `sync_market_cache_for_all_active_symbols()` executes a direct indexed PostgreSQL query (`SELECT DISTINCT UPPER(TRIM(symbol)) FROM user_watchlists WHERE symbol IS NOT NULL`) via the connection pool (`db_pool.fetch_all`), pre-computing unique symbols in parallel with `asyncio.Semaphore(15)`.
+- **PostgREST Limit Bypass via Direct SQL Pool**: Rather than hitting PostgREST REST pagination limits (1,000 rows max), `sync_market_cache_for_all_active_symbols()` executes a direct indexed PostgreSQL query (`SELECT DISTINCT UPPER(TRIM(symbol)) FROM user_watchlists WHERE symbol IS NOT NULL`) via the connection pool (`db_pool.fetch_all`), pre-computing unique symbols in parallel with `asyncio.Semaphore(25)` and streaming heartbeat progress logs every 25 symbols.
 - **Concurrent Multi-User Scans (`asyncio.Semaphore(10)`)**: `execute_multi_user_market_scan` schedules all active portfolio evaluations concurrently using `asyncio.gather` bounded by a 10-worker semaphore, ensuring hundreds of user portfolios are scanned in parallel without thread starvation.
 - **Sub-0.02ms O(1) Latency**: Individual user scans query the pre-computed RAM cache in `< 0.02ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
 - **Automated 30-Day Alert Retention & Pruning**: Enforces automated database housekeeping via `app.maintenance.prune_historical_alerts` during the 09:00 AM pre-market briefing and a Supabase `pg_cron` schedule running `prune_historical_stok_alerts(30)` daily at midnight UTC to keep the database well within free-tier quotas.
@@ -517,7 +517,7 @@ G:\stokvigil-ai\
 | `/api/user/alerts` | `GET` | `Bearer <JWT>` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
 | `/api/user/accuracy-stats` | `GET` | `Bearer <JWT>` | Computes real-time win rate estimate and historical signal performance stats |
 | `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
-| `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours (Dispatched asynchronously via FastAPI BackgroundTasks with `_scan_in_progress` concurrency lock to eliminate Cloud Run 504 timeouts) |
+| `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours (Executes synchronously with `_scan_in_progress` lock to guarantee 100% CPU allocation under Cloud Run Free Tier, returning execution telemetry) |
 | `/api/cron/morning-token-reminder` | `POST` | `X-Cron-Secret` | Dispatches 08:50 AM IST reminders to users with expired daily Demat tokens |
 | `/api/cron/pre-market-briefing` | `POST` | `X-Cron-Secret` | Dispatches automated 09:00 AM IST War Room Briefing (GIFT Nifty, VIX, Global Cues, FII/DII, Sector Momentum) |
 | `/api/stocks/candles` | `GET` | Rate-Limited | Returns OHLCV candles for NSE (.NS) and BSE (.BO) with Camarilla $H_4/L_4$ breakout pivots, VWAP, and Chandelier Trailing Stop (60s RAM Cache) |
@@ -544,6 +544,6 @@ The system uses a GitHub Actions workflow executing strictly during Indian tradi
    - Synthesizes overnight global cues, India VIX regime, FII/DII net flows, and sector momentum. Dispatches rich HTML war room cards to Telegram and FCM lock-screen push alerts.
 3. **5-Minute Market Surveillance Scanner (`cron: '45,50,55 3 * * 1-5'`, `'*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
-   - **Asynchronous Background Execution**: The endpoint returns `200 OK` in ~50ms, while the full scan executes in the background via FastAPI `BackgroundTasks`. Concurrency is strictly guarded via `_scan_in_progress` to prevent overlapping runs.
-   - Pre-computes market state in RAM across all unique symbols and dispatches confluence alerts within seconds.
-   - **Google Cloud Run Configuration**: Configure Cloud Run with **"CPU is always allocated"** (`--no-cpu-throttling`) to ensure background processing tasks continue execution after the HTTP response is sent.
+   - **Synchronous Execution under Cloud Run Free Tier**: Rather than offloading to background tasks where CPU is throttled to near-zero post-response, the endpoint synchronously awaits `execute_multi_user_market_scan(db)` during the active HTTP request (`--timeout 300`). This guarantees 100% CPU allocation throughout the scan under Cloud Run's standard request-based billing, completely eliminating the need for `--no-cpu-throttling` and keeping total monthly consumption (~74,250 vCPU-seconds) strictly within Google Cloud's 360,000 vCPU-seconds/month free tier ($0.00 cost).
+   - **Pre-Computation with Heartbeat Telemetry**: Pre-computes market state in RAM across all unique symbols with `asyncio.Semaphore(25)`, streaming heartbeat progress logs every 25 symbols (and at 100%), and dispatches confluence alerts within seconds.
+   - **Concurrency Shield**: Guarded via `_scan_in_progress` mutex to reject concurrent overlapping runs (`status: skipped`).

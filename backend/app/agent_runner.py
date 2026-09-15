@@ -1079,9 +1079,9 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
         logger.info("No active symbols found across user watchlists to pre-compute.")
         return 0
 
-    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache (Concurrency: 15)...")
+    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache (Concurrency: 25)...")
     
-    sem = asyncio.Semaphore(15)
+    sem = asyncio.Semaphore(25)
     synced_count = 0
 
     async def _worker(sym: str):
@@ -1090,9 +1090,13 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
             try:
                 if market_cache.is_fresh(sym, max_age_seconds=240):
                     synced_count += 1
+                    if synced_count % 25 == 0 or synced_count == len(symbols):
+                        logger.info(f"⏳ Pre-computing market cache: {synced_count}/{len(symbols)} symbols ({round((synced_count / len(symbols)) * 100)}%)...")
                     return
                 await evaluate_single_symbol_full(sym, macro_data=macro_data)
                 synced_count += 1
+                if synced_count % 25 == 0 or synced_count == len(symbols):
+                    logger.info(f"⏳ Pre-computing market cache: {synced_count}/{len(symbols)} symbols ({round((synced_count / len(symbols)) * 100)}%)...")
             except Exception as e:
                 logger.error(f"Error pre-computing market cache for {sym}: {e}")
 
