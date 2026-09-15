@@ -367,8 +367,8 @@ The scheduled GitHub Actions runner executes automated workflows strictly during
 
 3. **5-Minute Market Surveillance Scanner ([5min_cron.yml](.github/workflows/5min_cron.yml)) (`cron: '45,50,55 3 * * 1-5'`, `*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
-   - **Synchronous Execution & Free-Tier Optimization**: Synchronously executes the market scan during the active HTTP request to guarantee 100% CPU allocation under Cloud Run's standard request-based billing ($0.00 cost within 360,000 vCPU-seconds/month quota), avoiding CPU throttling while streaming heartbeat progress logs every 25 symbols. Guarded by `_scan_in_progress` to prevent overlapping runs.
-   - **Concurrent Multi-User Evaluation**: Pre-computes unique symbols with `asyncio.Semaphore(25)` into RAM cache, then evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`.
+   - **Synchronous Execution & Free-Tier Optimization**: Synchronously executes the market scan during the active HTTP request to guarantee 100% CPU allocation under Cloud Run's standard request-based billing ($0.00 cost within 360,000 vCPU-seconds/month quota), avoiding CPU throttling while streaming heartbeat progress logs every 20 symbols. Guarded by `_scan_in_progress` to prevent overlapping runs.
+   - **Concurrent Multi-User Evaluation**: Pre-computes unique symbols with `asyncio.Semaphore(20)` into RAM cache, then evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`.
 
 4. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
    - Compiles release Android APK (`com.app.stokvigil`) on push to `main` or manual workflow dispatch, injecting `google-services.json` securely from GitHub Secrets.

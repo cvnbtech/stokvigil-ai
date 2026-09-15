@@ -1717,7 +1717,7 @@ async def run_pre_market_briefing(
     fcm_title = "🌅 StokVigil AI: Pre-Market War Room Briefing"
     fcm_body = f"NIFTY: {war_room_data.get('nifty_change_pct'):+.2f}% | VIX: {war_room_data.get('india_vix')} | Global Bias: {war_room_data.get('global_cues', {}).get('bias')}"
     
-    sem = asyncio.Semaphore(25)
+    sem = asyncio.Semaphore(20)
 
     async def _notify_single_user(u: Dict[str, Any]) -> bool:
         tg_id = u.get("telegram_chat_id")
