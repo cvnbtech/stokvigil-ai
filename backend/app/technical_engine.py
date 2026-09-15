@@ -1,17 +1,42 @@
+import time
 import logging
 import concurrent.futures
 import yfinance as yf
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("stokvigil.technical_engine")
 
+# In-memory history frames cache: (sym, period, interval) -> {df, timestamp}
+_HISTORY_FRAME_CACHE: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+_DAILY_HISTORY_TTL: float = 300.0   # 5 minutes for daily bars
+_INTRADAY_HISTORY_TTL: float = 60.0 # 60 seconds for intraday 5m bars
+
 def _fetch_history_frame(sym: str, period: str, interval: str) -> pd.DataFrame:
-    """Thread-isolated historical candle fetch using a dedicated yf.Ticker instance."""
+    """Thread-isolated historical candle fetch using dedicated yf.Ticker with in-memory caching."""
+    cache_key = (sym.strip().upper(), period, interval)
+    now = time.time()
+    ttl = _DAILY_HISTORY_TTL if ("d" in interval or "w" in interval) else _INTRADAY_HISTORY_TTL
+    
+    if cache_key in _HISTORY_FRAME_CACHE:
+        entry = _HISTORY_FRAME_CACHE[cache_key]
+        if (now - entry.get("timestamp", 0)) < ttl:
+            cached_df = entry.get("df")
+            if cached_df is not None and not cached_df.empty:
+                return cached_df.copy()
+
     try:
         t = yf.Ticker(sym)
-        return t.history(period=period, interval=interval)
+        df = t.history(period=period, interval=interval)
+        if df is not None and not df.empty:
+            if len(_HISTORY_FRAME_CACHE) > 500:
+                oldest = sorted(_HISTORY_FRAME_CACHE.keys(), key=lambda k: _HISTORY_FRAME_CACHE[k].get("timestamp", 0))[:100]
+                for ok in oldest:
+                    _HISTORY_FRAME_CACHE.pop(ok, None)
+            _HISTORY_FRAME_CACHE[cache_key] = {"timestamp": now, "df": df}
+            return df.copy()
+        return pd.DataFrame()
     except Exception as e:
         logger.debug(f"Error fetching {period}/{interval} for {sym}: {e}")
         return pd.DataFrame()
@@ -419,8 +444,16 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             fut_5m = executor.submit(_fetch_history_frame, ticker_sym, "5d", "5m")
             fut_daily = executor.submit(_fetch_history_frame, ticker_sym, "1y", "1d")
-            df_5m = fut_5m.result()
-            df_daily = fut_daily.result()
+            try:
+                df_5m = fut_5m.result(timeout=8.0)
+            except Exception as e:
+                logger.debug(f"5m history timeout/error for {ticker_sym}: {e}")
+                df_5m = pd.DataFrame()
+            try:
+                df_daily = fut_daily.result(timeout=8.0)
+            except Exception as e:
+                logger.debug(f"Daily history timeout/error for {ticker_sym}: {e}")
+                df_daily = pd.DataFrame()
         
         # Fallback to BSE (.BO) if NSE returned no data and ticker was not already .BO
         if df_5m.empty and not ticker_sym.endswith(".BO"):
@@ -430,8 +463,14 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     fut_5m_bse = executor.submit(_fetch_history_frame, bse_sym, "5d", "5m")
                     fut_daily_bse = executor.submit(_fetch_history_frame, bse_sym, "1y", "1d")
-                    df_5m_bse = fut_5m_bse.result()
-                    df_daily_bse = fut_daily_bse.result()
+                    try:
+                        df_5m_bse = fut_5m_bse.result(timeout=8.0)
+                    except Exception:
+                        df_5m_bse = pd.DataFrame()
+                    try:
+                        df_daily_bse = fut_daily_bse.result(timeout=8.0)
+                    except Exception:
+                        df_daily_bse = pd.DataFrame()
                 if not df_5m_bse.empty:
                     df_5m = df_5m_bse
                     df_daily = df_daily_bse

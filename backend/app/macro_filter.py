@@ -1,3 +1,6 @@
+import time
+import json
+import urllib.request
 import logging
 import yfinance as yf
 from typing import Dict, Any, Tuple, Optional, List
@@ -118,13 +121,6 @@ def calculate_sector_relative_strength(symbol: str, stock_20d_ret: Optional[floa
         "sector_rs_regime": regime,
         "sector_trend": "OUTPERFORMING" if delta_rs > 0 else "UNDERPERFORMING"
     }
-
-import json
-import time
-import urllib.request
-from typing import Dict, Any, Tuple, Optional
-
-logger = logging.getLogger("stokvigil.macro_filter")
 
 # In-memory cache for market breadth (TTL: 60 seconds)
 _MARKET_BREADTH_CACHE: Dict[str, Any] = {}

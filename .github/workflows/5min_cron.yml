@@ -15,7 +15,7 @@ jobs:
   run-market-scan:
     name: 5-Minute Surveillance Trigger
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
       - name: Trigger Multi-User Market Intelligence Scan
@@ -39,7 +39,7 @@ jobs:
           TARGET_URL="${BACKEND_URL}/api/cron/multi-user-scan"
           echo "🚀 Dispatching 5-minute market scan to: ${TARGET_URL}"
 
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$TARGET_URL" \
+          RESPONSE=$(curl -s -m 480 -w "\n%{http_code}" -X POST "$TARGET_URL" \
             -H "Content-Type: application/json" \
             -H "X-Cron-Secret: $CRON_SECRET")
 
@@ -54,4 +54,4 @@ jobs:
             exit 1
           fi
 
-          echo "✅ Market surveillance scan successfully queued and executing in background."
+          echo "✅ Market surveillance scan successfully completed."

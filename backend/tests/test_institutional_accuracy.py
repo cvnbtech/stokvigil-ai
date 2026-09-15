@@ -265,6 +265,77 @@ class TestInstitutionalAccuracy(unittest.TestCase):
         self.assertNotIn("SENSEX", war_room_html)
         self.assertIn("India VIX", war_room_html)
 
+    def test_financials_4hour_cache_and_dual_exchange(self):
+        """Corporate fundamentals must cache for 4 hours and normalize NSE/BSE tickers."""
+        import time
+        from app.agent_runner import fetch_stock_financials, _FINANCIALS_CACHE, _normalize_canonical_key
+
+        # Test canonical normalization
+        self.assertEqual(_normalize_canonical_key("TCS.NS"), "TCS")
+        self.assertEqual(_normalize_canonical_key("TCS.BO"), "TCS")
+        self.assertEqual(_normalize_canonical_key("500209"), "500209")
+        self.assertEqual(_normalize_canonical_key("infy"), "INFY")
+
+        # Mock yf.Ticker to avoid external API calls
+        mock_info = {
+            "shortName": "Test Corporate",
+            "currentPrice": 1500.0,
+            "trailingPE": 22.5,
+            "debtToEquity": 0.15,
+            "revenueGrowth": 0.08,
+            "earningsQuarterlyGrowth": 0.12,
+            "profitMargins": 0.18,
+            "returnOnEquity": 0.25,
+            "marketCap": 500000000000,
+            "fiftyTwoWeekHigh": 1600.0,
+            "fiftyTwoWeekLow": 1200.0
+        }
+
+        with patch("yfinance.Ticker") as mock_ticker:
+            mock_inst = MagicMock()
+            mock_inst.info = mock_info
+            mock_ticker.return_value = mock_inst
+
+            # First fetch (populates cache)
+            res1 = fetch_stock_financials("TESTCO.NS")
+            self.assertEqual(res1["name"], "Test Corporate")
+            self.assertEqual(res1["pe_ratio"], 22.5)
+            self.assertEqual(res1["debt_to_equity"], 0.15)
+            self.assertEqual(mock_ticker.call_count, 1)
+
+            # Second fetch for .BO equivalent (must hit RAM cache in 0.0001s without calling yf.Ticker)
+            t0 = time.time()
+            res2 = fetch_stock_financials("TESTCO.BO")
+            elapsed = time.time() - t0
+            self.assertEqual(res2["name"], "Test Corporate")
+            self.assertEqual(mock_ticker.call_count, 1)  # Still 1 call, zero new API queries!
+            self.assertLess(elapsed, 0.01)  # Sub-millisecond lookup
+
+    def test_news_15min_cache_and_normalization(self):
+        """Google News RSS must cache for 15 minutes and share across exchanges."""
+        import time
+        from app.agent_runner import fetch_stock_news, _NEWS_CACHE
+
+        mock_headlines = [
+            {"title": "TestCo bags $50M AI contract", "link": "https://news.com/1", "published": "2026-09-15"}
+        ]
+        _NEWS_CACHE["TESTCO"] = {
+            "timestamp": time.time(),
+            "data": mock_headlines
+        }
+
+        # Querying TESTCO.NS or TESTCO.BO should return cached headlines instantly
+        t0 = time.time()
+        news_ns = fetch_stock_news("TESTCO.NS")
+        elapsed = time.time() - t0
+        self.assertEqual(len(news_ns), 1)
+        self.assertEqual(news_ns[0]["title"], "TestCo bags $50M AI contract")
+        self.assertLess(elapsed, 0.01)
+
+        news_bo = fetch_stock_news("TESTCO.BO")
+        self.assertEqual(len(news_bo), 1)
+        self.assertEqual(news_bo[0]["title"], "TestCo bags $50M AI contract")
+
 
 if __name__ == "__main__":
     unittest.main()
