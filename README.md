@@ -19,18 +19,19 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC).
 - **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-3.7-flash` / `gemini-3.6-flash` / `gemini-3.5-flash-lite` (via Interactions API & `generate_content`) with the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
 - **Quantitative Engines**:
-  - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation.
+  - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation and **Sub-Second Atomic Live Tick Updates (`update_live_tick`)** enabling WebSocket tick streams to update LTP and VWAP deviation in RAM without full pipeline re-runs.
   - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
   - `flow_tracker.py`: **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery), plus F&O Open Interest build-up dynamics.
   - `fii_dii_tracker.py`: **Institutional Net Flow Tracker** aggregating daily official NSE FII & DII cash market flows with 30-minute in-memory caching, multi-tier fallback (Live NSE $\rightarrow$ Supabase $\rightarrow$ In-memory proxy), and automated institutional sentiment classification (`BULLISH_INFLOW`, `STRONG_ACCUMULATION`, `HEAVY_DISTRIBUTION`, etc.).
-  - `macro_filter.py`: Pre-Market War Room intelligence, India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
+  - `macro_filter.py`: Pre-Market War Room intelligence, **Market Breadth Advance-Decline Ratio (ADR)** tracker from NSE All-Indices (4 breadth regimes and Anti-Bull-Trap Veto), India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
+  - `main.py` (**Portfolio Optimization**): 24-Hour Bounded Holding Fundamentals Cache (`_FUNDAMENTALS_CACHE`, 500 max LRU entries) reducing redundant third-party API queries by over 98%.
 - **Charts & Viral Engine**:
-  - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, and ATR-based Chandelier Trailing Stop.
+  - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, ATR-based Chandelier Trailing Stop, and **StokVigil 'SV' Canvas Watermark & Pro Terminal Badge**.
   - **Off-screen HTML5 2D Canvas Engine**: Instant client-side generation of branded 1080×1080 viral "Alpha Cards" with 1-tap WhatsApp and X sharing at zero backend cost.
 - **Database & Connection Pooling**: Supabase PostgreSQL with Row-Level Security (RLS) + **Supabase PgBouncer (Port 6543)** connection pooling via `asyncpg` (`statement_cache_size=0`, 2–10 connection multiplexing) with dual-driver zero-downtime REST fallback and Fernet AES-256 vault encryption.
 - **Integrations**: `breeze-connect` (ICICI Demat holdings across NSE and BSE), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
-- **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with live TradingView interactive charts, ICICI Direct deep links, and NSE/BSE official exchange live quote buttons.
+- **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with live TradingView interactive charts, ICICI Direct deep links, NSE/BSE official exchange live quote buttons, and **StokVigil Verified White-Label Branding**.
 
 ---
 
@@ -58,9 +59,11 @@ Real trading desks and hedge funds do not burn heavy neural network inference on
 - **`SMART_MONEY_ABSORPTION`**: Delivery volume $\ge 55\%$ with positive price expansion above VWAP $\rightarrow$ **+8 Confluence Points** + institutional accumulation badge.
 - **`OPERATOR_CHURN_TRAP`**: High price volatility ($> 2\%$) but weak delivery ($< 25\%$) $\rightarrow$ **-10 Confluence Points** + speculative trap warning.
 
-### 3. Sector Breadth Alignment & Dual Benchmarks
+### 3. Sector & Market Breadth Alignment (Dual Benchmarks & ADR)
 - **Sector Tailwinds (+8 Points)**: Stock rallying with green sector index (`NIFTY BANK`, `NIFTY IT`, `NIFTY AUTO`, etc.).
 - **Sector Divergence (-5 Points)**: Stock attempting breakout while sector is down $> 1.5\%$ (protects against bull traps).
+- **Market Breadth Advance-Decline Ratio (ADR)**: Real-time cash market breadth tracking (`fetch_market_breadth_adr`) from NSE All-Indices across 4 distinct regimes (`STRONG_BULLISH_BREADTH` $\ge 1.5$, `BALANCED` $0.8 - 1.5$, `MILD_WEAKNESS` $0.6 - 0.8$, `SEVERE_MARKET_DISTRIBUTION` $< 0.60$).
+- **Anti-Bull-Trap Breadth Veto**: When $\text{ADR} < 0.60$ and market volatility is elevated, breakout `BUY_WATCH` setups are automatically downgraded to `HOLD_NEUTRAL`.
 - **Dual Benchmarks**: Both **NIFTY 50** (`^NSEI`) and **BSE SENSEX** (`^BSESN`) tracked simultaneously alongside **India VIX** (`^INDIAVIX`).
 
 ### 4. Five Institutional Quantitative Math Pillars (Institutional Accuracy Engine)
@@ -196,6 +199,7 @@ To elevate surveillance accuracy to 72%–78% institutional grade, the determini
   - **Interactive Toggles**: 1-tap on-chart toggles for Camarilla, VWAP, Chandelier SL, and Volume.
 - **Multi-Timeframe Engine**: Seamless switching across `1m`, `5m`, `15m`, `1h`, and `1d` intervals backed by in-memory LRU-cached `GET /api/stocks/candles`.
 - **Dual-Exchange Support**: Seamlessly resolves and charts both NSE (`.NS`) and BSE (`.BO`) equities with dynamic fallback.
+- **Branded 'SV' Watermark & Pro Terminal HUD**: Custom canvas-rendered StokVigil 'SV' watermark, pro terminal badge, and white-label branding across both web and mobile charts, protecting platform provenance.
 
 
 ## 👁️ Demat Portfolio Privacy Masking & Live Indicator
@@ -228,7 +232,8 @@ Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides 
    - Tap **`⚡ 1-Tap Login & Auto-Capture Token`** $\rightarrow$ Secure In-App WebView sheet opens.
    - User logs in with ICICI credentials & TOTP OTP.
    - App intercepts the `apisession` query parameter instantly, closes the webview, auto-populates the session token, and triggers AES-256 encrypted auto-save.
-4. **Session Token Validation & Instant Upsert (`POST /api/user/credentials`)**:
+4. **Session Token Validation, History Scrubbing & Instant Upsert (`POST /api/user/credentials`)**:
+   - The web callback route (`/api/auth/icici-callback`) renders the token capture card and immediately scrubs the `apisession` parameter from browser history (`window.history.replaceState`), eliminating token persistence in navigation logs and referrer headers.
    - The **`🔐 Encrypt & Save Key`** button is enabled **only when a valid session token is provided**.
    - Saving performs an authenticated, conflict-free database upsert (`onConflict: 'user_id'`), instantly syncing live Demat holdings.
 
@@ -280,9 +285,9 @@ Users can permanently delete their account directly from the **Settings** page:
    ALLOWED_ORIGINS=https://yourapp.vercel.app,http://localhost:3000
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    ```
-3. Run test suite (59 automated unit tests across 7 suites):
+3. Run test suite (76 automated unit tests across 9 suites):
    ```bash
-   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
+   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```
 4. Start backend server:
    ```bash

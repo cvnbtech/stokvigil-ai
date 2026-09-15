@@ -95,6 +95,8 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 
 ### 2.1.1 High-Speed In-Memory Market Cache & Concurrency Engine (`market_cache.py` & `agent_runner.py`)
 - **RAM Singleton Architecture**: Thread-safe in-memory cache (`MarketCacheManager`) storing pre-computed technical indicators, live prices, VWAP, RSI, MACD, tactical levels, and Confluence Scores in RAM (~15 MB footprint).
+- **Sub-Second Atomic Live Tick Cache (`update_live_tick`)**: Atomically updates a stock's Last Traded Price (LTP), high, low, volume, and immediately recalculates the percentage deviation from intraday VWAP in RAM, enabling WebSocket or rapid tick feeds to refresh tactical boundaries without re-running full multi-factor pipeline recalculations.
+- **24-Hour Bounded Holding Fundamentals Cache (`_FUNDAMENTALS_CACHE`)**: In `main.py`, authentic P/E ratios and Debt-to-Equity metrics are cached for 24 hours (86,400s TTL) with an LRU cap of 500 entries, checking RAM first, then `market_cache` singleton pre-computations, and querying Yahoo Finance at most once per day per ticker.
 - **PostgREST Limit Bypass via Direct SQL Pool**: Rather than hitting PostgREST REST pagination limits (1,000 rows max), `sync_market_cache_for_all_active_symbols()` executes a direct indexed PostgreSQL query (`SELECT DISTINCT UPPER(TRIM(symbol)) FROM user_watchlists WHERE symbol IS NOT NULL`) via the connection pool (`db_pool.fetch_all`), pre-computing unique symbols in parallel with `asyncio.Semaphore(15)`.
 - **Concurrent Multi-User Scans (`asyncio.Semaphore(10)`)**: `execute_multi_user_market_scan` schedules all active portfolio evaluations concurrently using `asyncio.gather` bounded by a 10-worker semaphore, ensuring hundreds of user portfolios are scanned in parallel without thread starvation.
 - **Sub-0.02ms O(1) Latency**: Individual user scans query the pre-computed RAM cache in `< 0.02ms`, reducing execution time for 1,000+ users by over 95% and eliminating duplicate API requests.
@@ -120,6 +122,11 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 ### 2.1.3 Wyckoff Volume Spread Analysis (VSA) & Sector Alignment
 - **Wyckoff Institutional Absorption**: If delivery $\ge 55\%$ with price expanding above VWAP $\rightarrow$ classified as `SMART_MONEY_ABSORPTION` (+8 confluence points).
 - **Wyckoff Operator Trap**: If price volatility is high ($> 2\%$) while delivery is low ($< 25\%$) $\rightarrow$ flagged as `OPERATOR_CHURN_TRAP` (-10 confluence points + warning).
+- **Market Breadth Advance-Decline Ratio (ADR)**: Real-time cash market breadth tracking (`fetch_market_breadth_adr` in `macro_filter.py`) queried directly from NSE All-Indices:
+  - `STRONG_BULLISH_BREADTH` ($\text{ADR} \ge 1.5$): High breakout continuation probability (+5 points).
+  - `BALANCED_BREADTH` ($0.8 \le \text{ADR} < 1.5$): Selective stock-specific regime.
+  - `MILD_BREADTH_WEAKNESS` ($0.6 \le \text{ADR} < 0.8$): Caution on extended longs.
+  - `SEVERE_MARKET_DISTRIBUTION` ($\text{ADR} < 0.60$): Triggers mandatory Market Breadth Veto.
 - **Sector Breadth Alignment**: Quantifies whether a stock has sector tailwinds (+8 points) or is diverging against a severe sector decline (-5 points).
 - **Dual Benchmarks**: Macro surveillance monitors both **NIFTY 50** (`^NSEI`) and **BSE SENSEX** (`^BSESN`) alongside **India VIX** (`^INDIAVIX`).
 
@@ -186,6 +193,7 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 ### Multi-Timeframe & Macro Veto Guardrails
 - **Daily 200 EMA Veto**: If a stock trades below its 200 EMA (macro downtrend), any `BUY_WATCH` signal is vetoed to `HOLD_NEUTRAL`.
 - **India VIX Volatility Veto**: If India VIX $> 24.0$ (extreme volatility regime), breakout trade generation is blocked to preserve capital.
+- **Market Breadth ADR Distribution Veto**: If NSE cash market breadth reflects severe distribution ($\text{ADR} < 0.60$) alongside elevated volatility, all `BUY_WATCH` setups are automatically vetoed to `HOLD_NEUTRAL` (anti-bull-trap guardrail).
 
 ### Supported Alert Categories
 - `🟢 ACCUMULATE / BUY WATCH` (Confluence Score $\ge 75$)
@@ -247,6 +255,7 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
      - **Interactive Toggles**: 1-tap on-chart toggles for Camarilla, VWAP, Chandelier SL, and Volume.
    - **Multi-Timeframe Engine**: Seamless switching across `1m`, `5m`, `15m`, `1h`, and `1d` intervals backed by in-memory LRU-cached `GET /api/stocks/candles`.
    - **Dual-Exchange Support**: Automatically resolves and charts both NSE (`.NS`) and BSE (`.BO`) tickers.
+   - **Branded 'SV' Watermark & Pro Terminal HUD**: Embeds a subtle institutional 'SV' canvas watermark, pro terminal badge, and white-label identity on both web and mobile charts, guaranteeing authenticity during social exports.
    - **In-Memory Bounded Cache**: Max 200 entries with 60-second TTL and LRU batch eviction to ensure sub-millisecond chart load times.
 
 ---
@@ -288,8 +297,9 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
 5. **Sliding-Window IP Rate Limiting & Input Sanitization**:
    - Public quote and search routes enforce a 120 req/min sliding-window rate limit per client IP.
    - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&.]{1,25}$`) neutralizes injection attempts while permitting valid suffixed queries.
-6. **In-App Session Token Auto-Capture (Flutter Mobile & Web Portal)**:
+6. **In-App Session Token Auto-Capture & Browser History Scrubbing (Flutter Mobile & Web Portal)**:
    - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
+   - On the web callback route (`/api/auth/icici-callback`), `window.history.replaceState` immediately scrubs the sensitive `apisession` token from the browser address bar and history to prevent credential leakage in logs or referrers, enforced with strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
    - Material Design vector outline icons (`VisibilityOutlinedIcon` / `VisibilityOffOutlinedIcon`) provide clean visibility toggles on both key fields.
 
 ---
@@ -354,7 +364,8 @@ G:\stokvigil-ai\
 │   └── migrations/
 │       ├── 20260809_init_stokvigil.sql
 │       ├── 20260822_enhance_stokalerts.sql
-│       └── 20260906_fii_dii_flows.sql
+│       ├── 20260906_fii_dii_flows.sql
+│       └── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
@@ -364,38 +375,37 @@ G:\stokvigil-ai\
 │   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Dual-Exchange & 1Y Daily Fallback
 │   │   ├── flow_tracker.py          <-- Wyckoff VSA Absorption vs Churn, Delivery %, F&O OI
 │   │   ├── fii_dii_tracker.py       <-- Institutional FII & DII Net Cash Flow Tracker & Sentiment Classifier
-│   │   ├── macro_filter.py          <-- India VIX, SENSEX & NIFTY, Sector sync, Forensics, Pre-Market War Room
+│   │   ├── macro_filter.py          <-- India VIX, Market Breadth ADR, SENSEX & NIFTY, Forensics, Pre-Market War Room
 │   │   ├── alert_limiter.py         <-- Anti-Fatigue 45-min cooldown
-│   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.02ms O(1) Lookups)
+│   │   ├── market_cache.py          <-- High-Speed RAM Cache (<0.02ms O(1) Lookups & Atomic Sub-Second Ticks)
 │   │   ├── db_pool.py               <-- Supabase Transaction Pooler (PgBouncer Port 6543) using asyncpg
 │   │   ├── maintenance.py           <-- 30-Day Automated Alert Pruning (db_pool raw SQL + REST fallback)
-│   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push
+│   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push + 'SV' White-Labeling
 │   │   ├── agent_runner.py          <-- 2-Tier Smart Gatekeeper + Gemini AI Confluence + ISIN Resolver
-│   │   └── main.py                  <-- FastAPI Entrypoint, Concurrency Semaphore(10) & Rate Limiter
+│   │   └── main.py                  <-- FastAPI Entrypoint, Concurrency Semaphore(10), 24h Fundamentals Cache & Rate Limiter
 │   ├── tests/
-│   │   ├── test_api_endpoints.py    <-- 33 API, Auth, Security, Email Rejection & Alert Pruning Tests
-│   │   ├── test_gatekeeper_and_vsa.py <-- 7 Gatekeeper, Wyckoff VSA & BSE Tests
-│   │   ├── test_institutional_engine.py <-- 7 Quantitative Architecture Modules
-│   │   ├── test_alert_edge_cases.py <-- 4 Edge Cases (Daily Fallback, Demat P&L, Target/SL Clamping)
-│   │   ├── test_phase1.py           <-- 4 Phase 1 Tests (War Room Briefing, Confluence Radar, Alpha Cards)
-│   │   ├── test_phase2.py           <-- 5 Phase 2 Tests (Accuracy Ledger, FII/DII Flows, Candle Overlays)
-│   │   └── test_db_pool.py          <-- 8 Connection Pool, PgBouncer Port 6543 & Data Normalization Unit Tests
+│   │   ├── test_api_endpoints.py    <-- 34 API, Auth, Security, Email Rejection & Alert Pruning Tests
+│   │   ├── test_gatekeeper_and_vsa.py <-- 12 Gatekeeper, Wyckoff VSA, BSE & Chart Overlays Tests
+│   │   ├── test_advanced_accuracy.py <-- 7 Market Breadth ADR, Scrip Normalization & RAM Tick Tests
+│   │   ├── test_db_pool.py          <-- 6 Connection Pool, PgBouncer Port 6543 & Normalization Tests
+│   │   ├── test_phase2.py           <-- 5 Accuracy Ledger, FII/DII Flows, Candle Overlays Tests
+│   │   ├── test_portfolio_optimization.py <-- 4 Fundamentals Caching & Portfolio P&L Tests
+│   │   ├── test_phase1.py           <-- 4 War Room Briefing, Confluence Radar, Alpha Cards Tests
+│   │   ├── test_alert_edge_cases.py <-- 3 Daily Fallback, Demat P&L, Target/SL Clamping Tests
+│   │   └── test_institutional_engine.py <-- 7 Quantitative Architecture Integration Modules
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   ├── cloudrun.sh
 │   └── render.yaml
-├── supabase/
-│   └── migrations/
-│       ├── 20260809_init_stokvigil.sql
-│       ├── 20260822_enhance_stokalerts.sql
-│       ├── 20260906_fii_dii_flows.sql
-│       └── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
 ├── mobile_app/
 │   ├── pubspec.yaml
 │   ├── assets/
 │   │   ├── app_icon.png
-│   │   └── app_icon.svg
+│   │   ├── app_icon.svg
+│   │   ├── images/
+│   │   └── js/
+│   │       └── lightweight-charts.standalone.production.js <-- Offline Bundled Charting JS
 │   ├── android/
 │   │   └── app/
 │   │       ├── build.gradle         <-- ProGuard / R8 Enabled
@@ -410,12 +420,16 @@ G:\stokvigil-ai\
 │       │   └── fcm_service.dart
 │       ├── utils/
 │       │   └── error_handler.dart   <-- Centralized Feedback & Snackbars
-│       ├── widgets/custom_widgets.dart <-- ConfluenceRadarChart CustomPainter & FII/DII Net Flow Bar
+│       ├── widgets/
+│       │   ├── candle_chart_modal.dart   <-- Bottom-Sheet TradingView Chart Modal with 'SV' Watermark
+│       │   └── custom_widgets.dart       <-- ConfluenceRadarChart CustomPainter & FII/DII Net Flow Bar
 │       └── screens/
 │           ├── auth_screen.dart
 │           ├── icici_credentials_screen.dart
 │           ├── dashboard_screen.dart <-- FII/DII Net Flow Bar Header & Strict Data Integrity ("--")
 │           ├── alerts_screen.dart    <-- Radar Toggle & Alpha Card Share Bottom Sheet
+│           ├── candle_chart_screen.dart <-- Fullscreen TradingView Chart with OHLC HUD & Landscape Toggle
+│           ├── audit_ledger_screen.dart <-- Public Audited Accuracy Ledger & Performance KPIs
 │           ├── notification_settings_screen.dart
 │           ├── watchlist_screen.dart <-- Real-time Ticker Search, Demat Sync & Zero Dummy Prices
 │           ├── terms_conditions_modal.dart
@@ -443,12 +457,14 @@ G:\stokvigil-ai\
 │       │   │   └── DeleteAccountModal.tsx <-- Account Deletion Safeguard Modal
 │       │   ├── auth/
 │       │   │   └── AuthScreen.tsx         <-- Authentication & Mandatory Terms & Conditions Screen
+│       │   ├── AuditLedgerView.tsx        <-- Audited Accuracy Ledger & Non-Repudiation Performance Table
 │       │   ├── ConfluenceRadar.tsx        <-- 4-Pillar SVG Confluence Radar / Spider Chart
-│       │   ├── LightweightCandleChart.tsx <-- TradingView Lightweight Charts v5 with Camarilla/VWAP/SL
+│       │   ├── LightweightCandleChart.tsx <-- TradingView Lightweight Charts v5 with Camarilla/VWAP/SL & SV Watermark
 │       │   └── ShareAlphaCardModal.tsx    <-- 1-Tap 1080x1080 Offscreen Canvas Viral Card Export
+│       ├── middleware.ts                  <-- Next.js Callback 303 Proxy & Token Capture Shield
 │       └── app/
 │           ├── layout.tsx
-│           ├── page.tsx                   <-- State Orchestrator (1,246 lines, Tab Routing & Global State)
+│           ├── page.tsx                   <-- State Orchestrator (1,273 lines, Tab Routing & Global State)
 │           ├── globals.css
 │           ├── callback/page.tsx
 │           ├── transparency/
@@ -526,7 +542,7 @@ The system uses a GitHub Actions workflow executing strictly during Indian tradi
 2. **09:00 AM IST Pre-Market War Room Briefing (`cron: '30 3 * * 1-5'` / `03:30 UTC`)**:
    - Executes `POST /api/cron/pre-market-briefing` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - Synthesizes overnight global cues, India VIX regime, FII/DII net flows, and sector momentum. Dispatches rich HTML war room cards to Telegram and FCM lock-screen push alerts.
-3. **5-Minute Market Scanner (`cron: '*/5 3-10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
+3. **5-Minute Market Surveillance Scanner (`cron: '45,50,55 3 * * 1-5'`, `'*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'` / `03:45 UTC to 10:00 UTC`)**:
    - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
    - **Asynchronous Background Execution**: The endpoint returns `200 OK` in ~50ms, while the full scan executes in the background via FastAPI `BackgroundTasks`. Concurrency is strictly guarded via `_scan_in_progress` to prevent overlapping runs.
    - Pre-computes market state in RAM across all unique symbols and dispatches confluence alerts within seconds.
