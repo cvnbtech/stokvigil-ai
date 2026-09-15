@@ -609,52 +609,7 @@ export default function LightweightCandleChart({
           <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 8, color: "#ffffff", marginTop: 4 }}>STOKVIGIL AI</div>
         </div>
 
-        {/* Top-Left Floating Brand Overlay Pill */}
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-            background: "rgba(8, 11, 22, 0.88)",
-            backdropFilter: "blur(10px)",
-            border: "1px solid rgba(6, 182, 212, 0.4)",
-            borderRadius: 8,
-            padding: "4px 10px",
-            zIndex: 2,
-            pointerEvents: "none",
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.6), 0 0 10px rgba(6, 182, 212, 0.18)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 2,
-                borderRadius: 4,
-                padding: "1px 5px",
-                background: "linear-gradient(135deg, #06b6d4 0%, #10b981 100%)",
-                fontSize: 9,
-                fontWeight: 900,
-                color: "#ffffff",
-                letterSpacing: 0.5,
-              }}
-            >
-              <span style={{ fontSize: 8 }}>⚡</span>SV
-            </div>
-            <span style={{ fontSize: 10.5, fontWeight: 900, color: "#ffffff", letterSpacing: 0.6 }}>STOKVIGIL AI</span>
-            <span style={{ fontSize: 9, color: "#06b6d4", fontWeight: 700 }}>•</span>
-            <span style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 700, letterSpacing: 0.5 }}>
-              {interval.toUpperCase()} {interval.includes("d") || interval.includes("w") ? "SWING" : "INTRADAY"}
-            </span>
-          </div>
-          <span style={{ fontSize: 8, color: "#64748b", fontWeight: 600, letterSpacing: 0.4 }}>
-            Candlesticks &amp; Camarilla Watchtower
-          </span>
-        </div>
+
 
         {loading && (
           <div

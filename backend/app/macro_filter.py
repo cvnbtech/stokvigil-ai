@@ -1,6 +1,6 @@
 import logging
 import yfinance as yf
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional, List
 
 logger = logging.getLogger("stokvigil.macro_filter")
 
@@ -32,7 +32,92 @@ SECTOR_MAP = {
     "TATASTEEL": "NIFTY METAL",
     "JSWSTEEL": "NIFTY METAL",
     "HINDALCO": "NIFTY METAL",
+    "ITC": "NIFTY FMCG",
+    "HINDUNILVR": "NIFTY FMCG",
+    "NESTLEIND": "NIFTY FMCG",
 }
+
+SECTOR_INDEX_MAP = {
+    "NIFTY IT": "^CNXIT",
+    "NIFTY BANK": "^NSEBANK",
+    "NIFTY AUTO": "^CNXAUTO",
+    "NIFTY PHARMA": "^CNXPHARMA",
+    "NIFTY METAL": "^CNXMETAL",
+    "NIFTY ENERGY": "^CNXENERGY",
+    "NIFTY FMCG": "^CNXFMCG",
+}
+
+_SECTOR_RETURNS_CACHE: Dict[str, Dict[str, Any]] = {}
+_SECTOR_RETURNS_TTL: float = 900.0  # 15 minutes
+
+def get_sector_20d_return(sector_name: str) -> Optional[float]:
+    """Fetches 20-day return for a sectoral index with 15-minute RAM caching."""
+    sec_ticker = SECTOR_INDEX_MAP.get(sector_name)
+    if not sec_ticker:
+        return None
+    now = time.time()
+    if sec_ticker in _SECTOR_RETURNS_CACHE:
+        entry = _SECTOR_RETURNS_CACHE[sec_ticker]
+        if (now - entry.get("timestamp", 0)) < _SECTOR_RETURNS_TTL:
+            return entry.get("return_20d")
+    try:
+        t = yf.Ticker(sec_ticker)
+        hist = t.history(period="1mo")
+        if len(hist) >= 20:
+            p_now = float(hist['Close'].iloc[-1])
+            p_20d = float(hist['Close'].iloc[-20])
+            if p_20d > 0:
+                ret = round(((p_now - p_20d) / p_20d) * 100.0, 2)
+                _SECTOR_RETURNS_CACHE[sec_ticker] = {"return_20d": ret, "timestamp": now}
+                return ret
+    except Exception as e:
+        logger.debug(f"Error fetching sector return for {sec_ticker}: {e}")
+    return None
+
+def calculate_sector_relative_strength(symbol: str, stock_20d_ret: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Computes Mansfield Relative Strength of stock against its specific sector benchmark.
+    Returns None values if sector or stock 20d return is unavailable.
+    """
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    sector_name = SECTOR_MAP.get(clean_sym)
+    if not sector_name or stock_20d_ret is None:
+        return {
+            "sector_name": sector_name or "BROAD_MARKET",
+            "sector_symbol": SECTOR_INDEX_MAP.get(sector_name or ""),
+            "sector_rs_rating": None,
+            "sector_rs_20d": None,
+            "sector_rs_regime": "DATA_UNAVAILABLE",
+            "sector_trend": "DATA_UNAVAILABLE"
+        }
+
+    sec_ret = get_sector_20d_return(sector_name)
+    if sec_ret is None:
+        return {
+            "sector_name": sector_name,
+            "sector_symbol": SECTOR_INDEX_MAP.get(sector_name),
+            "sector_rs_rating": None,
+            "sector_rs_20d": None,
+            "sector_rs_regime": "DATA_UNAVAILABLE",
+            "sector_trend": "DATA_UNAVAILABLE"
+        }
+
+    delta_rs = round(float(stock_20d_ret) - float(sec_ret), 2)
+    if delta_rs >= 2.5:
+        regime = "SECTOR_LEADER"
+    elif delta_rs <= -2.5:
+        regime = "SECTOR_LAGGARD"
+    else:
+        regime = "IN_LINE"
+
+    return {
+        "sector_name": sector_name,
+        "sector_symbol": SECTOR_INDEX_MAP.get(sector_name),
+        "sector_rs_rating": delta_rs,
+        "sector_rs_20d": delta_rs,
+        "sector_rs_regime": regime,
+        "sector_trend": "OUTPERFORMING" if delta_rs > 0 else "UNDERPERFORMING"
+    }
 
 import json
 import time
@@ -54,6 +139,7 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
     - BALANCED_BREADTH: 0.8 <= ADR < 1.5 (Stock-specific action)
     - MILD_BREADTH_WEAKNESS: 0.6 <= ADR < 0.8 (Caution on new long entries)
     - SEVERE_MARKET_DISTRIBUTION: ADR < 0.60 (Blocks all long breakouts / anti-bull-trap veto)
+    Returns None values if market data is unavailable.
     """
     global _MARKET_BREADTH_CACHE, _MARKET_BREADTH_TS
     now = time.time()
@@ -61,12 +147,12 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
         return _MARKET_BREADTH_CACHE
 
     default_breadth = {
-        "adr_ratio": 1.0,
-        "advances": 25,
-        "declines": 25,
-        "unchanged": 0,
-        "breadth_regime": "BALANCED_BREADTH",
-        "source": "DEFAULT_BALANCED"
+        "adr_ratio": None,
+        "advances": None,
+        "declines": None,
+        "unchanged": None,
+        "breadth_regime": "DATA_UNAVAILABLE",
+        "source": "DATA_UNAVAILABLE"
     }
 
     headers = {

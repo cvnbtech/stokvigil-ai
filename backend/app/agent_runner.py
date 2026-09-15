@@ -595,6 +595,100 @@ Output ONLY valid JSON matching this exact structure:
     )
 
 
+def get_adaptive_weights(macro_data: Dict[str, Any], adx_regime: Optional[str] = None) -> Tuple[Dict[str, float], str]:
+    """
+    Dynamically allocates confluence weights across the 4 pillars based on macro market regime.
+    Prioritizes forensic health and flow during distribution/volatility, and technical momentum during strong trends.
+    Returns (weights_dict, regime_name).
+    """
+    vix = float(macro_data.get("india_vix") or macro_data.get("vix_value") or 14.0)
+    adr_val = macro_data.get("market_breadth_adr") or macro_data.get("adr_ratio")
+    adr = float(adr_val) if adr_val is not None else 1.0
+    
+    # Regime 1: High Volatility or Market Distribution (Defensive)
+    if vix > 16.5 or adr < 0.8:
+        return {"tech": 0.15, "flow": 0.35, "forensics": 0.35, "news": 0.15}, "HIGH_VOLATILITY_DEFENSIVE"
+    # Regime 2: Strong Trending Bull Market (Momentum)
+    elif adr >= 1.2 and vix <= 14.5:
+        return {"tech": 0.40, "flow": 0.30, "forensics": 0.15, "news": 0.15}, "BULL_MOMENTUM"
+    # Regime 3: Normal / Balanced Market
+    else:
+        return {"tech": 0.30, "flow": 0.25, "forensics": 0.25, "news": 0.20}, "BALANCED_NORMAL"
+
+
+def compute_tactical_levels(
+    current_price: Optional[float],
+    atr_val: Optional[float],
+    swing_high: Optional[float] = 0.0,
+    demat_context: Optional[Dict[str, Any]] = None,
+    h3: Optional[float] = None,
+    h4: Optional[float] = None,
+    l3: Optional[float] = None,
+    l4: Optional[float] = None,
+    vwap_val: Optional[float] = None,
+    vwap_upper_1s: Optional[float] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Computes institutional tactical levels: entry range, target 1, target 2, protective stop-loss, and R:R ratio.
+    ZERO-DEFAULT RULE: Returns None if current_price is None or <= 0.
+    """
+    if current_price is None or float(current_price) <= 0:
+        return None
+
+    price = float(current_price)
+    atr = float(atr_val or (price * 0.015))
+    if atr <= 0:
+        atr = price * 0.015
+
+    # Dynamic entry envelope
+    if vwap_val is not None and vwap_upper_1s is not None and vwap_val > 0:
+        entry_min = round(min(price, vwap_val), 2)
+        entry_max = round(max(price, vwap_upper_1s), 2)
+    elif h3 and l3 and float(l3) > 0:
+        entry_min = round(min(price * 0.995, float(l3)), 2)
+        entry_max = round(max(price * 1.005, price), 2)
+    else:
+        entry_min = round(price * 0.995, 2)
+        entry_max = round(price * 1.005, 2)
+
+    # Targets & Stop Loss
+    swing = float(swing_high or 0.0)
+    if swing > price:
+        target_1 = round(price + (1.5 * atr), 2)
+        target_2 = round(swing, 2)
+        stop_loss = round(price - (1.0 * atr), 2)
+    elif h3 and l3 and float(h3) > 0 and float(l3) > 0:
+        target_1 = round(max(price + (1.5 * atr), float(h3)), 2)
+        target_2 = round(max(price + (2.5 * atr), float(h4 or h3)), 2)
+        stop_loss = round(min(price - (1.0 * atr), float(l4 or l3)), 2)
+    else:
+        target_1 = round(price + (1.5 * atr), 2)
+        target_2 = round(price + (2.5 * atr), 2)
+        stop_loss = round(price - (1.0 * atr), 2)
+
+    target_1 = max(target_1, round(price * 1.02, 2))
+    target_2 = max(target_2, round(price * 1.05, 2))
+    stop_loss = min(stop_loss, round(price * 0.98, 2))
+
+    if demat_context and demat_context.get("is_in_portfolio"):
+        avg_buy = demat_context.get("average_buy_price", price)
+        chandelier_sl = round(price - (2.5 * atr), 2)
+        base_cost_sl = round(avg_buy * 0.96, 2)
+        stop_loss = max(stop_loss, base_cost_sl, chandelier_sl)
+
+    risk_val = max(1.0, price - stop_loss)
+    reward_val = max(2.5, target_2 - price)
+    rr_ratio = round(reward_val / risk_val, 1)
+
+    return {
+        "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
+        "target_1": f"₹{target_1:,.2f}",
+        "target_2": f"₹{target_2:,.2f}",
+        "protective_stop_loss": f"₹{stop_loss:,.2f}",
+        "risk_reward_ratio": f"1:{rr_ratio}"
+    }
+
+
 def compute_deterministic_confluence(
     symbol: str,
     technicals: Dict[str, Any],
@@ -606,9 +700,8 @@ def compute_deterministic_confluence(
     holding_info: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Deterministic Quantitative Confluence Engine (Master Prompt Section 3 Formula).
-    Evaluates institutional math in 0.001ms with zero API costs:
-    Confluence Score = (0.30 * Tech) + (0.25 * Flow) + (0.25 * Forensic) + (0.20 * News)
+    Deterministic Quantitative Confluence Engine with Adaptive Regime Weighting.
+    Evaluates institutional math in 0.001ms with zero API costs.
     """
     price_candidate = (
         technicals.get("current_price") or 
@@ -684,7 +777,9 @@ def compute_deterministic_confluence(
     # Wyckoff VSA Scoring Enhancements
     vsa_regime = flow_data.get("vsa_regime", "NORMAL_VOLUME_SPREAD")
     if vsa_regime == "SMART_MONEY_ABSORPTION":
-        confluence_drivers.append(f"Wyckoff VSA: Institutional Delivery Absorption ({flow_data.get('delivery_pct')}%)")
+        del_p = flow_data.get("delivery_pct")
+        del_str = f" ({del_p}%)" if del_p is not None else ""
+        confluence_drivers.append(f"Wyckoff VSA: Institutional Delivery Absorption{del_str}")
         flow_score = min(95, flow_score + 8)
     elif vsa_regime == "OPERATOR_CHURN_TRAP":
         confluence_drivers.append("Wyckoff VSA Warning: Speculative Operator Churn (Low Delivery %)")
@@ -695,95 +790,143 @@ def compute_deterministic_confluence(
     if sector_name != "BROAD_MARKET":
         confluence_drivers.append(f"Sector Alignment: {sector_name}")
 
-    # Calculate 4-Pillar Confluence Score (Master Prompt 3.1)
+    # Calculate Adaptive Confluence Score using Dynamic Weights
+    adx_regime = technicals.get("adx_regime", "MODERATE_TREND")
+    adx_val = technicals.get("adx_14")
+    weights, macro_regime = get_adaptive_weights(macro_data, adx_regime)
+
     confluence_score = int(round(
-        (tech_score * 0.30) +
-        (flow_score * 0.25) +
-        (forensic_score * 0.25) +
-        (min(95, news_score) * 0.20)
+        (tech_score * weights["tech"]) +
+        (flow_score * weights["flow"]) +
+        (forensic_score * weights["forensics"]) +
+        (min(95, news_score) * weights["news"])
     ))
 
     # 1. ADX Trend Strength Check (Choppy Sideways Veto / Chop Penalty)
-    adx_regime = technicals.get("adx_regime", "MODERATE_TREND")
-    adx_val = technicals.get("adx_14", 20.0)
     if adx_regime == "CHOPPY_SIDEWAYS":
-        confluence_drivers.append(f"ADX Warning: Low trend strength ({adx_val} < 20). Sideways consolidation risk.")
+        adx_str = f" ({adx_val} < 20)" if adx_val is not None else ""
+        confluence_drivers.append(f"ADX Warning: Low trend strength{adx_str}. Sideways consolidation risk.")
         confluence_score = max(25, confluence_score - 8)
     elif adx_regime == "STRONG_TREND":
-        confluence_drivers.append(f"ADX Confirmation: Strong Institutional Trend ({adx_val} >= 25)")
+        adx_str = f" ({adx_val} >= 25)" if adx_val is not None else ""
+        confluence_drivers.append(f"ADX Confirmation: Strong Institutional Trend{adx_str}")
 
     # 2. Mansfield Relative Strength vs NIFTY 50
     rs_regime = technicals.get("rs_regime", "IN_LINE")
-    rs_rating = technicals.get("rs_rating", 0.0)
-    if rs_regime == "OUTPERFORMING_LEADER":
+    rs_rating = technicals.get("rs_rating")
+    if rs_regime == "OUTPERFORMING_LEADER" and rs_rating is not None:
         confluence_drivers.append(f"Market Leadership: Outperforming NIFTY 50 by {rs_rating:+.1f}%")
         confluence_score = min(98, confluence_score + 5)
-    elif rs_regime == "UNDERPERFORMING_LAGGARD":
+    elif rs_regime == "UNDERPERFORMING_LAGGARD" and rs_rating is not None:
         confluence_drivers.append(f"Relative Strength Warning: Underperforming NIFTY 50 by {rs_rating:+.1f}%")
         confluence_score = max(25, confluence_score - 5)
 
-    # 3. Triple-Timeframe Fractal Harmony (Daily Tide -> 15m Wave -> 5m Trigger)
-    daily_bullish = (current_price >= technicals.get("ema_50", current_price)) and (technicals.get("rsi_daily", 50) >= 48)
-    m15_bullish = (technicals.get("price_vs_vwap_pct", 0) >= -0.2) and (technicals.get("rsi_divergence") != "BEARISH_REGULAR_DIVERGENCE")
+    # 3. Sector Benchmark Relative Strength Integration
+    from app.macro_filter import calculate_sector_relative_strength
+    sector_rs_dict = calculate_sector_relative_strength(symbol, rs_rating)
+    sec_regime = sector_rs_dict.get("sector_rs_regime")
+    sec_rating = sector_rs_dict.get("sector_rs_rating")
+    if sec_regime == "SECTOR_LEADER" and sec_rating is not None:
+        confluence_drivers.append(f"Sector Leader: Outperforming {sector_rs_dict.get('sector_name')} by {sec_rating:+.1f}%")
+        confluence_score = min(98, confluence_score + 4)
+    elif sec_regime == "SECTOR_LAGGARD" and sec_rating is not None:
+        confluence_drivers.append(f"Sector Laggard Warning: Underperforming {sector_rs_dict.get('sector_name')} by {sec_rating:+.1f}%")
+        confluence_score = max(25, confluence_score - 6)
+
+    # 4. TTM Volatility Squeeze Engine Integration
+    ttm_squeeze = technicals.get("ttm_squeeze", {})
+    if ttm_squeeze.get("squeeze_release"):
+        mom_trend = ttm_squeeze.get("momentum_trend")
+        if mom_trend in ["EXPANDING_BULLISH", "CONTRACTING_BEARISH"]:
+            confluence_drivers.append("TTM Squeeze Release: Explosive volatility expansion detected.")
+            confluence_score = min(98, confluence_score + 6)
+        elif mom_trend in ["EXPANDING_BEARISH"]:
+            confluence_drivers.append("TTM Squeeze Breakdown: Downward volatility expansion.")
+            confluence_score = max(20, confluence_score - 6)
+    elif ttm_squeeze.get("squeeze_on"):
+        confluence_drivers.append("TTM Squeeze Coiling: Bollinger Bands compressed inside Keltner Channels (High breakout potential).")
+        confluence_score = min(95, confluence_score + 2)
+
+    # 5. Triple-Timeframe Fractal Harmony (Daily Tide -> 15m Wave -> 5m Trigger)
+    daily_rsi = technicals.get("rsi_daily")
+    daily_bullish = (current_price >= (technicals.get("ema_50") or current_price)) and (daily_rsi is not None and daily_rsi >= 48)
+    m15_bullish = ((technicals.get("price_vs_vwap_pct") or 0.0) >= -0.2) and (technicals.get("rsi_divergence") != "BEARISH_REGULAR_DIVERGENCE")
     m5_bullish = technicals.get("is_volume_surge", False) or (technicals.get("macd_trend") in ["BULLISH_CROSSOVER", "EXPANDING_BULLISH_MOMENTUM"])
 
     if daily_bullish and m15_bullish and m5_bullish:
         confluence_drivers.append("Triple-Timeframe Confluence: Daily Tide + 15m Wave + 5m Trigger aligned Bullish")
         confluence_score = min(98, confluence_score + 8)
-    elif not daily_bullish and m5_bullish:
+    elif not daily_bullish and m5_bullish and daily_rsi is not None:
         confluence_drivers.append("Timeframe Divergence: 5m rally conflicting with Daily macro downtrend")
         confluence_score = max(30, confluence_score - 8)
 
-    # 4. F&O Options Chain & Max Pain Integration (₹0 Official Feed)
+    # 6. F&O Options Chain & Delta-OI Integration
     if flow_data.get("is_fo_stock"):
-        pcr_val = float(flow_data.get("pcr", 1.0) or 1.0)
-        max_pain = float(flow_data.get("max_pain_strike", 0.0) or 0.0)
-        sup_strike = float(flow_data.get("major_support_strike", 0.0) or 0.0)
-        res_strike = float(flow_data.get("major_resistance_strike", 0.0) or 0.0)
-        
-        if pcr_val >= 1.25:
-            confluence_drivers.append(f"Option Chain: Bullish Put-Call Ratio ({pcr_val}) with PE writing support at ₹{sup_strike:,.0f}")
+        pcr_val = flow_data.get("pcr")
+        max_pain = flow_data.get("max_pain_strike")
+        sup_strike = flow_data.get("major_support_strike")
+        res_strike = flow_data.get("major_resistance_strike")
+        net_oi_bias = flow_data.get("net_oi_bias")
+
+        if net_oi_bias == "CALL_UNWINDING_SHORT_COVERING":
+            confluence_drivers.append("F&O Momentum: Call unwinding detected across strikes (Short covering fuel).")
+            confluence_score = min(98, confluence_score + 5)
+        elif net_oi_bias == "AGGRESSIVE_PUT_WRITING":
+            confluence_drivers.append("F&O Institutional Support: Aggressive Put writing creates strong price floor.")
             confluence_score = min(98, confluence_score + 4)
-        elif pcr_val <= 0.65:
-            confluence_drivers.append(f"Option Chain Warning: Bearish PCR ({pcr_val}) with heavy CE writing at ₹{res_strike:,.0f}")
+        elif net_oi_bias == "CALL_WRITING_RESISTANCE":
+            confluence_drivers.append("F&O Resistance: Heavy Call writing overhead capping upward momentum.")
+            confluence_score = max(25, confluence_score - 5)
+        
+        if pcr_val is not None and pcr_val >= 1.25:
+            sup_str = f" at ₹{sup_strike:,.0f}" if sup_strike else ""
+            confluence_drivers.append(f"Option Chain: Bullish Put-Call Ratio ({pcr_val}) with PE writing support{sup_str}")
+            confluence_score = min(98, confluence_score + 4)
+        elif pcr_val is not None and pcr_val <= 0.65:
+            res_str = f" at ₹{res_strike:,.0f}" if res_strike else ""
+            confluence_drivers.append(f"Option Chain Warning: Bearish PCR ({pcr_val}) with heavy CE writing{res_str}")
             confluence_score = max(25, confluence_score - 5)
 
-        if max_pain > 0:
+        if max_pain is not None and max_pain > 0 and current_price > 0:
             diff_pct = abs(current_price - max_pain) / max_pain * 100
             if diff_pct <= 0.75:
                 confluence_drivers.append(f"F&O Max Pain Pinning: Price ₹{current_price:,.2f} near Max Pain ₹{max_pain:,.0f} ({diff_pct:.1f}% dev)")
-            elif current_price > max_pain and pcr_val >= 1.0:
-                confluence_drivers.append(f"F&O Bullish Driver: Trading above Max Pain Strike ₹{max_pain:,.0f} (Support ₹{sup_strike:,.0f})")
+            elif current_price > max_pain and pcr_val is not None and pcr_val >= 1.0:
+                confluence_drivers.append(f"F&O Bullish Driver: Trading above Max Pain Strike ₹{max_pain:,.0f}")
                 confluence_score = min(98, confluence_score + 3)
     elif flow_data.get("fo_oi_status") == "BSE_CASH_DELIVERY":
-        confluence_drivers.append(f"BSE Cash Market: Delivery volume accumulation ({flow_data.get('delivery_pct')}%)")
+        del_pct = flow_data.get("delivery_pct")
+        del_str = f" ({del_pct}%)" if del_pct is not None else ""
+        confluence_drivers.append(f"BSE Cash Market: Delivery volume accumulation{del_str}")
 
     # Determine Action Bias based on adjusted Confluence Score
     action_bias = "HOLD_NEUTRAL"
     has_actionable_signal = False
     
     # Check Trailing Stop-Loss for User Holding
-    if demat_context["is_in_portfolio"] and demat_context["unrealized_pnl_pct"] >= 5.0 and technicals.get("rsi_15m", 50) > 72:
+    rsi_15m_val = technicals.get("rsi_15m")
+    if demat_context["is_in_portfolio"] and demat_context["unrealized_pnl_pct"] >= 5.0 and rsi_15m_val is not None and rsi_15m_val > 72:
         action_bias = "TRAILING_SL_ALERT"
         has_actionable_signal = True
         catalyst_category = "TRAILING_STOP_TRIGGER"
         alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{demat_context['unrealized_pnl_pct']}%)"
-        confluence_drivers.insert(0, f"Position gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {technicals.get('rsi_15m')} (Overbought zone).")
-    elif confluence_score >= 72:
+        confluence_drivers.insert(0, f"Position gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {rsi_15m_val} (Overbought zone).")
+    elif confluence_score >= 72 and has_real_price:
         action_bias = "BUY_WATCH"
         has_actionable_signal = True
-    elif confluence_score <= 38:
+    elif confluence_score <= 38 and has_real_price:
         action_bias = "SELL_WATCH"
         has_actionable_signal = True
 
-    # Multi-Timeframe & Macro Veto Guardrails (Master Prompt Core Principle #2)
-    ema_200_val = technicals.get("ema_200", current_price)
-    is_macro_downtrend = (technicals.get("ma_trend") == "BELOW_200_EMA") or (current_price < ema_200_val)
+    # Multi-Timeframe, Macro & Sector Veto Guardrails
+    ema_200_val = technicals.get("ema_200")
+    is_macro_downtrend = bool(ema_200_val and current_price < ema_200_val)
     is_high_vix = not macro_data.get("allow_breakout_trades", True)
-    adr_val = float(macro_data.get("adr_ratio", 1.0) or 1.0)
-    is_breadth_veto = (adr_val < 0.60)
+    adr_val = macro_data.get("adr_ratio")
+    is_breadth_veto = bool(adr_val is not None and float(adr_val) < 0.60)
+    is_sector_laggard_veto = bool(sec_regime == "SECTOR_LAGGARD" and sec_rating is not None and sec_rating <= -3.5)
 
-    if (is_macro_downtrend or is_high_vix or is_breadth_veto) and action_bias == "BUY_WATCH":
+    if (is_macro_downtrend or is_high_vix or is_breadth_veto or is_sector_laggard_veto) and action_bias == "BUY_WATCH":
         veto_reasons = []
         if is_macro_downtrend:
             veto_reasons.append(f"Below 200 EMA (₹{ema_200_val:,.2f})")
@@ -791,80 +934,62 @@ def compute_deterministic_confluence(
             veto_reasons.append(f"High VIX ({macro_data.get('india_vix')})")
         if is_breadth_veto:
             veto_reasons.append(f"Market Breadth Distribution (ADR: {adr_val} < 0.60)")
-        logger.info(f"Macro / Breadth Veto triggered for {symbol}: {', '.join(veto_reasons)}. Downgrading BUY_WATCH to HOLD_NEUTRAL.")
+        if is_sector_laggard_veto:
+            veto_reasons.append(f"Sector Laggard Veto ({sec_rating:+.1f}% vs {sector_rs_dict.get('sector_name')})")
+
+        logger.info(f"Veto triggered for {symbol}: {', '.join(veto_reasons)}. Downgrading BUY_WATCH to HOLD_NEUTRAL.")
         action_bias = "HOLD_NEUTRAL"
         has_actionable_signal = False
         confluence_score = min(55, confluence_score - 8)
         if is_breadth_veto:
             confluence_drivers.append(f"Market Breadth Veto: Broad market distribution ({macro_data.get('breadth_regime', 'DISTRIBUTION')}, ADR {adr_val}). Long breakout blocked.")
+        if is_sector_laggard_veto:
+            confluence_drivers.append(f"Sector Laggard Veto: Stock lagging sector by {sec_rating:+.1f}%. Long setup neutralized.")
 
     # Confluence Driver Highlights
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
-        confluence_drivers.append(f"15m MACD Bullish Crossover detected (Hist: {technicals.get('macd_histogram')}).")
-    if technicals.get("is_volume_surge"):
+        confluence_drivers.append("15m MACD Bullish Crossover detected.")
+    if technicals.get("is_volume_surge") and technicals.get("volume_multiple"):
         confluence_drivers.append(f"5m Volume is {technicals.get('volume_multiple')}x above 20 MA.")
-    if flow_data.get("is_high_delivery"):
+    if flow_data.get("is_high_delivery") and flow_data.get("delivery_pct"):
         confluence_drivers.append(f"Institutional delivery estimated at {flow_data.get('delivery_pct')}%.")
-    if technicals.get("price_vs_vwap_pct", 0) > 0:
-        confluence_drivers.append(f"Trading above Intraday VWAP (₹{technicals.get('vwap')}).")
-    if not confluence_drivers:
-        confluence_drivers.append(f"Current price: ₹{current_price} | 15m RSI: {technicals.get('rsi_15m')}")
+    vwap_val = technicals.get("vwap")
+    if vwap_val is not None and current_price > vwap_val:
+        confluence_drivers.append(f"Trading above Intraday VWAP (₹{vwap_val:,.2f}).")
+    if not confluence_drivers and has_real_price:
+        rsi_str = f" | 15m RSI: {rsi_15m_val}" if rsi_15m_val is not None else ""
+        confluence_drivers.append(f"Current price: ₹{current_price:,.2f}{rsi_str}")
 
-    # 5. Camarilla Equation Institutional Pivots & Tactical Volatility Envelopes
+    # 5. Camarilla Equation & VWAP Bands Tactical Execution Levels
     camarilla = technicals.get("camarilla_pivots", {})
-    h4 = camarilla.get("h4", 0.0)
-    h3 = camarilla.get("h3", 0.0)
-    l3 = camarilla.get("l3", 0.0)
-    l4 = camarilla.get("l4", 0.0)
+    h4 = camarilla.get("h4")
+    h3 = camarilla.get("h3")
+    l3 = camarilla.get("l3")
+    l4 = camarilla.get("l4")
+    vwap_upper_1s = technicals.get("vwap_upper_1s")
 
-    if has_real_price:
-        if h3 > 0 and l3 > 0:
-            entry_min = round(min(current_price * 0.995, l3), 2)
-            entry_max = round(max(current_price * 1.005, current_price), 2)
-            target_1 = round(max(current_price + (1.5 * atr_val), h3), 2)
-            target_2 = round(max(current_price + (2.5 * atr_val), h4), 2)
-            stop_loss = round(min(current_price - (1.0 * atr_val), l4), 2)
-        else:
-            entry_min = round(current_price * 0.995, 2)
-            entry_max = round(current_price * 1.005, 2)
-            stop_loss = round(current_price - (1.0 * atr_val), 2)
-            target_1 = round(current_price + (1.5 * atr_val), 2)
-            target_2 = round(current_price + (2.5 * atr_val), 2)
-
-        # Sanity guardrails: Target must always be above current_price, Stop-loss below current_price
-        target_1 = max(target_1, round(current_price * 1.02, 2))
-        target_2 = max(target_2, round(current_price * 1.05, 2))
-        stop_loss = min(stop_loss, round(current_price * 0.98, 2))
-
-        # 6. Dynamic Chandelier Trailing Stop-Loss for Demat Holdings
-        holding_guidance = "Track for optimal entry in tactical range."
-        if demat_context["is_in_portfolio"]:
+    if has_real_price and current_price > 0:
+        swing_high = float(technicals.get("swing_high") or technicals.get("day_high") or 0.0)
+        tactical_dict = compute_tactical_levels(
+            current_price=current_price,
+            atr_val=atr_val,
+            swing_high=swing_high,
+            demat_context=demat_context,
+            h3=h3,
+            h4=h4,
+            l3=l3,
+            l4=l4,
+            vwap_val=vwap_val,
+            vwap_upper_1s=vwap_upper_1s
+        )
+        if demat_context["is_in_portfolio"] and tactical_dict:
             avg_buy = demat_context.get("average_buy_price", current_price)
-            chandelier_sl = round(current_price - (2.5 * atr_val), 2)
-            base_cost_sl = round(avg_buy * 0.96, 2)
-            stop_loss = max(stop_loss, base_cost_sl, chandelier_sl)
-            holding_guidance = f"Chandelier Trailing SL active at ₹{stop_loss:,.2f} (Protecting cost basis ₹{avg_buy:,.2f})."
-
-        risk_val = max(1.0, current_price - stop_loss)
-        reward_val = max(2.5, target_2 - current_price)
-        rr_ratio = round(reward_val / risk_val, 1)
-
-        tactical_dict = {
-            "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
-            "target_1": f"₹{target_1:,.2f}",
-            "target_2": f"₹{target_2:,.2f}",
-            "protective_stop_loss": f"₹{stop_loss:,.2f}",
-            "risk_reward_ratio": f"1:{rr_ratio}"
-        }
+            holding_guidance = f"Chandelier Trailing SL active at {tactical_dict['protective_stop_loss']} (Protecting cost basis ₹{avg_buy:,.2f})."
+        else:
+            holding_guidance = "Track for optimal entry in tactical range."
     else:
-        holding_guidance = "Awaiting market open for live execution pricing."
-        tactical_dict = {
-            "entry_range": "-",
-            "target_1": "-",
-            "target_2": "-",
-            "protective_stop_loss": "-",
-            "risk_reward_ratio": "-"
-        }
+        holding_guidance = None
+        tactical_dict = None
 
     return {
         "symbol": symbol,

@@ -15,6 +15,60 @@ logger = logging.getLogger("stokvigil.flow_tracker")
 _OPTION_CHAIN_CACHE: Dict[str, Dict[str, Any]] = {}
 _OPTION_CHAIN_TTL: float = 120.0
 
+def calculate_delta_oi_velocity(chain_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Computes intraday Net OI Change velocity and directional institutional bias from strike-wise OI changes.
+    - Negative Call change + Positive Put change => Short Covering / Bullish Unwinding
+    - Heavy Put change (> 1.5x Call change) => Aggressive Put Writing (Floor support)
+    - Heavy Call change (> 1.5x Put change) => Aggressive Call Writing (Ceiling resistance)
+    Returns None values if chain_rows is empty.
+    """
+    if not chain_rows:
+        return {
+            "total_call_change_oi": None,
+            "total_put_change_oi": None,
+            "net_oi_change": None,
+            "net_oi_bias": None
+        }
+
+    total_ce_change_oi = 0
+    total_pe_change_oi = 0
+
+    for row in chain_rows:
+        if "call_change_oi" in row or "put_change_oi" in row:
+            ce_change = int(row.get("call_change_oi") or 0)
+            pe_change = int(row.get("put_change_oi") or 0)
+        else:
+            ce = row.get("CE", {})
+            pe = row.get("PE", {})
+            ce_change = int(ce.get("changeinOpenInterest", 0) or ce.get("pchangeinOpenInterest", 0) or 0)
+            pe_change = int(pe.get("changeinOpenInterest", 0) or pe.get("pchangeinOpenInterest", 0) or 0)
+
+        total_ce_change_oi += ce_change
+        total_pe_change_oi += pe_change
+
+    net_oi_change = total_pe_change_oi - total_ce_change_oi
+
+    if total_ce_change_oi < 0 and total_pe_change_oi >= 0:
+        net_oi_bias = "CALL_UNWINDING_SHORT_COVERING"
+    elif total_pe_change_oi > total_ce_change_oi * 1.5 and total_pe_change_oi > 0:
+        net_oi_bias = "AGGRESSIVE_PUT_WRITING"
+    elif total_ce_change_oi > total_pe_change_oi * 1.5 and total_ce_change_oi > 0:
+        net_oi_bias = "AGGRESSIVE_CALL_WRITING"
+    elif net_oi_change > 0:
+        net_oi_bias = "MILD_BULLISH_OI_ADDITION"
+    elif net_oi_change < 0:
+        net_oi_bias = "MILD_BEARISH_OI_ADDITION"
+    else:
+        net_oi_bias = "NEUTRAL_OI_CHANGE"
+
+    return {
+        "total_call_change_oi": total_ce_change_oi,
+        "total_put_change_oi": total_pe_change_oi,
+        "net_oi_change": net_oi_change,
+        "net_oi_bias": net_oi_bias
+    }
+
 def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
     """
     Fetches official real-time Option Chain from NSE India.
@@ -58,17 +112,24 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
                 res_strike = 0.0
                 sup_strike = 0.0
 
+                total_ce_change_oi = 0
+                total_pe_change_oi = 0
+
                 for row in data_rows:
                     strike = float(row.get("strikePrice", 0.0))
                     ce = row.get("CE", {})
                     pe = row.get("PE", {})
                     ce_oi = int(ce.get("openInterest", 0))
                     pe_oi = int(pe.get("openInterest", 0))
+                    ce_change = int(ce.get("changeinOpenInterest", 0) or ce.get("pchangeinOpenInterest", 0) or 0)
+                    pe_change = int(pe.get("changeinOpenInterest", 0) or pe.get("pchangeinOpenInterest", 0) or 0)
 
                     if strike > 0:
                         strikes_data.append((strike, ce_oi, pe_oi))
                         total_ce_oi += ce_oi
                         total_pe_oi += pe_oi
+                        total_ce_change_oi += ce_change
+                        total_pe_change_oi += pe_change
 
                         if ce_oi > max_ce_oi:
                             max_ce_oi = ce_oi
@@ -81,6 +142,20 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
                     return None
 
                 pcr = round(total_pe_oi / max(1, total_ce_oi), 2)
+                net_oi_change = total_pe_change_oi - total_ce_change_oi
+                
+                if total_ce_change_oi < 0 and total_pe_change_oi >= 0:
+                    net_oi_bias = "CALL_UNWINDING_SHORT_COVERING"
+                elif total_pe_change_oi > total_ce_change_oi * 1.5 and total_pe_change_oi > 0:
+                    net_oi_bias = "AGGRESSIVE_PUT_WRITING"
+                elif total_ce_change_oi > total_pe_change_oi * 1.5 and total_ce_change_oi > 0:
+                    net_oi_bias = "CALL_WRITING_RESISTANCE"
+                elif net_oi_change > 0:
+                    net_oi_bias = "MILD_BULLISH_OI_ADDITION"
+                elif net_oi_change < 0:
+                    net_oi_bias = "MILD_BEARISH_OI_ADDITION"
+                else:
+                    net_oi_bias = "NEUTRAL_OI_CHANGE"
 
                 # Vectorized / In-Memory Max Pain Calculation
                 # Max Pain = Strike K that minimizes total payout across all Call and Put writers
@@ -104,6 +179,10 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
                     "major_resistance_strike": res_strike,
                     "total_call_oi": total_ce_oi,
                     "total_put_oi": total_pe_oi,
+                    "total_call_change_oi": total_ce_change_oi,
+                    "total_put_change_oi": total_pe_change_oi,
+                    "net_oi_change": net_oi_change,
+                    "net_oi_bias": net_oi_bias,
                     "source": "NSE_OFFICIAL_OPTION_CHAIN"
                 }
 
@@ -114,46 +193,56 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
 
     return None
 
-def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Dict[str, Any]:
+def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 0.0) -> Dict[str, Any]:
     """
-    Evaluates Delivery Volume Percentage, Put-Call Ratio (PCR), Max Pain, and F&O Open Interest build-up.
+    Evaluates Delivery Volume Percentage, Put-Call Ratio (PCR), Max Pain, Delta-OI, and F&O Open Interest build-up.
     Prioritizes official NSE Option Chain, with graceful fallback to Yahoo Finance and BSE cash delivery.
+    Returns None for F&O metrics if symbol is cash-only or data is missing.
     """
     is_bse = str(symbol).strip().upper().endswith(".BO")
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    effective_pct = float(price_change_pct or 0.0)
+    
     default_res = {
         "symbol": clean_sym,
-        "delivery_pct": 52.0,
-        "delivery_median_10d": 48.0,
+        "delivery_pct": None,
+        "delivery_median_10d": None,
         "is_high_delivery": False,
-        "fo_oi_status": "CASH_EQUITY" if is_bse else "NEUTRAL",
-        "flow_bias": "CASH_MARKET_DELIVERY" if is_bse else "NEUTRAL",
+        "fo_oi_status": "CASH_EQUITY" if is_bse else "DATA_UNAVAILABLE",
+        "flow_bias": "CASH_MARKET" if is_bse else "NEUTRAL",
         "flow_score": 50,
-        "pcr": 1.0,
-        "max_pain_strike": 0.0,
-        "major_support_strike": 0.0,
-        "major_resistance_strike": 0.0,
+        "pcr": None,
+        "max_pain_strike": None,
+        "max_pain": None,
+        "major_support_strike": None,
+        "major_resistance_strike": None,
         "is_fo_stock": False,
+        "net_oi_change": None,
+        "net_oi_bias": None,
         "vsa_regime": "NORMAL_VOLUME_SPREAD",
         "vsa_note": "Normal liquidity absorption"
     }
     
     try:
-        pcr = 1.0
+        pcr = None
         is_fo = False
-        max_pain = 0.0
-        sup_strike = 0.0
-        res_strike = 0.0
+        max_pain = None
+        sup_strike = None
+        res_strike = None
+        net_oi_bias = None
+        net_oi_change = None
         
         # 1. Primary: Official NSE Real-Time Option Chain (For NSE F&O Equities & Indices)
         if not is_bse:
             chain_data = fetch_nse_option_chain(clean_sym)
             if chain_data:
                 is_fo = True
-                pcr = chain_data.get("pcr", 1.0)
-                max_pain = chain_data.get("max_pain_strike", 0.0)
-                sup_strike = chain_data.get("major_support_strike", 0.0)
-                res_strike = chain_data.get("major_resistance_strike", 0.0)
+                pcr = chain_data.get("pcr")
+                max_pain = chain_data.get("max_pain_strike")
+                sup_strike = chain_data.get("major_support_strike")
+                res_strike = chain_data.get("major_resistance_strike")
+                net_oi_bias = chain_data.get("net_oi_bias")
+                net_oi_change = chain_data.get("net_oi_change")
 
         # 2. Secondary Fallback: Yahoo Finance Option Chain
         if not is_fo and not is_bse:
@@ -175,55 +264,64 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: float = 0.0) -> Di
 
         # Institutional F&O and Delivery Flow Classification
         if is_bse and not is_fo:
-            # Native BSE Cash Market handling (no false penalties for lacking NSE options)
             fo_status = "BSE_CASH_DELIVERY"
-            flow_bias = "CASH_ACCUMULATION" if price_change_pct > 0.5 else "NEUTRAL"
-            flow_score = 65 if price_change_pct > 0.5 else 50
-            estimated_delivery = 58.0 if price_change_pct > 0.5 else 48.0
-        elif pcr >= 1.25 or (price_change_pct > 1.5 and pcr >= 1.0):
-            fo_status = "LONG_BUILDUP"
-            flow_bias = "INSTITUTIONAL_ACCUMULATION"
-            flow_score = min(92, int(75 + (pcr * 10)))
-            estimated_delivery = 64.0
-        elif pcr <= 0.70 or (price_change_pct < -1.5 and pcr < 0.9):
-            fo_status = "SHORT_BUILDUP"
-            flow_bias = "INSTITUTIONAL_DISTRIBUTION"
-            flow_score = max(15, int(35 - ((1.0 - pcr) * 20)))
-            estimated_delivery = 58.0
-        elif price_change_pct >= 0.0:
-            fo_status = "SHORT_COVERING"
-            flow_bias = "MILD_BULLISH_FLOW"
-            flow_score = 65
-            estimated_delivery = 48.0
+            flow_bias = "CASH_ACCUMULATION" if effective_pct > 0.5 else "NEUTRAL"
+            flow_score = 65 if effective_pct > 0.5 else 50
+            estimated_delivery = None
+        elif is_fo and pcr is not None:
+            if pcr >= 1.25 or (effective_pct > 1.5 and pcr >= 1.0):
+                fo_status = "LONG_BUILDUP"
+                flow_bias = "INSTITUTIONAL_ACCUMULATION"
+                flow_score = min(92, int(75 + (pcr * 10)))
+                estimated_delivery = 64.0
+            elif pcr <= 0.70 or (effective_pct < -1.5 and pcr < 0.9):
+                fo_status = "SHORT_BUILDUP"
+                flow_bias = "INSTITUTIONAL_DISTRIBUTION"
+                flow_score = max(15, int(35 - ((1.0 - pcr) * 20)))
+                estimated_delivery = 58.0
+            elif effective_pct >= 0.0:
+                fo_status = "SHORT_COVERING"
+                flow_bias = "MILD_BULLISH_FLOW"
+                flow_score = 65
+                estimated_delivery = 48.0
+            else:
+                fo_status = "LONG_UNWINDING"
+                flow_bias = "MILD_BEARISH_FLOW"
+                flow_score = 40
+                estimated_delivery = 42.0
         else:
-            fo_status = "LONG_UNWINDING"
-            flow_bias = "MILD_BEARISH_FLOW"
-            flow_score = 40
-            estimated_delivery = 42.0
+            fo_status = "CASH_EQUITY"
+            flow_bias = "NEUTRAL"
+            flow_score = 50
+            estimated_delivery = None
 
         # Wyckoff Volume Spread Analysis (VSA) Institutional Absorption vs Operator Churn
         vsa_regime = "NORMAL_VOLUME_SPREAD"
         vsa_note = "Normal liquidity absorption"
-        if estimated_delivery >= 55.0 and price_change_pct > 0.5:
-            vsa_regime = "SMART_MONEY_ABSORPTION"
-            vsa_note = f"High delivery accumulation ({estimated_delivery}%) confirming upward price expansion"
-        elif estimated_delivery < 25.0 and abs(price_change_pct) > 2.0:
-            vsa_regime = "OPERATOR_CHURN_TRAP"
-            vsa_note = f"Low delivery ({estimated_delivery}%) with high volatility indicates speculative intraday churn"
+        if estimated_delivery is not None:
+            if estimated_delivery >= 55.0 and effective_pct > 0.5:
+                vsa_regime = "SMART_MONEY_ABSORPTION"
+                vsa_note = f"High delivery accumulation ({estimated_delivery}%) confirming upward price expansion"
+            elif estimated_delivery < 25.0 and abs(effective_pct) > 2.0:
+                vsa_regime = "OPERATOR_CHURN_TRAP"
+                vsa_note = f"Low delivery ({estimated_delivery}%) with high volatility indicates speculative intraday churn"
 
         return {
             "symbol": clean_sym,
             "delivery_pct": estimated_delivery,
-            "delivery_median_10d": 48.0,
-            "is_high_delivery": estimated_delivery >= 50.0,
+            "delivery_median_10d": 48.0 if estimated_delivery is not None else None,
+            "is_high_delivery": (estimated_delivery >= 50.0) if estimated_delivery is not None else False,
             "fo_oi_status": fo_status,
             "flow_bias": flow_bias,
             "flow_score": flow_score,
             "pcr": pcr,
             "max_pain_strike": max_pain,
+            "max_pain": max_pain,
             "major_support_strike": sup_strike,
             "major_resistance_strike": res_strike,
             "is_fo_stock": is_fo,
+            "net_oi_change": net_oi_change,
+            "net_oi_bias": net_oi_bias,
             "vsa_regime": vsa_regime,
             "vsa_note": vsa_note
         }
@@ -257,3 +355,6 @@ def fetch_bulk_and_block_deals(symbol: str) -> List[Dict[str, Any]]:
         logger.error(f"Error fetching bulk/block deals for {symbol}: {e}")
         
     return deals
+
+# Backward compatibility alias
+fetch_fno_derivative_metrics = fetch_delivery_and_fo_flow

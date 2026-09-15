@@ -30,7 +30,7 @@ from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
-from app.technical_engine import calculate_camarilla_pivots
+from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
 
 logging.basicConfig(level=logging.INFO)
@@ -910,17 +910,26 @@ def get_stock_candles(
             "interval": interval,
             "period": period,
             "candles": [],
-            "camarilla": {"h4": 0, "h3": 0, "l3": 0, "l4": 0}
+            "camarilla": None,
+            "ttm_squeeze": None,
+            "vwap_bands": None
         }
 
-    # Calculate VWAP
+    # Calculate Institutional VWAP & Volatility Bands (+-1sigma)
     try:
-        typical_price = (df_candles["High"] + df_candles["Low"] + df_candles["Close"]) / 3.0
-        cum_tp_vol = (typical_price * df_candles["Volume"]).cumsum()
-        cum_vol = df_candles["Volume"].cumsum()
-        vwap_series = cum_tp_vol / cum_vol.replace(0, 1)
+        vwap_bands_info = calculate_vwap_bands(df_candles)
+        vwap_series = vwap_bands_info.get("vwap_series")
+        std_dev_series = vwap_bands_info.get("std_dev_series")
     except Exception:
+        vwap_bands_info = {}
         vwap_series = df_candles["Close"]
+        std_dev_series = None
+
+    # Calculate TTM Squeeze compression and momentum release
+    try:
+        ttm_squeeze_info = calculate_ttm_squeeze(df_candles)
+    except Exception:
+        ttm_squeeze_info = None
 
     # Calculate ATR and Chandelier Stop
     try:
@@ -935,7 +944,7 @@ def get_stock_candles(
         chandelier_sl_series = (df_candles["Close"] * 0.96).round(2)
 
     # Calculate Camarilla pivots from daily data (NSE or BSE)
-    camarilla = {"h4": 0.0, "h3": 0.0, "l3": 0.0, "l4": 0.0}
+    camarilla = None
     for sym_to_try in candidates:
         try:
             t_daily = yf.Ticker(sym_to_try)
@@ -950,7 +959,10 @@ def get_stock_candles(
     for idx, row in df_candles.iterrows():
         try:
             bar_time = int(idx.timestamp())
-            c_vwap = float(vwap_series.loc[idx]) if idx in vwap_series else None
+            c_vwap = float(vwap_series.loc[idx]) if (vwap_series is not None and idx in vwap_series) else None
+            c_sd = float(std_dev_series.loc[idx]) if (std_dev_series is not None and idx in std_dev_series) else None
+            c_u1 = (c_vwap + c_sd) if (c_vwap is not None and c_sd is not None) else None
+            c_l1 = max(0.01, c_vwap - c_sd) if (c_vwap is not None and c_sd is not None) else None
             c_sl = float(chandelier_sl_series.loc[idx]) if idx in chandelier_sl_series else None
             candles.append({
                 "time": bar_time,
@@ -960,6 +972,8 @@ def get_stock_candles(
                 "close": round(float(row["Close"]), 2),
                 "volume": int(row.get("Volume", 0)),
                 "vwap": round(c_vwap, 2) if c_vwap is not None and not pd.isna(c_vwap) else None,
+                "vwap_upper_1s": round(c_u1, 2) if c_u1 is not None and not pd.isna(c_u1) else None,
+                "vwap_lower_1s": round(c_l1, 2) if c_l1 is not None and not pd.isna(c_l1) else None,
                 "chandelier_sl": round(c_sl, 2) if c_sl is not None and not pd.isna(c_sl) else None
             })
         except Exception:
@@ -970,7 +984,15 @@ def get_stock_candles(
         "interval": interval,
         "period": period,
         "candles": candles,
-        "camarilla": camarilla
+        "camarilla": camarilla if camarilla is not None else {"h4": 0, "h3": 0, "l3": 0, "l4": 0},
+        "ttm_squeeze": ttm_squeeze_info,
+        "vwap_bands": {
+            "vwap": vwap_bands_info.get("vwap"),
+            "vwap_upper_1s": vwap_bands_info.get("vwap_upper_1s"),
+            "vwap_lower_1s": vwap_bands_info.get("vwap_lower_1s"),
+            "vwap_upper_2s": vwap_bands_info.get("vwap_upper_2s"),
+            "vwap_lower_2s": vwap_bands_info.get("vwap_lower_2s")
+        } if vwap_bands_info.get("vwap") is not None else None
     }
     # Bound cache size to prevent memory leaks from excessive unique ticker queries
     if len(_CANDLE_CACHE) > 200:

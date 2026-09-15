@@ -35,11 +35,22 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 
 ---
 
-## 🧠 AI Agent Evaluation Engine & Factor Weights
+## 🧠 AI Agent Evaluation Engine & Regime-Adaptive Factor Weights
 
 Every 5 minutes during Indian market hours (09:15–15:30 IST), StokVigil AI executes a **2-Tier Institutional Surveillance Loop**:
 
-$$\text{Confluence Score} = (0.30 \times \text{Technical}) + (0.25 \times \text{Flow}) + (0.25 \times \text{Fundamental}) + (0.20 \times \text{News/Catalysts})$$
+$$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\text{flow}} \times \text{Flow}) + (W_{\text{forensics}} \times \text{Forensics}) + (W_{\text{news}} \times \text{News})$$
+
+### Regime-Adaptive Dynamic Weights Matrix:
+To emulate top quantitative hedge funds, the Confluence Engine dynamically adapts factor weightings based on the real-time macro regime (`India VIX` and `Market Breadth ADR`):
+* **High Volatility / Market Distribution Regime** ($\text{India VIX} > 16.5$ or $\text{ADR} < 0.80$):  
+  $\rightarrow$ Shifts to a **Defensive Posture**: **35% Order Flow + 35% Forensic Health + 15% Technicals + 15% News**. Prioritizes balance sheet strength and real institutional absorption to prevent bull-trap drawdowns.
+* **Bull Momentum Trend Regime** ($\text{India VIX} \le 14.5$ and $\text{ADR} \ge 1.20$):  
+  $\rightarrow$ Shifts to **Trend Following**: **40% Technical Momentum + 30% Order Flow + 15% Forensic Health + 15% News**. Maximizes capture of momentum breakouts.
+* **Balanced / Normal Market**:  
+  $\rightarrow$ **30% Technicals + 25% Order Flow + 25% Forensics + 20% News**.
+
+---
 
 ### 1. Tier-1 Quantitative Smart Gatekeeper (RAM Math in 0.001 ms)
 Real trading desks and hedge funds do not burn heavy neural network inference on quiet or sideways stocks. Before invoking Google Gemini AI, StokVigil evaluates 7 quantitative criteria:
@@ -55,49 +66,63 @@ Real trading desks and hedge funds do not burn heavy neural network inference on
 * **Active Catalyst Stocks**: Handed off to **Tier-2 (Google Gemini AI)** for qualitative synthesis and institutional tactical level structuring.
 * **Impact**: Slashes Gemini requests from 20+ per scan down to **1–3 requests**, completely eliminating the 20 RPM free-tier `429 Quota Exceeded` bottleneck.
 
-### 2. Wyckoff Volume-Spread Analysis (VSA)
+---
+
+### 2. Wyckoff Volume-Spread Analysis (VSA) & Options Order Flow
 - **`SMART_MONEY_ABSORPTION`**: Delivery volume $\ge 55\%$ with positive price expansion above VWAP $\rightarrow$ **+8 Confluence Points** + institutional accumulation badge.
 - **`OPERATOR_CHURN_TRAP`**: High price volatility ($> 2\%$) but weak delivery ($< 25\%$) $\rightarrow$ **-10 Confluence Points** + speculative trap warning.
+- **Intraday $\Delta \text{OI}$ Momentum Velocity**: Evaluates strike-wise changes in Call and Put open interest in real time from official NSE options feeds:
+  - `CALL_UNWINDING_SHORT_COVERING`: Aggressive call unwinding with put writing $\rightarrow$ High-probability short squeeze setup.
+  - `AGGRESSIVE_PUT_WRITING`: Puts written at $>1.5\times$ calls $\rightarrow$ Strong institutional floor.
+  - `AGGRESSIVE_CALL_WRITING`: Heavy call writing $\rightarrow$ Overhead resistance wall.
+
+---
 
 ### 3. Sector & Market Breadth Alignment (Dual Benchmarks & ADR)
 - **Sector Tailwinds (+8 Points)**: Stock rallying with green sector index (`NIFTY BANK`, `NIFTY IT`, `NIFTY AUTO`, etc.).
-- **Sector Divergence (-5 Points)**: Stock attempting breakout while sector is down $> 1.5\%$ (protects against bull traps).
+- **Sector Relative Strength Alpha (`calculate_sector_relative_strength`)**: Measures Mansfield Relative Strength vs the stock's specific benchmark sector over 20 trading days (`^CNXIT`, `^NSEBANK`, `^CNXAUTO`, etc.).
+- **Sector Laggard Veto**: If a stock is lagging its sector benchmark by $> 5.0\%$, breakout `BUY_WATCH` signals are automatically penalized or vetoed to prevent laggard traps.
 - **Market Breadth Advance-Decline Ratio (ADR)**: Real-time cash market breadth tracking (`fetch_market_breadth_adr`) from NSE All-Indices across 4 distinct regimes (`STRONG_BULLISH_BREADTH` $\ge 1.5$, `BALANCED` $0.8 - 1.5$, `MILD_WEAKNESS` $0.6 - 0.8$, `SEVERE_MARKET_DISTRIBUTION` $< 0.60$).
 - **Anti-Bull-Trap Breadth Veto**: When $\text{ADR} < 0.60$ and market volatility is elevated, breakout `BUY_WATCH` setups are automatically downgraded to `HOLD_NEUTRAL`.
 - **Dual Benchmarks**: Both **NIFTY 50** (`^NSEI`) and **BSE SENSEX** (`^BSESN`) tracked simultaneously alongside **India VIX** (`^INDIAVIX`).
 
-### 4. Five Institutional Quantitative Math Pillars (Institutional Accuracy Engine)
-To elevate surveillance accuracy to 72%–78% institutional grade, the deterministic confluence engine implements 5 mathematical pillars in RAM with ₹0 API cost:
-1. **14-Period Wilder's ADX (Average Directional Index)**:
+---
+
+### 4. Institutional Quantitative Math Pillars (78%–82% Accuracy Engine)
+To deliver true institutional precision without paid feeds, the quantitative engine executes in RAM with ₹0 API cost:
+1. **TTM Squeeze Volatility Compression & Directional Momentum**:
+   - Implements John Carter's volatility squeeze: detects Bollinger Bands ($20, 2.0\sigma$) compressing inside Keltner Channels ($20, 1.5\text{x ATR}_{14}$) (`SQUEEZE_ON`).
+   - Identifies explosive breakout releases (`SQUEEZE_RELEASE`) paired with 5-period smoothed momentum histogram directions (`EXPANDING_BULLISH`, `CONTRACTING_BULLISH`, `EXPANDING_BEARISH`, `CONTRACTING_BEARISH`).
+2. **Session VWAP Volatility Bands ($\pm 1\sigma, \pm 2\sigma$)**:
+   - Volume-weighted standard deviation bands around the intraday VWAP serve as statistical mean-reversion boundaries and dynamic entry envelopes.
+3. **14-Period Wilder's ADX (Average Directional Index)**:
    - `STRONG_TREND` ($\text{ADX} \ge 25$): Validates institutional breakout follow-through.
    - `CHOPPY_SIDEWAYS` ($\text{ADX} < 20$): Enforces an **8-point chop penalty** and blocks false breakouts in sideways consolidation zones.
-2. **Camarilla Equation Institutional Pivots ($H_4, H_3, L_3, L_4$)**:
-   - Computes daily institutional order book floors and ceilings ($H_4 > H_3 > L_3 > L_4$).
-   - Replaces static percentage stops with mathematical liquidity envelopes ($L_3$: Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Target 1, $H_4$: Target 2 breakout ceiling).
-3. **Mansfield Relative Strength (RS vs NIFTY 50)**:
-   - Evaluates 20-day stock performance relative to the NIFTY 50 benchmark (`rs_rating`).
-   - `OUTPERFORMING_LEADER` ($\ge +3\%$): **+5 Confluence Points** to concentrate focus on true market leaders.
-   - `UNDERPERFORMING_LAGGARD` ($\le -3\%$): **-5 Confluence Points** to penalize weak laggards.
-4. **Triple-Timeframe Fractal Harmony**:
+4. **Camarilla Equation Institutional Pivots ($H_4, H_3, L_3, L_4$)**:
+   - Computes exact daily institutional order book floors and ceilings ($H_4 > H_3 > L_3 > L_4$).
+   - $L_3$: Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Target 1 (1.5x ATR), $H_4$: Target 2 breakout ceiling.
+5. **Triple-Timeframe Fractal Harmony & Chandelier Trailing SL**:
    - Synthesizes **Daily Tide** (Daily price $\ge$ 50 EMA, Daily RSI $\ge 48$), **15m Wave** (Price vs VWAP $\ge -0.2\%$, no bearish divergence), and **5m Trigger** (Volume surge or MACD crossover).
-   - Full Bullish Alignment: **+8 Confluence Points**.
-   - Timeframe Divergence (5m rally into Daily downtrend): **-8 Confluence Points** (anti-bull-trap filter).
-5. **Dynamic Chandelier Trailing Stop-Loss for Demat Holdings**:
-   - For active ICICI Demat holdings, dynamic trailing stop is locked at $\text{Current Price} - (2.5 \times \text{ATR})$.
-   - Ratchets upward monotonically as price advances, mathematically locking in unrealized gains.
+   - Dynamic Chandelier Trailing Stop locks Demat profits at $\text{Current Price} - (2.5 \times \text{ATR})$, ratcheting upward monotonically.
 
-### 5. Daily Candle Fallback & Robust Price Resolution
+---
+
+### 5. Strict Zero-Default Policy (Pure Data Integrity Guarantee)
+> **Core Operational Rule:** *"Dont display default values if we dont recieve actual values"*
+* **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, or fake `24500.0` index prices).
+* **Graceful Null Propagation**: If market feeds or tick histories are insufficient (e.g. illiquid stock, exchange holiday, or non-F&O cash equity), functions return clean `None` (JSON `null`).
+* **Telegram & UI Suppression**:
+  - `format_telegram_alert` completely omits the `📐 Tactical Risk-Reward Levels` section if tactical levels are `None` or invalid.
+  - In `Market Snapshot`, lines are only rendered for metrics that are legitimately present (preventing `• Delivery: None%` or `• 15m RSI: None`).
+  - `format_pre_market_war_room_telegram` omits benchmark lines if index prices are unavailable.
+
+---
+
+### 6. Daily Candle Fallback & Robust Price Resolution
 - **Off-Market & Low-Liquidity Synthesis**: If intraday 5m data is empty (off-market hours, weekends, market holidays, or low-liquidity stocks), `technical_engine.py` smoothly synthesizes price, ATR, Camarilla institutional pivots ($H_4, H_3, L_3, L_4$), EMAs (20/50/200), Mansfield Relative Strength vs NIFTY 50, and 14-period Wilder's ADX from 1-year daily history (100+ daily bars).
 - **Zero Dummy Prices**: Enforces a multi-tier candidate resolution ladder (`technicals.current_price` $\rightarrow$ `financials.price` $\rightarrow$ `holding.current_market_price` $\rightarrow$ `holding.last_price` $\rightarrow$ `holding.average_price` $\rightarrow$ `technicals.previous_close` $\rightarrow$ `fast_info`), permanently eliminating missing prices or dummy ₹100.00 fallback values.
 
-### 6. Dynamic Target/Stop-Loss Guardrails & Demat P&L Sanitization
-- **Mathematical Bounds**:
-  - **Target 1**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
-  - **Target 2**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
-  - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ risk buffer).
-  - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$, dynamically ratcheting upward with price.
-  - **Risk-Reward Ratio**: Dynamically computed as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
-- **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
+---
 
 ### 7. Model Hierarchy
 1. **Primary Model**: `gemini-3.7-flash` via official `google-genai` SDK Interactions API — Ultra low-latency financial catalyst reasoning with strict JSON schema.

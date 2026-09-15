@@ -48,7 +48,7 @@ class TestAdvancedAccuracy(unittest.TestCase):
         self.assertEqual(flow["fo_oi_status"], "BSE_CASH_DELIVERY")
         self.assertEqual(flow["flow_bias"], "CASH_ACCUMULATION")
         self.assertFalse(flow["is_fo_stock"])
-        self.assertEqual(flow["pcr"], 1.0)
+        self.assertIsNone(flow["pcr"])
 
     def test_max_pain_and_breadth_veto_in_deterministic_confluence(self):
         """

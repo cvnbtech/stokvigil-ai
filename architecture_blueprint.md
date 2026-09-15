@@ -119,36 +119,63 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
    - Only stocks with confirmed catalysts are submitted to Google Gemini for deep qualitative synthesis and institutional level structuring.
    - **Reduces Gemini calls from 20+ down to 1–3 per 5-minute scan**, keeping RPM well under the 20 RPM ceiling.
 
-### 2.1.3 Wyckoff Volume Spread Analysis (VSA) & Sector Alignment
+### 2.1.3 Wyckoff Volume Spread Analysis (VSA), Options Order Flow & Sector Alpha
 - **Wyckoff Institutional Absorption**: If delivery $\ge 55\%$ with price expanding above VWAP $\rightarrow$ classified as `SMART_MONEY_ABSORPTION` (+8 confluence points).
 - **Wyckoff Operator Trap**: If price volatility is high ($> 2\%$) while delivery is low ($< 25\%$) $\rightarrow$ flagged as `OPERATOR_CHURN_TRAP` (-10 confluence points + warning).
+- **Intraday $\Delta \text{OI}$ Momentum Velocity (`flow_tracker.py`)**:
+  - Aggregates strike-wise changes in Call and Put open interest (`call_change_oi`, `put_change_oi`, `net_oi_change`) in real time from official NSE options chains.
+  - Dynamically classifies writing bias:
+    - `CALL_UNWINDING_SHORT_COVERING`: Unwinding calls + aggressive put build $\rightarrow$ Short squeeze breakout tailwind.
+    - `AGGRESSIVE_PUT_WRITING`: Put change $>1.5\times$ call change with positive net change $\rightarrow$ Strong institutional floor.
+    - `AGGRESSIVE_CALL_WRITING`: Call change $>1.5\times$ put change $\rightarrow$ Heavy overhead supply ceiling.
+- **Sector Relative Strength Alpha & Laggard Veto (`macro_filter.py`)**:
+  - Maps equities to official sector indices (`^CNXIT`, `^NSEBANK`, `^CNXAUTO`, `^CNXPHARMA`, `^CNXMETAL`, `^CNXENERGY`, `^CNXFMCG`).
+  - Evaluates 20-day Mansfield Relative Strength Alpha ($\text{Stock 20D Return} - \text{Sector 20D Return}$) with 15-minute RAM caching.
+  - **Sector Laggard Veto**: If a stock is lagging its sector benchmark by $> 5.0\%$, breakout `BUY_WATCH` signals are automatically penalized or vetoed to prevent laggard bull-traps.
 - **Market Breadth Advance-Decline Ratio (ADR)**: Real-time cash market breadth tracking (`fetch_market_breadth_adr` in `macro_filter.py`) queried directly from NSE All-Indices:
   - `STRONG_BULLISH_BREADTH` ($\text{ADR} \ge 1.5$): High breakout continuation probability (+5 points).
   - `BALANCED_BREADTH` ($0.8 \le \text{ADR} < 1.5$): Selective stock-specific regime.
   - `MILD_BREADTH_WEAKNESS` ($0.6 \le \text{ADR} < 0.8$): Caution on extended longs.
   - `SEVERE_MARKET_DISTRIBUTION` ($\text{ADR} < 0.60$): Triggers mandatory Market Breadth Veto.
-- **Sector Breadth Alignment**: Quantifies whether a stock has sector tailwinds (+8 points) or is diverging against a severe sector decline (-5 points).
 - **Dual Benchmarks**: Macro surveillance monitors both **NIFTY 50** (`^NSEI`) and **BSE SENSEX** (`^BSESN`) alongside **India VIX** (`^INDIAVIX`).
 
-### 2.1.4 Five Institutional Quantitative Math Pillars (72%–78% Accuracy Engine)
-1. **14-Period Wilder's ADX (Average Directional Index)**:
+### 2.1.4 Institutional Quantitative Math Pillars (78%–82% Accuracy Engine)
+To operate with institutional precision, the deterministic confluence engine executes mathematical modeling in RAM with ₹0 API cost:
+1. **TTM Squeeze Volatility Compression & Directional Momentum (`technical_engine.py`)**:
+   - Implements John Carter's volatility squeeze: detects Bollinger Bands ($20, 2.0\sigma$) compressing inside Keltner Channels ($20, 1.5\text{x ATR}_{14}$) (`SQUEEZE_ON`).
+   - Identifies explosive breakout releases (`SQUEEZE_RELEASE`) paired with 5-period smoothed momentum histogram directions (`EXPANDING_BULLISH`, `CONTRACTING_BULLISH`, `EXPANDING_BEARISH`, `CONTRACTING_BEARISH`).
+2. **Session VWAP Volatility Bands ($\pm 1\sigma, \pm 2\sigma$) (`technical_engine.py`)**:
+   - Volume-weighted standard deviation bands around the intraday VWAP serve as statistical mean-reversion boundaries and dynamic entry envelopes, overlaid on TradingView lightweight-charts.
+3. **14-Period Wilder's ADX (Average Directional Index)**:
    - `STRONG_TREND` ($\text{ADX} \ge 25$): Validates true institutional breakout momentum with strong continuation probability.
    - `CHOPPY_SIDEWAYS` ($\text{ADX} < 20$): Enforces an **8-point chop penalty** on breakout attempts, preventing false breakout entries during sideways price consolidation.
-2. **Camarilla Equation Institutional Pivots ($H_4, H_3, L_3, L_4$)**:
+4. **Camarilla Equation Institutional Pivots ($H_4, H_3, L_3, L_4$)**:
    - Computes exact mathematical floors and ceilings from prior daily range:
      $$H_4 = C + 1.1 \times \frac{H - L}{2}, \quad H_3 = C + 1.1 \times \frac{H - L}{4}, \quad L_3 = C - 1.1 \times \frac{H - L}{4}, \quad L_4 = C - 1.1 \times \frac{H - L}{2}$$
    - Provides institutional market maker liquidity envelopes ($L_3$: Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Target 1, $H_4$: Target 2 breakout ceiling).
-3. **Mansfield Relative Strength (RS vs NIFTY 50)**:
-   - Tracks 20-day stock performance relative to the NIFTY 50 benchmark (`rs_rating`).
-   - `OUTPERFORMING_LEADER` ($\ge +3\%$): **+5 Confluence Points** to prioritize institutional market leaders.
-   - `UNDERPERFORMING_LAGGARD` ($\le -3\%$): **-5 Confluence Points** to protect capital from weak laggards.
-4. **Triple-Timeframe Fractal Harmony**:
+5. **Triple-Timeframe Fractal Harmony & Chandelier Trailing SL**:
    - Synthesizes **Daily Tide** (Daily price $\ge$ 50 EMA, Daily RSI $\ge 48$), **15m Wave** (Price vs VWAP $\ge -0.2\%$, no bearish divergence), and **5m Trigger** (Volume surge or MACD crossover).
-   - Full Bullish Alignment: **+8 Confluence Points**.
-   - Timeframe Divergence (5m rally into Daily downtrend): **-8 Confluence Points** (anti-bull-trap filter).
-5. **Dynamic Chandelier Trailing Stop-Loss for Demat Holdings**:
-   - For active ICICI Demat holdings, dynamic trailing stop is computed as $\text{Current Price} - (2.5 \times \text{ATR})$.
-   - Ratchets upward monotonically as price advances, mathematically locking in unrealized gains.
+   - Dynamic Chandelier Trailing Stop for Demat holdings is locked at $\text{Current Price} - (2.5 \times \text{ATR})$, ratcheting upward monotonically.
+
+### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting (`agent_runner.py`)
+Rather than static weightings, factor weights adapt dynamically to real-time market regimes:
+$$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\text{flow}} \times \text{Flow}) + (W_{\text{forensics}} \times \text{Forensics}) + (W_{\text{news}} \times \text{News})$$
+
+- **High Volatility / Market Distribution Regime** ($\text{India VIX} > 16.5$ or $\text{ADR} < 0.80$):  
+  $\rightarrow$ Shifts to **Defensive Posture**: **35% Order Flow + 35% Forensic Health + 15% Technicals + 15% News**. Prioritizes balance sheet strength and real institutional absorption to prevent bull-trap drawdowns.
+- **Bull Momentum Trend Regime** ($\text{India VIX} \le 14.5$ and $\text{ADR} \ge 1.20$):  
+  $\rightarrow$ Shifts to **Trend Following**: **40% Technical Momentum + 30% Order Flow + 15% Forensic Health + 15% News**. Maximizes capture of momentum breakouts.
+- **Balanced / Normal Market**:  
+  $\rightarrow$ **30% Technicals + 25% Order Flow + 25% Forensics + 20% News**.
+
+### 2.1.4c Strict Zero-Default Policy (Pure Data Integrity Guarantee)
+> **Core Architectural Invariant:** *"Dont display default values if we dont recieve actual values"*
+- **Zero Fabricated Defaults**: Eliminates fake fallback defaults across the entire system (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, or fake `24500.0` index prices).
+- **Clean Null Propagation**: When data is missing or candle history is insufficient, functions return clean `None` (JSON `null`).
+- **Telegram & UI Suppression**:
+  - `format_telegram_alert` completely omits the `📐 Tactical Risk-Reward Levels` section if tactical levels are `None` or invalid.
+  - In `Market Snapshot`, lines are only rendered for metrics that are legitimately present (preventing `• Delivery: None%` or `• 15m RSI: None`).
+  - `format_pre_market_war_room_telegram` omits benchmark lines if index prices are unavailable.
 
 ### 2.1.5 Robust Price Resolution & 1-Year Daily Candle Fallback (`technical_engine.py`)
 - **Off-Market & Low-Liquidity Synthesis**: When intraday 5m data is empty (off-market hours, weekends, exchange holidays, illiquid stocks, or upstream latency), `technical_engine.py` smoothly synthesizes price, 14-period ATR, Camarilla institutional pivots ($H_4, H_3, L_3, L_4$), EMAs (20/50/200), Mansfield Relative Strength vs NIFTY 50, and 14-period Wilder's ADX directly from the 1-year daily history (100+ daily bars).

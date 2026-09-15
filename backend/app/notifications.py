@@ -195,34 +195,65 @@ def format_telegram_alert(
         html += "\n"
 
     # Tactical Levels (Entry, Target, Stop-Loss, R:R)
-    if tactical_levels:
-        entry = tactical_levels.get("entry_range", "N/A")
-        t1 = tactical_levels.get("target_1", "N/A")
-        t2 = tactical_levels.get("target_2", "N/A")
-        sl = tactical_levels.get("protective_stop_loss", "N/A")
-        rr = tactical_levels.get("risk_reward_ratio", "N/A")
+    # ZERO-DEFAULT RULE: Never display fake 0.00, None, or placeholder levels if not received
+    if tactical_levels and isinstance(tactical_levels, dict):
+        entry = tactical_levels.get("entry_range")
+        t1 = tactical_levels.get("target_1")
+        t2 = tactical_levels.get("target_2")
+        sl = tactical_levels.get("protective_stop_loss")
+        rr = tactical_levels.get("risk_reward_ratio")
         
-        html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
-        html += f"• <b>Entry Range:</b> {entry}\n"
-        html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
-        html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
-        html += f"• <b>Stop-Loss:</b> {sl} (R:R: {rr})\n\n"
+        # Validate that tactical levels are actual valid prices/ranges, not 0.00 / N/A / None
+        is_valid_entry = entry and str(entry).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(entry)
+        if is_valid_entry:
+            html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
+            html += f"• <b>Entry Range:</b> {entry}\n"
+            if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
+                html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
+            if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
+                html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
+            if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
+                rr_str = f" (R:R: {rr})" if rr and str(rr).strip() not in ("N/A", "None", "") else ""
+                html += f"• <b>Stop-Loss:</b> {sl}{rr_str}\n"
+            html += "\n"
 
-    # Technical Metrics Snapshot
-    if metrics_snapshot:
-        html += "📊 <b>Market Snapshot:</b>\n"
-        if "current_price" in metrics_snapshot or "price" in metrics_snapshot:
-            p = metrics_snapshot.get("current_price") or metrics_snapshot.get("price")
-            html += f"• LTP: ₹{p}\n"
-        if "rsi_15m" in metrics_snapshot:
-            html += f"• 15m RSI: {metrics_snapshot['rsi_15m']} | 5m RSI: {metrics_snapshot.get('rsi_5m', 'N/A')}\n"
-        if "vwap" in metrics_snapshot and metrics_snapshot['vwap'] > 0:
-            html += f"• VWAP: ₹{metrics_snapshot['vwap']}\n"
-        if "delivery_pct" in metrics_snapshot:
-            html += f"• Delivery: {metrics_snapshot['delivery_pct']}%\n"
-        if "vsa_regime" in metrics_snapshot and metrics_snapshot.get("vsa_regime"):
-            safe_vsa = html_lib.escape(metrics_snapshot['vsa_regime'].replace('_', ' '), quote=False)
-            html += f"• Wyckoff VSA: <b>{safe_vsa}</b>\n"
+    # Technical Metrics Snapshot (ZERO-DEFAULT RULE: Only render actual received metrics)
+    if metrics_snapshot and isinstance(metrics_snapshot, dict):
+        snapshot_lines = []
+        p = metrics_snapshot.get("current_price") or metrics_snapshot.get("price")
+        if p is not None and str(p).strip() not in ("None", "N/A", "0", "0.0", "0.00", ""):
+            snapshot_lines.append(f"• LTP: ₹{p}")
+            
+        rsi_15m = metrics_snapshot.get("rsi_15m")
+        rsi_5m = metrics_snapshot.get("rsi_5m")
+        if rsi_15m is not None and str(rsi_15m).strip() not in ("None", "N/A", ""):
+            rsi_str = f"• 15m RSI: {rsi_15m}"
+            if rsi_5m is not None and str(rsi_5m).strip() not in ("None", "N/A", ""):
+                rsi_str += f" | 5m RSI: {rsi_5m}"
+            snapshot_lines.append(rsi_str)
+            
+        vwap = metrics_snapshot.get("vwap")
+        if vwap is not None and isinstance(vwap, (int, float)) and vwap > 0:
+            snapshot_lines.append(f"• VWAP: ₹{vwap:,.2f}")
+            
+        delivery_pct = metrics_snapshot.get("delivery_pct")
+        if delivery_pct is not None and str(delivery_pct).strip() not in ("None", "N/A", ""):
+            snapshot_lines.append(f"• Delivery: {delivery_pct}%")
+            
+        vsa_regime = metrics_snapshot.get("vsa_regime")
+        if vsa_regime and str(vsa_regime).strip() not in ("None", "N/A", "UNKNOWN", "NORMAL_VOLUME", ""):
+            safe_vsa = html_lib.escape(str(vsa_regime).replace('_', ' '), quote=False)
+            snapshot_lines.append(f"• Wyckoff VSA: <b>{safe_vsa}</b>")
+
+        ttm_squeeze = metrics_snapshot.get("ttm_squeeze")
+        if ttm_squeeze and str(ttm_squeeze).strip() not in ("None", "N/A", "NORMAL", ""):
+            safe_squeeze = html_lib.escape(str(ttm_squeeze).replace('_', ' '), quote=False)
+            snapshot_lines.append(f"• Squeeze: <b>{safe_squeeze}</b>")
+
+        if snapshot_lines:
+            html += "📊 <b>Market Snapshot:</b>\n"
+            for line in snapshot_lines:
+                html += f"{line}\n"
 
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += "<i>⚠️ Factual quantitative intelligence alert. Non-advisory analytical tracking.</i>"
@@ -268,48 +299,81 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
 def format_pre_market_war_room_telegram(data: Dict[str, Any]) -> str:
     """
     Formats the 09:00 AM IST Pre-Market War Room Briefing card for Telegram.
+    ZERO-DEFAULT RULE: Does not display fake prices or values if not received.
     """
     date_str = data.get("date", "")
-    nifty_p = data.get("nifty_price", 24500.0)
-    nifty_chg = data.get("nifty_change_pct", 0.0)
-    sensex_p = data.get("sensex_price", 80000.0)
-    sensex_chg = data.get("sensex_change_pct", 0.0)
-    vix = data.get("india_vix", 14.5)
-    vix_regime = data.get("vix_regime", "NORMAL_VOLATILITY").replace('_', ' ')
+    nifty_p = data.get("nifty_price")
+    nifty_chg = data.get("nifty_change_pct")
+    sensex_p = data.get("sensex_price")
+    sensex_chg = data.get("sensex_change_pct")
+    vix = data.get("india_vix")
+    vix_regime = (data.get("vix_regime") or "").replace('_', ' ')
     
-    global_cues = data.get("global_cues", {})
-    dow = global_cues.get("dow_jones_pct", 0.0)
-    nasdaq = global_cues.get("nasdaq_pct", 0.0)
-    nikkei = global_cues.get("nikkei_pct", 0.0)
-    bias = global_cues.get("bias", "NEUTRAL").replace('_', ' ')
+    global_cues = data.get("global_cues") or {}
+    dow = global_cues.get("dow_jones_pct")
+    nasdaq = global_cues.get("nasdaq_pct")
+    nikkei = global_cues.get("nikkei_pct")
+    bias = (global_cues.get("bias") or "").replace('_', ' ')
     
     leading = data.get("leading_sectors", [])
     guidance = data.get("tactical_guidance", "")
     
     html = "🌅 <b>STOKVIGIL AI: PRE-MARKET WAR ROOM BRIEFING</b> 🌅\n"
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    html += f"📅 <b>Date:</b> {date_str} | ⏰ <b>09:00 AM IST (Pre-Open)</b>\n\n"
+    if date_str:
+        html += f"📅 <b>Date:</b> {date_str} | ⏰ <b>09:00 AM IST (Pre-Open)</b>\n\n"
     
-    html += "🏛️ <b>DOMESTIC BENCHMARKS:</b>\n"
-    html += f"• <b>NIFTY 50:</b> ₹{nifty_p:,.2f} (<b>{nifty_chg:+.2f}%</b>)\n"
-    html += f"• <b>SENSEX:</b> {sensex_p:,.2f} (<b>{sensex_chg:+.2f}%</b>)\n"
-    html += f"• <b>India VIX:</b> {vix} — <i>{vix_regime}</i>\n\n"
+    # Domestic benchmarks (only show actual metrics received)
+    benchmark_lines = []
+    if nifty_p is not None:
+        chg_str = f" (<b>{nifty_chg:+.2f}%</b>)" if nifty_chg is not None else ""
+        benchmark_lines.append(f"• <b>NIFTY 50:</b> ₹{nifty_p:,.2f}{chg_str}")
+    if sensex_p is not None:
+        chg_str = f" (<b>{sensex_chg:+.2f}%</b>)" if sensex_chg is not None else ""
+        benchmark_lines.append(f"• <b>SENSEX:</b> {sensex_p:,.2f}{chg_str}")
+    if vix is not None:
+        regime_str = f" — <i>{vix_regime}</i>" if vix_regime else ""
+        benchmark_lines.append(f"• <b>India VIX:</b> {vix}{regime_str}")
     
-    html += "🌍 <b>GLOBAL MARKET CUES:</b>\n"
-    html += f"• <b>Dow Jones:</b> {dow:+.2f}% | <b>Nasdaq:</b> {nasdaq:+.2f}%\n"
-    html += f"• <b>Nikkei 225:</b> {nikkei:+.2f}%\n"
-    html += f"• <b>Global Bias:</b> <b>{bias}</b>\n\n"
+    if benchmark_lines:
+        html += "🏛️ <b>DOMESTIC BENCHMARKS:</b>\n"
+        for bline in benchmark_lines:
+            html += f"{bline}\n"
+        html += "\n"
+    
+    # Global cues
+    cue_lines = []
+    if dow is not None or nasdaq is not None:
+        parts = []
+        if dow is not None:
+            parts.append(f"<b>Dow Jones:</b> {dow:+.2f}%")
+        if nasdaq is not None:
+            parts.append(f"<b>Nasdaq:</b> {nasdaq:+.2f}%")
+        cue_lines.append(f"• {' | '.join(parts)}")
+    if nikkei is not None:
+        cue_lines.append(f"• <b>Nikkei 225:</b> {nikkei:+.2f}%")
+    if bias:
+        cue_lines.append(f"• <b>Global Bias:</b> <b>{bias}</b>")
+        
+    if cue_lines:
+        html += "🌍 <b>GLOBAL MARKET CUES:</b>\n"
+        for cline in cue_lines:
+            html += f"{cline}\n"
+        html += "\n"
     
     if leading:
         html += "🚀 <b>SECTORAL MOMENTUM WATCH:</b>\n"
         for s in leading:
             safe_name = html_lib.escape(str(s.get('name', 'N/A')), quote=False)
-            html += f"• <b>{safe_name}:</b> {s.get('change_pct', 0.0):+.2f}%\n"
+            chg = s.get('change_pct')
+            chg_str = f": {chg:+.2f}%" if chg is not None else ""
+            html += f"• <b>{safe_name}</b>{chg_str}\n"
         html += "\n"
         
-    safe_guidance = html_lib.escape(str(guidance), quote=False)
-    html += "💡 <b>TACTICAL SESSION GUIDANCE:</b>\n"
-    html += f"{safe_guidance}\n\n"
+    if guidance:
+        safe_guidance = html_lib.escape(str(guidance), quote=False)
+        html += "💡 <b>TACTICAL SESSION GUIDANCE:</b>\n"
+        html += f"{safe_guidance}\n\n"
     
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += "⚡ <i>Automated 5-minute surveillance starts at 09:15 AM IST.</i>"
