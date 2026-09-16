@@ -309,7 +309,7 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
             # Use bounded thread executor so a stalled network socket doesn't block the scan
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 fut = ex.submit(lambda: ticker.info or {})
-                ticker_info = fut.result(timeout=6.0)
+                ticker_info = fut.result(timeout=2.5)
             price = ticker_info.get('currentPrice') or ticker_info.get('regularMarketPrice') or ticker_info.get('previousClose') or 0.0
             if price > 0 or ticker_info.get('shortName') or ticker_info.get('marketCap'):
                 info = ticker_info
@@ -1415,19 +1415,90 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
 
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
-    # 4. Evaluate each symbol using high-speed In-Memory Cache (< 0.1ms lookup)
-    for symbol in symbols:
-        try:
-            cached_pack = market_cache.get_stock(symbol)
-            holding_info = holdings_map.get(symbol)
+    # 4. Evaluate each symbol concurrently using high-speed In-Memory Cache (< 0.1ms lookup) with parallel fallback
+    sym_sem = asyncio.Semaphore(10)
 
-            if cached_pack:
-                technicals = cached_pack.get("technicals", {})
-                financials = cached_pack.get("financials", {})
-                flow_data = cached_pack.get("flow_data", {})
-                analysis = dict(cached_pack.get("analysis", {}))
+    async def _eval_symbol_worker(symbol: str) -> Optional[dict]:
+        async with sym_sem:
+            try:
+                cached_pack = market_cache.get_stock(symbol)
+                holding_info = holdings_map.get(symbol)
 
-                # If user holds the stock, evaluate holding-specific trailing stop loss in-memory without re-fetching
+                if cached_pack:
+                    technicals = cached_pack.get("technicals", {})
+                    financials = cached_pack.get("financials", {})
+                    flow_data = cached_pack.get("flow_data", {})
+                    analysis = dict(cached_pack.get("analysis", {}))
+
+                    # If user holds the stock, evaluate holding-specific trailing stop loss in-memory without re-fetching
+                    if holding_info:
+                        curr_p = float(
+                            technicals.get("current_price") or 
+                            financials.get("price") or 
+                            holding_info.get("current_market_price") or 
+                            holding_info.get("last_price") or 
+                            0.0
+                        )
+                        avg_p = float(holding_info.get("average_price", 0.0) or 0.0)
+                        if avg_p > 0 and curr_p > 0:
+                            pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2)
+                        elif holding_info.get("unrealized_pnl_pct") is not None:
+                            pnl_pct = round(float(holding_info["unrealized_pnl_pct"]), 2)
+                        elif holding_info.get("pnl_percentage") is not None:
+                            pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
+                        else:
+                            pnl_pct = 0.0
+                        rsi_15m = technicals.get("rsi_15m", 50)
+                        
+                        if pnl_pct >= 5.0 and rsi_15m > 72:
+                            analysis["action_bias"] = "TRAILING_SL_ALERT"
+                            analysis["has_actionable_signal"] = True
+                            analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
+                            analysis["alert_title"] = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
+                            analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m}. Trailing SL active."
+                            drivers = list(analysis.get("confluence_drivers", []))
+                            drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m} (Overbought zone).")
+                            analysis["confluence_drivers"] = drivers
+                else:
+                    # Cache miss fallback
+                    fresh_pack = await evaluate_single_symbol_full(symbol, macro_data=macro_data, holding_info=holding_info)
+                    technicals = fresh_pack.get("technicals", {})
+                    financials = fresh_pack.get("financials", {})
+                    flow_data = fresh_pack.get("flow_data", {})
+                    analysis = fresh_pack.get("analysis", {})
+                
+                confluence_score = analysis.get("confluence_score", 50)
+                has_actionable = analysis.get("has_actionable_signal", False)
+                action_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
+                alert_title = analysis.get("alert_title", f"{symbol} Market Update")
+                catalyst_type = analysis.get("catalyst_category", "NEWS_CATALYST")
+                confluence_drivers = analysis.get("confluence_drivers", [])
+                tactical_levels = analysis.get("tactical_levels", {})
+                holding_guidance = analysis.get("holding_guidance")
+                
+                # Sensitivity Filter
+                should_dispatch = False
+                if alert_sensitivity == "HIGH":
+                    should_dispatch = (confluence_score >= 80) or (action_bias == "TRAILING_SL_ALERT")
+                elif alert_sensitivity == "FII":
+                    is_fii = (catalyst_type in ["BLOCK_DEAL", "DEBT_REDUCTION"] or flow_data.get("is_high_delivery"))
+                    should_dispatch = is_fii and (confluence_score >= 65 or has_actionable)
+                else: # ALL
+                    should_dispatch = has_actionable or (confluence_score >= 65)
+
+                if not should_dispatch:
+                    return None
+
+                # Anti-Fatigue Cooldown Check
+                is_tier1 = (confluence_score >= 88 or action_bias == "TRAILING_SL_ALERT" or catalyst_type == "BLOCK_DEAL")
+                allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
+                
+                if not allowed:
+                    logger.info(f"Skipping dispatch for {symbol}: {reason}")
+                    return None
+
+                # Demat position snapshot for alert formatting
+                demat_pos = None
                 if holding_info:
                     curr_p = float(
                         technicals.get("current_price") or 
@@ -1445,171 +1516,108 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
                     else:
                         pnl_pct = 0.0
-                    rsi_15m = technicals.get("rsi_15m", 50)
-                    
-                    if pnl_pct >= 5.0 and rsi_15m > 72:
-                        analysis["action_bias"] = "TRAILING_SL_ALERT"
-                        analysis["has_actionable_signal"] = True
-                        analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
-                        analysis["alert_title"] = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
-                        analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m}. Trailing SL active."
-                        drivers = list(analysis.get("confluence_drivers", []))
-                        drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m} (Overbought zone).")
-                        analysis["confluence_drivers"] = drivers
-            else:
-                # Cache miss fallback
-                fresh_pack = await evaluate_single_symbol_full(symbol, macro_data=macro_data, holding_info=holding_info)
-                technicals = fresh_pack.get("technicals", {})
-                financials = fresh_pack.get("financials", {})
-                flow_data = fresh_pack.get("flow_data", {})
-                analysis = fresh_pack.get("analysis", {})
-            
-            confluence_score = analysis.get("confluence_score", 50)
-            has_actionable = analysis.get("has_actionable_signal", False)
-            action_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
-            alert_title = analysis.get("alert_title", f"{symbol} Market Update")
-            catalyst_type = analysis.get("catalyst_category", "NEWS_CATALYST")
-            confluence_drivers = analysis.get("confluence_drivers", [])
-            tactical_levels = analysis.get("tactical_levels", {})
-            holding_guidance = analysis.get("holding_guidance")
-            
-            # Sensitivity Filter
-            should_dispatch = False
-            if alert_sensitivity == "HIGH":
-                should_dispatch = (confluence_score >= 80) or (action_bias == "TRAILING_SL_ALERT")
-            elif alert_sensitivity == "FII":
-                is_fii = (catalyst_type in ["BLOCK_DEAL", "DEBT_REDUCTION"] or flow_data.get("is_high_delivery"))
-                should_dispatch = is_fii and (confluence_score >= 65 or has_actionable)
-            else: # ALL
-                should_dispatch = has_actionable or (confluence_score >= 65)
+                    demat_pos = {
+                        "is_in_portfolio": True,
+                        "quantity": holding_info.get("quantity", 0),
+                        "average_buy_price": avg_p,
+                        "unrealized_pnl_pct": pnl_pct
+                    }
 
-            if not should_dispatch:
-                continue
+                # Dispatch FCM Lock-Screen Push Notification
+                fcm_sent = False
+                if fcm_token and fcm_enabled:
+                    fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Target: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
+                    fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
+                        "symbol": symbol,
+                        "action_bias": action_bias,
+                        "confluence_score": str(confluence_score),
+                        "catalyst_type": catalyst_type
+                    })
 
-            # Anti-Fatigue Cooldown Check
-            is_tier1 = (confluence_score >= 88 or action_bias == "TRAILING_SL_ALERT" or catalyst_type == "BLOCK_DEAL")
-            allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
-            
-            if not allowed:
-                logger.info(f"Skipping dispatch for {symbol}: {reason}")
-                continue
+                # Dispatch Rich HTML Telegram Notification with Inline Buttons
+                telegram_sent = False
+                if telegram_enabled and telegram_chat_id:
+                    formatted_msg = format_telegram_alert(
+                        symbol=symbol,
+                        alert_title=alert_title,
+                        action_bias=action_bias,
+                        confluence_score=confluence_score,
+                        catalyst_type=catalyst_type,
+                        confluence_drivers=confluence_drivers,
+                        tactical_levels=tactical_levels,
+                        demat_position=demat_pos,
+                        metrics_snapshot={
+                            "current_price": technicals.get("current_price"),
+                            "rsi_15m": technicals.get("rsi_15m"),
+                            "rsi_5m": technicals.get("rsi_5m"),
+                            "vwap": technicals.get("vwap"),
+                            "delivery_pct": flow_data.get("delivery_pct"),
+                            "vsa_regime": flow_data.get("vsa_regime"),
+                            "factor_breakdown": analysis.get("factor_breakdown")
+                        },
+                        holding_guidance=holding_guidance
+                    )
+                    inline_buttons = build_telegram_inline_keyboard(symbol)
+                    telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg, reply_markup=inline_buttons)
 
-            # Demat position snapshot for alert formatting
-            demat_pos = None
-            if holding_info:
-                curr_p = float(
-                    technicals.get("current_price") or 
-                    financials.get("price") or 
-                    holding_info.get("current_market_price") or 
-                    holding_info.get("last_price") or 
-                    0.0
-                )
-                avg_p = float(holding_info.get("average_price", 0.0) or 0.0)
-                if avg_p > 0 and curr_p > 0:
-                    pnl_pct = round(((curr_p - avg_p) / avg_p) * 100, 2)
-                elif holding_info.get("unrealized_pnl_pct") is not None:
-                    pnl_pct = round(float(holding_info["unrealized_pnl_pct"]), 2)
-                elif holding_info.get("pnl_percentage") is not None:
-                    pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
-                else:
-                    pnl_pct = 0.0
-                demat_pos = {
-                    "is_in_portfolio": True,
-                    "quantity": holding_info.get("quantity", 0),
-                    "average_buy_price": avg_p,
-                    "unrealized_pnl_pct": pnl_pct
+                # Normalize and validate catalyst against PostgreSQL catalyst_type_enum
+                CATALYST_SYNONYM_MAP = {
+                    "EARNINGS_SURPRISE": "EARNINGS_BEAT",
+                    "DEBT_REDUCTION": "DEBT_CHANGE",
                 }
+                normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
+                VALID_CATALYST_TYPES = {
+                    "BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", 
+                    "NEWS_CATALYST", "VOLUME_SURGE", "TECHNICAL_BREAKOUT", "TRAILING_STOP_TRIGGER"
+                }
+                resolved_catalyst = normalized_catalyst if normalized_catalyst in VALID_CATALYST_TYPES else "NEWS_CATALYST"
 
-            # Dispatch FCM Lock-Screen Push Notification
-            fcm_sent = False
-            if fcm_token and fcm_enabled:
-                fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Target: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
-                fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
-                    "symbol": symbol,
-                    "action_bias": action_bias,
-                    "confluence_score": str(confluence_score),
-                    "catalyst_type": catalyst_type
-                })
+                clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+                is_bse = symbol.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+                exch = "BSE" if is_bse else "NSE"
+                stock_name = (
+                    financials.get("name") or 
+                    (holding_info.get("name") if holding_info else None) or 
+                    (holding_info.get("stock_name") if holding_info else None) or 
+                    clean_sym
+                )
 
-            # Dispatch Rich HTML Telegram Notification with Inline Buttons
-            telegram_sent = False
-            if telegram_enabled and telegram_chat_id:
-                formatted_msg = format_telegram_alert(
-                    symbol=symbol,
-                    alert_title=alert_title,
-                    action_bias=action_bias,
-                    confluence_score=confluence_score,
-                    catalyst_type=catalyst_type,
-                    confluence_drivers=confluence_drivers,
-                    tactical_levels=tactical_levels,
-                    demat_position=demat_pos,
-                    metrics_snapshot={
-                        "current_price": technicals.get("current_price"),
-                        "rsi_15m": technicals.get("rsi_15m"),
-                        "rsi_5m": technicals.get("rsi_5m"),
-                        "vwap": technicals.get("vwap"),
-                        "delivery_pct": flow_data.get("delivery_pct"),
-                        "vsa_regime": flow_data.get("vsa_regime"),
+                # Persist Alert in Supabase Ledger
+                alert_record = {
+                    "user_id": user_id,
+                    "symbol": clean_sym,
+                    "alert_title": alert_title,
+                    "catalyst_type": resolved_catalyst,
+                    "impact_score": confluence_score,
+                    "factual_reasons": confluence_drivers,
+                    "metrics_snapshot": {
+                        "clean_symbol": clean_sym,
+                        "full_symbol": symbol,
+                        "company_name": stock_name,
+                        "exchange": exch,
+                        "action_bias": action_bias,
+                        "tactical_levels": tactical_levels,
+                        "technicals": technicals,
+                        "flow_data": flow_data,
+                        "financials": financials,
+                        "macro_data": macro_data,
+                        "demat_position": demat_pos,
                         "factor_breakdown": analysis.get("factor_breakdown")
                     },
-                    holding_guidance=holding_guidance
-                )
-                inline_buttons = build_telegram_inline_keyboard(symbol)
-                telegram_sent = await send_telegram_notification(telegram_chat_id, formatted_msg, reply_markup=inline_buttons)
+                    "sent_via_fcm": fcm_sent,
+                    "sent_via_telegram": telegram_sent,
+                }
+                res = supabase_client.table("stok_alerts").insert(alert_record).execute()
+                return res.data[0] if res.data else None
 
-            # Normalize and validate catalyst against PostgreSQL catalyst_type_enum
-            CATALYST_SYNONYM_MAP = {
-                "EARNINGS_SURPRISE": "EARNINGS_BEAT",
-                "DEBT_REDUCTION": "DEBT_CHANGE",
-            }
-            normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
-            VALID_CATALYST_TYPES = {
-                "BLOCK_DEAL", "EARNINGS_BEAT", "DEBT_CHANGE", "PRICE_BREAKOUT", 
-                "NEWS_CATALYST", "VOLUME_SURGE", "TECHNICAL_BREAKOUT", "TRAILING_STOP_TRIGGER"
-            }
-            resolved_catalyst = normalized_catalyst if normalized_catalyst in VALID_CATALYST_TYPES else "NEWS_CATALYST"
+            except Exception as stock_err:
+                logger.error(f"Error evaluating symbol {symbol} for user {mask_id(user_id)}: {stock_err}")
+                return None
 
-            clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
-            is_bse = symbol.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
-            exch = "BSE" if is_bse else "NSE"
-            stock_name = (
-                financials.get("name") or 
-                (holding_info.get("name") if holding_info else None) or 
-                (holding_info.get("stock_name") if holding_info else None) or 
-                clean_sym
-            )
+        if symbols:
+            eval_results = await asyncio.gather(*(_eval_symbol_worker(s) for s in symbols), return_exceptions=False)
+            for r in eval_results:
+                if r:
+                    generated_alerts.append(r)
 
-            # Persist Alert in Supabase Ledger
-            alert_record = {
-                "user_id": user_id,
-                "symbol": clean_sym,
-                "alert_title": alert_title,
-                "catalyst_type": resolved_catalyst,
-                "impact_score": confluence_score,
-                "factual_reasons": confluence_drivers,
-                "metrics_snapshot": {
-                    "clean_symbol": clean_sym,
-                    "full_symbol": symbol,
-                    "company_name": stock_name,
-                    "exchange": exch,
-                    "action_bias": action_bias,
-                    "tactical_levels": tactical_levels,
-                    "technicals": technicals,
-                    "flow_data": flow_data,
-                    "financials": financials,
-                    "macro_data": macro_data,
-                    "demat_position": demat_pos,
-                    "factor_breakdown": analysis.get("factor_breakdown")
-                },
-                "sent_via_fcm": fcm_sent,
-                "sent_via_telegram": telegram_sent,
-            }
-            res = supabase_client.table("stok_alerts").insert(alert_record).execute()
-            if res.data:
-                generated_alerts.append(res.data[0])
-
-        except Exception as stock_err:
-            logger.error(f"Error evaluating symbol {symbol} for user {mask_id(user_id)}: {stock_err}")
-            continue
-
-    return generated_alerts
+        return generated_alerts

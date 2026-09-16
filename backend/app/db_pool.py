@@ -14,13 +14,17 @@ from decimal import Decimal
 from typing import Optional, AsyncGenerator, Any
 from urllib.parse import urlparse
 
-import asyncpg
+try:
+    import asyncpg
+except ImportError:
+    asyncpg = None
+
 from app.config import settings
 
 logger = logging.getLogger("stokvigil.db_pool")
 
 # Thread-safe global pool singleton
-_db_pool: Optional[asyncpg.Pool] = None
+_db_pool: Optional[Any] = None
 _pool_lock = asyncio.Lock()
 
 
@@ -45,7 +49,7 @@ def _mask_db_url(url: str) -> str:
         return "postgresql://***@pooler.supabase.com:6543/postgres"
 
 
-async def init_db_pool() -> Optional[asyncpg.Pool]:
+async def init_db_pool() -> Optional[Any]:
     """
     Initializes the asyncpg connection pool pointing to Supabase PgBouncer (Port 6543).
     Enforces statement_cache_size=0 as required by PgBouncer transaction pooling mode.
@@ -54,6 +58,10 @@ async def init_db_pool() -> Optional[asyncpg.Pool]:
     async with _pool_lock:
         if _db_pool is not None:
             return _db_pool
+
+        if asyncpg is None:
+            logger.info("asyncpg is not installed in this environment. Operating in standard REST mode.")
+            return None
 
         raw_url = str(settings.DATABASE_URL or "").strip().strip('"').strip("'")
         if not raw_url:
@@ -103,7 +111,7 @@ async def close_db_pool():
                 _db_pool = None
 
 
-async def get_db_pool() -> Optional[asyncpg.Pool]:
+async def get_db_pool() -> Optional[Any]:
     """Returns the active asyncpg connection pool, or None if unconfigured."""
     if _db_pool is None:
         return await init_db_pool()
@@ -112,11 +120,11 @@ async def get_db_pool() -> Optional[asyncpg.Pool]:
 
 def is_pool_ready() -> bool:
     """Returns True if the connection pool is initialized and open."""
-    return _db_pool is not None and not _db_pool._closed
+    return _db_pool is not None and not getattr(_db_pool, "_closed", True)
 
 
 @asynccontextmanager
-async def get_db_connection() -> AsyncGenerator[Optional[asyncpg.Connection], None]:
+async def get_db_connection() -> AsyncGenerator[Optional[Any], None]:
     """
     Async context manager to safely acquire a connection from the pool and return it.
     Example:
