@@ -12,8 +12,8 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from app.config import settings
 from app.vault import vault
-from app.technical_engine import fetch_multi_timeframe_technicals
-from app.flow_tracker import fetch_delivery_and_fo_flow, fetch_bulk_and_block_deals
+from app.technical_engine import fetch_multi_timeframe_technicals, batch_fetch_multi_timeframe_technicals
+from app.flow_tracker import fetch_delivery_and_fo_flow
 from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health
 from app.alert_limiter import should_dispatch_alert
 from app.notifications import send_fcm_notification, send_telegram_notification, format_telegram_alert, build_telegram_inline_keyboard
@@ -254,13 +254,17 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 # ==========================================
 # SCALABLE IN-MEMORY DUAL-EXCHANGE CACHES (RAM)
 # ==========================================
-# Corporate Fundamentals Cache: canonical_key -> {data, timestamp} (TTL: 4 hours / 14400s)
+# Corporate Fundamentals Cache: canonical_key -> {data, timestamp} (TTL: 12 hours / 43200s)
 _FINANCIALS_CACHE: Dict[str, Dict[str, Any]] = {}
-_FINANCIALS_CACHE_TTL: float = 14400.0  # 4 hours
+_FINANCIALS_CACHE_TTL: float = 43200.0  # 12 hours (Quarter-invariant corporate metrics)
 
-# News RSS Cache: canonical_key -> {data, timestamp} (TTL: 15 minutes / 900s)
+# News RSS Cache: canonical_key -> {data, timestamp} (TTL: 30 minutes / 1800s)
 _NEWS_CACHE: Dict[str, Dict[str, Any]] = {}
-_NEWS_CACHE_TTL: float = 900.0  # 15 minutes
+_NEWS_CACHE_TTL: float = 1800.0  # 30 minutes
+
+# User Demat Portfolio Cache: user_id -> {holdings, timestamp} (TTL: 240 seconds / 4 minutes)
+_DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
+_DEMAT_PORTFOLIO_CACHE_TTL: float = 240.0
 
 def _normalize_canonical_key(symbol: str) -> str:
     """Normalizes any symbol format (e.g. INFY.NS, INFY.BO, 500209, INFY) to an uppercase canonical key."""
@@ -532,9 +536,8 @@ Evaluate the multi-factor data payload for #{symbol} (NSE) and determine if ther
 
 ============================================================
 3. INSTITUTIONAL FLOW & DERIVATIVES:
-============================================================
 • Wyckoff VSA Regime: {flow_data.get('vsa_regime')} ({flow_data.get('vsa_note', '')})
-• Estimated Delivery Volume: {flow_data.get('delivery_pct')}% (Accumulation: {flow_data.get('is_high_delivery')})
+• Delivery Volume: {f"{flow_data.get('delivery_pct')}% (High Delivery)" if flow_data.get('delivery_pct') is not None else "Intraday Cash Volume (Official Delivery % published post-market)"}
 • F&O Open Interest: {flow_data.get('fo_oi_status')} ({flow_data.get('flow_bias')})
 • Option Chain Put-Call Ratio (PCR): {flow_data.get('pcr')} (F&O Stock: {flow_data.get('is_fo_stock')})
 • Max Pain Strike: ₹{flow_data.get('max_pain_strike')} (Support Strike: ₹{flow_data.get('major_support_strike')}, Resistance Strike: ₹{flow_data.get('major_resistance_strike')})
@@ -836,9 +839,12 @@ def compute_deterministic_confluence(
             "unrealized_pnl_pct": pnl_pct
         }
 
-    tech_score = technicals.get("technical_score", 50)
-    flow_score = flow_data.get("flow_score", 50)
-    forensic_score = forensics.get("forensic_score", 50)
+    raw_ts = technicals.get("technical_score")
+    tech_score = float(raw_ts) if raw_ts is not None else 50.0
+    raw_fs = flow_data.get("flow_score")
+    flow_score = float(raw_fs) if raw_fs is not None else 50.0
+    raw_fors = forensics.get("forensic_score")
+    forensic_score = float(raw_fors) if raw_fors is not None else 50.0
     
     # News & Catalyst Scoring
     news_score = 50
@@ -1088,7 +1094,10 @@ def compute_deterministic_confluence(
         "confluence_drivers": confluence_drivers,
         "tactical_levels": tactical_dict,
         "holding_guidance": holding_guidance,
-        "growth_outlook_summary": f"Long term valuation: P/E {financials.get('pe_ratio', 'N/A')}, D/E {financials.get('debt_to_equity', 'N/A')}.",
+        "growth_outlook_summary": (
+            f"Long term valuation: P/E {financials.get('pe_ratio') if financials.get('pe_ratio') is not None else '-'}, "
+            f"D/E {financials.get('debt_to_equity') if financials.get('debt_to_equity') is not None else '-'}."
+        ),
         "factor_breakdown": {
             "technicals": tech_score,
             "flow": flow_score,
@@ -1097,17 +1106,17 @@ def compute_deterministic_confluence(
         },
         "derivatives_flow": {
             "is_fo_stock": flow_data.get("is_fo_stock", False),
-            "pcr": flow_data.get("pcr", 1.0),
-            "max_pain_strike": flow_data.get("max_pain_strike", 0.0),
-            "major_support_strike": flow_data.get("major_support_strike", 0.0),
-            "major_resistance_strike": flow_data.get("major_resistance_strike", 0.0),
-            "fo_status": flow_data.get("fo_oi_status", "NEUTRAL")
+            "pcr": flow_data.get("pcr") if flow_data.get("is_fo_stock") else None,
+            "max_pain_strike": flow_data.get("max_pain_strike") if flow_data.get("is_fo_stock") else None,
+            "major_support_strike": flow_data.get("major_support_strike") if flow_data.get("is_fo_stock") else None,
+            "major_resistance_strike": flow_data.get("major_resistance_strike") if flow_data.get("is_fo_stock") else None,
+            "fo_status": flow_data.get("fo_oi_status") if flow_data.get("is_fo_stock") else None
         },
         "market_breadth": {
-            "adr_ratio": macro_data.get("adr_ratio", 1.0),
-            "breadth_regime": macro_data.get("breadth_regime", "BALANCED_BREADTH"),
-            "advances": macro_data.get("advances", 25),
-            "declines": macro_data.get("declines", 25)
+            "adr_ratio": macro_data.get("adr_ratio"),
+            "breadth_regime": macro_data.get("breadth_regime"),
+            "advances": macro_data.get("advances"),
+            "declines": macro_data.get("declines")
         }
     }
 
@@ -1126,22 +1135,38 @@ def check_has_active_catalyst(
     """
     # 1. Demat Holding Protection Trigger
     if holding_info:
-        curr_p = technicals.get("current_price", 0.0)
-        avg_p = holding_info.get("average_price", 0.0)
+        raw_curr = technicals.get("current_price")
+        curr_p = float(raw_curr) if raw_curr is not None else 0.0
+        raw_avg = holding_info.get("average_price")
+        avg_p = float(raw_avg) if raw_avg is not None else 0.0
         pnl_pct = ((curr_p - avg_p) / avg_p * 100) if avg_p > 0 else 0.0
-        rsi = technicals.get("rsi_15m", 50)
-        if (pnl_pct >= 5.0 and rsi > 70) or pnl_pct <= -4.0:
+        raw_rsi = technicals.get("rsi_15m")
+        rsi = float(raw_rsi) if raw_rsi is not None else 50.0
+        if (pnl_pct >= 5.0 and rsi > 70.0) or pnl_pct <= -4.0:
             return True, f"Demat Holding Protection Trigger (P&L: {pnl_pct:+.1f}%)"
 
     # 2. Institutional Volume Surge (>= 1.5x 20-period volume MA)
-    vol_mult = technicals.get("volume_multiple") or technicals.get("volume_surge_ratio", 1.0)
+    raw_vol = technicals.get("volume_multiple")
+    if raw_vol is None:
+        raw_vol = technicals.get("volume_surge_ratio")
+    try:
+        vol_mult = float(raw_vol) if raw_vol is not None else 1.0
+    except (ValueError, TypeError):
+        vol_mult = 1.0
+
     if technicals.get("is_volume_surge") or vol_mult >= 1.5:
-        return True, f"Volume Surge ({vol_mult}x 20-MA)"
+        return True, f"Volume Surge ({vol_mult:.1f}x 20-MA)"
 
     # 3. Momentum Extremes or Divergence
-    rsi_15m = technicals.get("rsi_15m", 50)
-    if rsi_15m >= 68 or rsi_15m <= 32:
-        return True, f"15m RSI Momentum Extreme ({rsi_15m})"
+    raw_rsi_15m = technicals.get("rsi_15m")
+    if raw_rsi_15m is not None:
+        try:
+            rsi_15m = float(raw_rsi_15m)
+            if rsi_15m >= 68.0 or rsi_15m <= 32.0:
+                return True, f"15m RSI Momentum Extreme ({rsi_15m:.1f})"
+        except (ValueError, TypeError):
+            pass
+
     if technicals.get("rsi_divergence") in ["BULLISH_DIVERGENCE", "BEARISH_DIVERGENCE"]:
         return True, f"RSI Divergence: {technicals.get('rsi_divergence')}"
 
@@ -1155,12 +1180,21 @@ def check_has_active_catalyst(
     if flow_data.get("fo_oi_status") in ["LONG_BUILDUP", "SHORT_BUILDUP"]:
         return True, f"Derivatives Regime: {flow_data.get('fo_oi_status')} (PCR: {flow_data.get('pcr')})"
     if flow_data.get("is_fo_stock"):
-        pcr = float(flow_data.get("pcr", 1.0) or 1.0)
+        raw_pcr = flow_data.get("pcr")
+        try:
+            pcr = float(raw_pcr) if raw_pcr is not None else 1.0
+        except (ValueError, TypeError):
+            pcr = 1.0
         if pcr >= 1.4 or pcr <= 0.6:
-            return True, f"Extreme Option PCR Catalyst ({pcr})"
+            return True, f"Extreme Option PCR Catalyst ({pcr:.2f})"
 
     # 6. Intraday VWAP Breakout
-    vwap_pct = abs(technicals.get("price_vs_vwap_pct", 0.0))
+    raw_vwap = technicals.get("price_vs_vwap_pct")
+    try:
+        vwap_pct = abs(float(raw_vwap)) if raw_vwap is not None else 0.0
+    except (ValueError, TypeError):
+        vwap_pct = 0.0
+
     if vwap_pct >= 0.8:
         return True, f"Intraday VWAP Deviation ({vwap_pct:.1f}%)"
 
@@ -1180,7 +1214,8 @@ def check_has_active_catalyst(
 async def evaluate_single_symbol_full(
     symbol: str, 
     macro_data: Optional[Dict[str, Any]] = None,
-    holding_info: Optional[Dict[str, Any]] = None
+    holding_info: Optional[Dict[str, Any]] = None,
+    technicals: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Evaluates all institutional dimensions (technicals, macro, F&O flow, forensics, news, AI confluence)
@@ -1190,17 +1225,44 @@ async def evaluate_single_symbol_full(
     if macro_data is None:
         macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
-    # Fetch technicals, financials, and news concurrently across thread pool workers
-    technicals, financials, news_items = await asyncio.gather(
-        asyncio.to_thread(fetch_multi_timeframe_technicals, symbol),
-        asyncio.to_thread(fetch_stock_financials, symbol),
-        asyncio.to_thread(fetch_stock_news, symbol)
-    )
+    # 1. Technicals: use pre-computed batch if provided, otherwise fetch
+    if technicals is None:
+        technicals = await asyncio.to_thread(fetch_multi_timeframe_technicals, symbol)
+
+    # 2. Concurrently fetch financials and evaluate if news is needed
+    financials_task = asyncio.to_thread(fetch_stock_financials, symbol)
+
+    # Anomaly-Gated News Fetching: Only fetch fresh news RSS if there is an active volume surge or price deviation
+    raw_vol = technicals.get("volume_multiple") or technicals.get("volume_surge_ratio") or 1.0
+    try:
+        vol_mult = float(raw_vol)
+    except (ValueError, TypeError):
+        vol_mult = 1.0
+    raw_vwap = technicals.get("price_vs_vwap_pct") or 0.0
+    try:
+        vwap_pct = abs(float(raw_vwap))
+    except (ValueError, TypeError):
+        vwap_pct = 0.0
+
+    needs_news = (vol_mult >= 1.5) or (vwap_pct >= 0.8) or (holding_info is not None)
+    if needs_news:
+        news_task = asyncio.to_thread(fetch_stock_news, symbol)
+        financials, news_items = await asyncio.gather(financials_task, news_task)
+    else:
+        financials = await financials_task
+        canonical_key = _normalize_canonical_key(symbol)
+        cached_news_entry = _NEWS_CACHE.get(canonical_key)
+        if cached_news_entry and (time.time() - cached_news_entry.get("timestamp", 0)) < _NEWS_CACHE_TTL:
+            news_items = cached_news_entry.get("data", [])
+        else:
+            news_items = []
 
     flow_data = await asyncio.to_thread(
         fetch_delivery_and_fo_flow, 
         symbol, 
-        technicals.get("price_vs_vwap_pct", 0.0)
+        technicals.get("price_vs_vwap_pct", 0.0),
+        None,
+        technicals.get("volume_multiple")
     )
     forensics = evaluate_forensic_health(symbol, financials)
 
@@ -1268,7 +1330,7 @@ async def evaluate_single_symbol_full(
 async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     """
     Pre-computes and caches market state in RAM for all unique symbols across all user watchlists.
-    Uses bounded async concurrency (Semaphore=15) with thread-pool I/O to evaluate all stocks rapidly.
+    Uses high-speed vectorized batch technical download (yf.download) with session-invariant daily cache.
     """
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
     symbols = []
@@ -1291,28 +1353,31 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
         logger.info("No active symbols found across user watchlists to pre-compute.")
         return 0
 
-    logger.info(f"⚡ Pre-computing institutional market state for {len(symbols)} unique symbols into RAM cache (Concurrency: 20)...")
-    
-    sem = asyncio.Semaphore(20)
-    synced_count = 0
+    # Filter symbols needing fresh calculation (skip if fresh in RAM within 240s)
+    symbols_to_sync = [s for s in symbols if not market_cache.is_fresh(s, max_age_seconds=240)]
+    synced_count = len(symbols) - len(symbols_to_sync)
 
-    async def _worker(sym: str):
-        nonlocal synced_count
-        async with sem:
-            try:
-                if market_cache.is_fresh(sym, max_age_seconds=240):
+    if symbols_to_sync:
+        logger.info(f"⚡ Pre-computing institutional market state for {len(symbols_to_sync)} unique symbols via Vectorized Batch Engine...")
+        
+        # Batch-download all technicals in a single parallel network operation
+        batch_technicals = await asyncio.to_thread(batch_fetch_multi_timeframe_technicals, symbols_to_sync)
+        sem = asyncio.Semaphore(20)
+
+        async def _worker(sym: str):
+            nonlocal synced_count
+            async with sem:
+                try:
+                    tech = batch_technicals.get(sym) or batch_technicals.get(f"{sym}.NS") or batch_technicals.get(f"{sym}.BO")
+                    await evaluate_single_symbol_full(sym, macro_data=macro_data, technicals=tech)
                     synced_count += 1
                     if synced_count % 20 == 0 or synced_count == len(symbols):
                         logger.info(f"⏳ Pre-computing market cache: {synced_count}/{len(symbols)} symbols ({round((synced_count / len(symbols)) * 100)}%)...")
-                    return
-                await evaluate_single_symbol_full(sym, macro_data=macro_data)
-                synced_count += 1
-                if synced_count % 20 == 0 or synced_count == len(symbols):
-                    logger.info(f"⏳ Pre-computing market cache: {synced_count}/{len(symbols)} symbols ({round((synced_count / len(symbols)) * 100)}%)...")
-            except Exception as e:
-                logger.error(f"Error pre-computing market cache for {sym}: {e}")
+                except Exception as e:
+                    logger.error(f"Error pre-computing market cache for {sym}: {e}")
 
-    await asyncio.gather(*(_worker(s) for s in symbols))
+        await asyncio.gather(*(_worker(s) for s in symbols_to_sync))
+
     logger.info(f"✅ Market Cache Sync Complete: {synced_count}/{len(symbols)} unique symbols cached in RAM.")
     return synced_count
 
@@ -1383,11 +1448,22 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         token_date = str(cred.get("token_date", ""))
 
         if token_date == today_str:
-            app_key = vault.decrypt(cred.get("encrypted_app_key"))
-            secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-            session_token = vault.decrypt(cred.get("encrypted_session_token"))
+            now = time.time()
+            cached_holdings = None
+            if user_id in _DEMAT_PORTFOLIO_CACHE:
+                entry = _DEMAT_PORTFOLIO_CACHE[user_id]
+                if (now - entry.get("timestamp", 0)) < _DEMAT_PORTFOLIO_CACHE_TTL:
+                    cached_holdings = entry.get("holdings")
+
+            if cached_holdings is not None:
+                holdings = cached_holdings
+            else:
+                app_key = vault.decrypt(cred.get("encrypted_app_key"))
+                secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
+                session_token = vault.decrypt(cred.get("encrypted_session_token"))
+                holdings = await asyncio.to_thread(fetch_user_portfolio, app_key, secret_key, session_token)
+                _DEMAT_PORTFOLIO_CACHE[user_id] = {"timestamp": now, "holdings": holdings}
             
-            holdings = fetch_user_portfolio(app_key, secret_key, session_token)
             watchlist_upserts = []
             for h in holdings:
                 sym = h.get('symbol')
@@ -1448,16 +1524,17 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                             pnl_pct = round(float(holding_info["pnl_percentage"]), 2)
                         else:
                             pnl_pct = 0.0
-                        rsi_15m = technicals.get("rsi_15m", 50)
+                        raw_rsi = technicals.get("rsi_15m")
+                        rsi_15m = float(raw_rsi) if raw_rsi is not None else 50.0
                         
-                        if pnl_pct >= 5.0 and rsi_15m > 72:
+                        if pnl_pct >= 5.0 and rsi_15m > 72.0:
                             analysis["action_bias"] = "TRAILING_SL_ALERT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
                             analysis["alert_title"] = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
-                            analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m}. Trailing SL active."
+                            analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m:.1f}. Trailing SL active."
                             drivers = list(analysis.get("confluence_drivers", []))
-                            drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m} (Overbought zone).")
+                            drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m:.1f} (Overbought zone).")
                             analysis["confluence_drivers"] = drivers
                 else:
                     # Cache miss fallback
@@ -1467,7 +1544,11 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     flow_data = fresh_pack.get("flow_data", {})
                     analysis = fresh_pack.get("analysis", {})
                 
-                confluence_score = analysis.get("confluence_score", 50)
+                raw_score = analysis.get("confluence_score")
+                try:
+                    confluence_score = int(raw_score) if raw_score is not None else 50
+                except (ValueError, TypeError):
+                    confluence_score = 50
                 has_actionable = analysis.get("has_actionable_signal", False)
                 action_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
                 alert_title = analysis.get("alert_title", f"{symbol} Market Update")

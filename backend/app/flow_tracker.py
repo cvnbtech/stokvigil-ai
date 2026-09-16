@@ -1,19 +1,100 @@
-import logging
-import feedparser
-import urllib.parse
-import yfinance as yf
-from typing import Dict, Any, List, Optional
-
-import time
+import csv
+import io
 import json
+import logging
+import time
+import urllib.parse
 import urllib.request
-import numpy as np
+import feedparser
+import yfinance as yf
+from typing import Dict, Any, List, Optional, Set
 
 logger = logging.getLogger("stokvigil.flow_tracker")
 
 # In-memory option chain cache: (symbol -> {data, timestamp}) with 120s TTL
 _OPTION_CHAIN_CACHE: Dict[str, Dict[str, Any]] = {}
 _OPTION_CHAIN_TTL: float = 120.0
+
+# 100% Dynamic F&O Universe Loader (No hardcoded symbols)
+# Automatically fetched once daily from official NSE India archives with 24h caching.
+_DYNAMIC_FO_CACHE: Set[str] = set()
+_DYNAMIC_FO_LAST_FETCH: float = 0.0
+_DYNAMIC_FO_TTL: float = 86400.0  # 24 hours
+_PER_SYMBOL_FO_CACHE: Dict[str, bool] = {}
+
+def get_dynamic_fo_universe() -> Set[str]:
+    """
+    Dynamically fetches and caches the official active NSE F&O underlying universe
+    from NSE archives (https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv).
+    Refreshed once every 24 hours. Fallback ensures zero crash if offline.
+    """
+    global _DYNAMIC_FO_CACHE, _DYNAMIC_FO_LAST_FETCH
+    now = time.time()
+    if _DYNAMIC_FO_CACHE and (now - _DYNAMIC_FO_LAST_FETCH) < _DYNAMIC_FO_TTL:
+        return _DYNAMIC_FO_CACHE
+
+    url = "https://nsearchives.nseindia.com/content/fo/fo_mktlots.csv"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "text/csv, text/plain, */*",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            if resp.status == 200:
+                content = resp.read().decode("utf-8", errors="ignore")
+                reader = csv.reader(io.StringIO(content))
+                symbols = set()
+                for row in reader:
+                    if len(row) > 1:
+                        sym = row[1].strip().upper()
+                        if sym and sym not in ("SYMBOL", "UNDERLYING"):
+                            symbols.add(sym)
+                if symbols:
+                    _DYNAMIC_FO_CACHE = symbols
+                    _DYNAMIC_FO_LAST_FETCH = now
+                    logger.info(f"Dynamically loaded {len(symbols)} active F&O contracts from NSE.")
+                    return _DYNAMIC_FO_CACHE
+    except Exception as e:
+        logger.debug(f"Dynamic NSE F&O universe fetch fallback: {e}")
+
+    return _DYNAMIC_FO_CACHE
+
+def is_fo_symbol(symbol: str) -> bool:
+    """
+    Dynamically checks if a symbol is eligible for F&O contracts:
+    - BSE scrips (.BO and 6-digit numeric codes) instantly return False (0.0001ms bypass).
+    - Checks against the dynamically loaded NSE F&O universe.
+    - If dynamic list is temporarily unavailable, lazily checks yfinance options.
+    """
+    raw = str(symbol).strip().upper()
+    if raw.endswith(".BO") or (raw.isdigit() and len(raw) == 6):
+        return False
+
+    clean_sym = raw.replace(".NS", "").replace(".BO", "").strip().upper()
+    if clean_sym in {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"}:
+        return True
+
+    fo_universe = get_dynamic_fo_universe()
+    if clean_sym in fo_universe:
+        return True
+
+    # If universe is populated and symbol isn't in it, it is definitely not an F&O stock
+    if fo_universe:
+        return False
+
+    # Fallback when offline or in sandbox
+    if clean_sym in _PER_SYMBOL_FO_CACHE:
+        return _PER_SYMBOL_FO_CACHE[clean_sym]
+
+    try:
+        ticker = yf.Ticker(f"{clean_sym}.NS")
+        has_options = bool(ticker.options and len(ticker.options) > 0)
+        _PER_SYMBOL_FO_CACHE[clean_sym] = has_options
+        return has_options
+    except Exception:
+        _PER_SYMBOL_FO_CACHE[clean_sym] = False
+        return False
 
 def calculate_delta_oi_velocity(chain_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -75,6 +156,9 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
     Computes total Put/Call Open Interest, true PCR, Max Pain Strike, and Major Support/Resistance levels.
     """
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    if not is_fo_symbol(clean_sym):
+        return None
+
     now = time.time()
     if clean_sym in _OPTION_CHAIN_CACHE:
         entry = _OPTION_CHAIN_CACHE[clean_sym]
@@ -82,7 +166,7 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
             return entry.get("data")
 
     # Determine if index or equity
-    is_index = clean_sym in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY"]
+    is_index = clean_sym in ["NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50"]
     base_url = "https://www.nseindia.com/api/option-chain-indices?symbol=" if is_index else "https://www.nseindia.com/api/option-chain-equities?symbol="
     url = f"{base_url}{urllib.parse.quote(clean_sym)}"
 
@@ -95,7 +179,7 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
 
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=6) as resp:
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
             if resp.status == 200:
                 raw_json = json.loads(resp.read().decode("utf-8"))
                 records = raw_json.get("records", {})
@@ -193,13 +277,18 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
 
     return None
 
-def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 0.0) -> Dict[str, Any]:
+def fetch_delivery_and_fo_flow(
+    symbol: str, 
+    price_change_pct: Optional[float] = 0.0,
+    delivery_pct: Optional[float] = None,
+    volume_multiple: Optional[float] = None
+) -> Dict[str, Any]:
     """
     Evaluates Delivery Volume Percentage, Put-Call Ratio (PCR), Max Pain, Delta-OI, and F&O Open Interest build-up.
     Prioritizes official NSE Option Chain, with graceful fallback to Yahoo Finance and BSE cash delivery.
-    Returns None for F&O metrics if symbol is cash-only or data is missing.
+    Returns clean None for metrics if real-time/runtime data is unavailable (never displays fake defaults).
     """
-    is_bse = str(symbol).strip().upper().endswith(".BO")
+    is_bse = str(symbol).strip().upper().endswith(".BO") or (str(symbol).strip().isdigit() and len(str(symbol).strip()) == 6)
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     effective_pct = float(price_change_pct or 0.0)
     
@@ -208,7 +297,7 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 
         "delivery_pct": None,
         "delivery_median_10d": None,
         "is_high_delivery": False,
-        "fo_oi_status": "CASH_EQUITY" if is_bse else "DATA_UNAVAILABLE",
+        "fo_oi_status": "BSE_CASH_DELIVERY" if is_bse else "CASH_EQUITY",
         "flow_bias": "CASH_MARKET" if is_bse else "NEUTRAL",
         "flow_score": 50,
         "pcr": None,
@@ -225,18 +314,17 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 
     
     try:
         pcr = None
-        is_fo = False
+        is_fo = is_fo_symbol(clean_sym) if not is_bse else False
         max_pain = None
         sup_strike = None
         res_strike = None
         net_oi_bias = None
         net_oi_change = None
         
-        # 1. Primary: Official NSE Real-Time Option Chain (For NSE F&O Equities & Indices)
-        if not is_bse:
+        # 1. Primary: Official NSE Real-Time Option Chain (For dynamically confirmed NSE F&O Equities & Indices)
+        if is_fo:
             chain_data = fetch_nse_option_chain(clean_sym)
             if chain_data:
-                is_fo = True
                 pcr = chain_data.get("pcr")
                 max_pain = chain_data.get("max_pain_strike")
                 sup_strike = chain_data.get("major_support_strike")
@@ -244,14 +332,13 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 
                 net_oi_bias = chain_data.get("net_oi_bias")
                 net_oi_change = chain_data.get("net_oi_change")
 
-        # 2. Secondary Fallback: Yahoo Finance Option Chain
-        if not is_fo and not is_bse:
+        # 2. Secondary Fallback: Yahoo Finance Option Chain (Strictly for dynamically confirmed F&O stocks)
+        if is_fo and pcr is None:
             ticker_sym = f"{clean_sym}.NS"
             try:
                 ticker = yf.Ticker(ticker_sym)
                 opt_dates = ticker.options
                 if opt_dates and len(opt_dates) > 0:
-                    is_fo = True
                     opt_chain = ticker.option_chain(opt_dates[0])
                     calls = opt_chain.calls
                     puts = opt_chain.puts
@@ -262,55 +349,64 @@ def fetch_delivery_and_fo_flow(symbol: str, price_change_pct: Optional[float] = 
             except Exception:
                 pass
 
-        # Institutional F&O and Delivery Flow Classification
+        # Institutional F&O Flow Classification
         if is_bse and not is_fo:
             fo_status = "BSE_CASH_DELIVERY"
             flow_bias = "CASH_ACCUMULATION" if effective_pct > 0.5 else "NEUTRAL"
             flow_score = 65 if effective_pct > 0.5 else 50
-            estimated_delivery = None
         elif is_fo and pcr is not None:
             if pcr >= 1.25 or (effective_pct > 1.5 and pcr >= 1.0):
                 fo_status = "LONG_BUILDUP"
                 flow_bias = "INSTITUTIONAL_ACCUMULATION"
                 flow_score = min(92, int(75 + (pcr * 10)))
-                estimated_delivery = 64.0
             elif pcr <= 0.70 or (effective_pct < -1.5 and pcr < 0.9):
                 fo_status = "SHORT_BUILDUP"
                 flow_bias = "INSTITUTIONAL_DISTRIBUTION"
                 flow_score = max(15, int(35 - ((1.0 - pcr) * 20)))
-                estimated_delivery = 58.0
             elif effective_pct >= 0.0:
                 fo_status = "SHORT_COVERING"
                 flow_bias = "MILD_BULLISH_FLOW"
                 flow_score = 65
-                estimated_delivery = 48.0
             else:
                 fo_status = "LONG_UNWINDING"
                 flow_bias = "MILD_BEARISH_FLOW"
                 flow_score = 40
-                estimated_delivery = 42.0
+        elif is_fo and pcr is None:
+            fo_status = "FO_ACTIVE_CHAIN_PENDING"
+            flow_bias = "NEUTRAL"
+            flow_score = 50
         else:
             fo_status = "CASH_EQUITY"
             flow_bias = "NEUTRAL"
             flow_score = 50
-            estimated_delivery = None
 
-        # Wyckoff Volume Spread Analysis (VSA) Institutional Absorption vs Operator Churn
+        # Wyckoff Volume Spread Analysis (VSA) based on true volume multiple & actual delivery (if available)
         vsa_regime = "NORMAL_VOLUME_SPREAD"
         vsa_note = "Normal liquidity absorption"
-        if estimated_delivery is not None:
-            if estimated_delivery >= 55.0 and effective_pct > 0.5:
+        
+        real_delivery: Optional[float] = float(delivery_pct) if delivery_pct is not None else None
+        is_high_del = (real_delivery >= 50.0) if real_delivery is not None else False
+
+        if real_delivery is not None:
+            if real_delivery >= 55.0 and effective_pct > 0.5:
                 vsa_regime = "SMART_MONEY_ABSORPTION"
-                vsa_note = f"High delivery accumulation ({estimated_delivery}%) confirming upward price expansion"
-            elif estimated_delivery < 25.0 and abs(effective_pct) > 2.0:
+                vsa_note = f"High delivery accumulation ({real_delivery:.1f}%) confirming upward price expansion"
+            elif real_delivery < 25.0 and abs(effective_pct) > 2.0:
                 vsa_regime = "OPERATOR_CHURN_TRAP"
-                vsa_note = f"Low delivery ({estimated_delivery}%) with high volatility indicates speculative intraday churn"
+                vsa_note = f"Low delivery ({real_delivery:.1f}%) with high volatility indicates speculative churn"
+        elif volume_multiple is not None and volume_multiple >= 1.8:
+            if effective_pct > 0.8:
+                vsa_regime = "SMART_MONEY_ABSORPTION"
+                vsa_note = f"High volume expansion ({volume_multiple:.1f}x) confirming upward price momentum"
+            elif abs(effective_pct) <= 0.2:
+                vsa_regime = "OPERATOR_CHURN_TRAP"
+                vsa_note = f"Volume surge ({volume_multiple:.1f}x) with narrow price spread indicates potential churn"
 
         return {
             "symbol": clean_sym,
-            "delivery_pct": estimated_delivery,
-            "delivery_median_10d": 48.0 if estimated_delivery is not None else None,
-            "is_high_delivery": (estimated_delivery >= 50.0) if estimated_delivery is not None else False,
+            "delivery_pct": real_delivery,
+            "delivery_median_10d": None,
+            "is_high_delivery": is_high_del,
             "fo_oi_status": fo_status,
             "flow_bias": flow_bias,
             "flow_score": flow_score,

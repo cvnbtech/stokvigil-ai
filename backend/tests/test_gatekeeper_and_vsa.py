@@ -338,5 +338,55 @@ class TestGatekeeperAndVSA(unittest.TestCase):
         self.assertGreater(sl_val, 1100.0, "Chandelier trailing stop failed to ratchet upward to lock in profits!")
         self.assertIn("Chandelier Trailing SL", res["holding_guidance"])
 
+    def test_09_none_type_indicators_handled_gracefully(self):
+        """Indicators with NoneType values (illiquid/off-hours/new stocks) must not raise TypeError '>='."""
+        none_technicals = {
+            "symbol": "PENNYSTOCK",
+            "current_price": None,
+            "rsi_15m": None,
+            "rsi_5m": None,
+            "rsi_daily": None,
+            "volume_multiple": None,
+            "volume_surge_ratio": None,
+            "is_volume_surge": False,
+            "price_vs_vwap_pct": None,
+            "vwap": None,
+            "atr_14": None,
+            "technical_score": None
+        }
+        none_flow = {
+            "pcr": None,
+            "delivery_pct": None,
+            "is_high_delivery": False,
+            "fo_oi_status": None,
+            "is_fo_stock": False,
+            "flow_score": None
+        }
+
+        # Must evaluate without throwing TypeError: '>=' not supported between instances of 'NoneType' and 'int'
+        has_cat, reason = check_has_active_catalyst(
+            symbol="PENNYSTOCK",
+            technicals=none_technicals,
+            flow_data=none_flow,
+            news_items=[],
+            holding_info={"average_price": None, "quantity": 10}
+        )
+        self.assertFalse(has_cat)
+        self.assertIn("Consolidating", reason)
+
+        # Must compute deterministic confluence without throwing TypeError
+        conf = compute_deterministic_confluence(
+            symbol="PENNYSTOCK",
+            technicals=none_technicals,
+            flow_data=none_flow,
+            macro_data={"allow_breakout_trades": False, "adr_ratio": None},
+            forensics={"forensic_score": None},
+            financials={},
+            news_items=[]
+        )
+        self.assertIsInstance(conf, dict)
+        self.assertIn("confluence_score", conf)
+        self.assertEqual(conf["action_bias"], "HOLD_NEUTRAL")
+
 if __name__ == "__main__":
     unittest.main()

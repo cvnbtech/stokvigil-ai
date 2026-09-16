@@ -158,8 +158,9 @@ def format_telegram_alert(
     else:
         header_badge = "⚪ <b>STOKVIGIL UPDATE: MARKET WATCHTOWER</b> ⚪"
 
-    is_bse = str(symbol).strip().upper().endswith(".BO")
-    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    raw_sym = str(symbol).strip().upper()
+    clean_sym = raw_sym.replace(".NS", "").replace(".BO", "").strip()
+    is_bse = raw_sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
     exch_label = "BSE" if is_bse else "NSE"
 
     safe_catalyst = html_lib.escape(catalyst_type.replace('_', ' '), quote=False)
@@ -266,8 +267,9 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
     2. Deep link to ICICI Direct Portfolio / Order execution
     3. Official NSE / BSE India quote & corporate actions
     """
-    is_bse = str(symbol).strip().upper().endswith(".BO")
-    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    raw_sym = str(symbol).strip().upper()
+    clean_sym = raw_sym.replace(".NS", "").replace(".BO", "").strip()
+    is_bse = raw_sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
     chart_exchange = "BSE" if is_bse else "NSE"
     exchange_name = "BSE India Live" if is_bse else "NSE India Live"
     exchange_url = (
