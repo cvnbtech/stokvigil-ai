@@ -1185,10 +1185,12 @@ _USER_PORTFOLIO_CACHE_TTL = 15.0  # 15 seconds
 _FUNDAMENTALS_CACHE: Dict[str, Dict[str, Any]] = {}
 _FUNDAMENTALS_CACHE_TTL = 86400.0  # 24 hours
 
-def _get_holding_fundamentals(symbol: str, now: float) -> Tuple[Optional[float], Optional[float]]:
+def _get_holding_fundamentals(symbol: str, now: float, fetch_if_missing: bool = False) -> Tuple[Optional[float], Optional[float]]:
     """
     Retrieves authentic P/E ratio and Debt-to-Equity with 24-hour in-memory caching.
-    Checks RAM cache first, then market_cache singleton, falling back to Yahoo Finance once per day.
+    Checks RAM cache first (_FUNDAMENTALS_CACHE), then market_cache singleton.
+    By default (fetch_if_missing=False), strictly avoids external network scraping in
+    synchronous HTTP requests to guarantee sub-second (<800ms) portfolio response times.
     """
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     if clean_sym in _FUNDAMENTALS_CACHE:
@@ -1206,7 +1208,10 @@ def _get_holding_fundamentals(symbol: str, now: float) -> Tuple[Optional[float],
             _FUNDAMENTALS_CACHE[clean_sym] = {"pe_ratio": pe, "debt_to_equity": de, "timestamp": now}
             return pe, de
 
-    # Fetch authentic fundamentals from Yahoo Finance
+    if not fetch_if_missing:
+        return None, None
+
+    # Fetch authentic fundamentals from Yahoo Finance (used in background pre-warming)
     try:
         fin = fetch_stock_financials(clean_sym)
         pe = fin.get("pe_ratio")
@@ -1223,6 +1228,52 @@ def _get_holding_fundamentals(symbol: str, now: float) -> Tuple[Optional[float],
 
     _FUNDAMENTALS_CACHE[clean_sym] = {"pe_ratio": pe, "debt_to_equity": de, "timestamp": now}
     return pe, de
+
+def _async_pre_warm_holding_fundamentals(symbols: List[str], user_id: Optional[str] = None):
+    """
+    Asynchronously queues and caches missing holding fundamentals (P/E and D/E)
+    without blocking the user's synchronous portfolio HTTP request.
+    Also patches active _USER_PORTFOLIO_CACHE so immediate subsequent reads have fundamentals.
+    """
+    if not symbols:
+        return
+    now = time.time()
+    for sym in symbols:
+        clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+        # If already populated by another worker or cache
+        if clean_sym in _FUNDAMENTALS_CACHE:
+            cached = _FUNDAMENTALS_CACHE[clean_sym]
+            if (now - cached.get("timestamp", 0)) < _FUNDAMENTALS_CACHE_TTL:
+                continue
+        try:
+            fin = fetch_stock_financials(clean_sym)
+            pe = fin.get("pe_ratio")
+            de = fin.get("debt_to_equity")
+            if pe is not None or de is not None:
+                _FUNDAMENTALS_CACHE[clean_sym] = {"pe_ratio": pe, "debt_to_equity": de, "timestamp": now}
+        except Exception as e:
+            logger.debug(f"Background pre-warm fundamentals note for {clean_sym}: {e}")
+
+    # Bound cache size to 500 entries to prevent memory drift
+    if len(_FUNDAMENTALS_CACHE) > 500:
+        oldest_syms = sorted(_FUNDAMENTALS_CACHE.keys(), key=lambda k: _FUNDAMENTALS_CACHE[k].get("timestamp", 0))[:100]
+        for s in oldest_syms:
+            _FUNDAMENTALS_CACHE.pop(s, None)
+
+    # Patch in-memory portfolio cache if user_id is provided
+    if user_id and user_id in _USER_PORTFOLIO_CACHE:
+        try:
+            cached_data = _USER_PORTFOLIO_CACHE[user_id].get("data", {})
+            for h in cached_data.get("holdings", []):
+                h_sym = h.get("clean_symbol") or h.get("symbol")
+                if h_sym in _FUNDAMENTALS_CACHE:
+                    f_entry = _FUNDAMENTALS_CACHE[h_sym]
+                    if h.get("pe_ratio") is None:
+                        h["pe_ratio"] = f_entry.get("pe_ratio")
+                    if h.get("debt_to_equity") is None:
+                        h["debt_to_equity"] = f_entry.get("debt_to_equity")
+        except Exception:
+            pass
 
 def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]):
     """Background task to sync Demat holdings to user_watchlists without blocking HTTP response."""
@@ -1395,10 +1446,18 @@ def get_user_portfolio(
     total_pnl = total_val - total_investment
     total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
 
-    # Approach 3: Asynchronous Non-Blocking Database Watchlist Sync
+    # Approach 3: Asynchronous Non-Blocking Background Sync & Pre-Warming
     if detailed_holdings:
         holding_syms = [h['symbol'] for h in detailed_holdings]
         background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, holding_syms)
+
+        # Pre-warm missing fundamentals in background (P/E and Debt-to-Equity)
+        missing_fund_syms = [
+            h.get('clean_symbol') or h['symbol'] for h in detailed_holdings
+            if h.get('pe_ratio') is None and h.get('debt_to_equity') is None
+        ]
+        if missing_fund_syms:
+            background_tasks.add_task(_async_pre_warm_holding_fundamentals, list(set(missing_fund_syms)), user_id)
 
     response_payload = {
         "has_credentials": True,

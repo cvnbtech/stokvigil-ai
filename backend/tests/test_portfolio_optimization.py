@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.main import (
     _get_holding_fundamentals,
+    _async_pre_warm_holding_fundamentals,
     _FUNDAMENTALS_CACHE,
     _FUNDAMENTALS_CACHE_TTL,
     get_user_portfolio,
@@ -22,7 +23,7 @@ class TestPortfolioOptimization(unittest.TestCase):
         _USER_PORTFOLIO_CACHE.clear()
 
     def test_fundamentals_cache_retrieval_and_ttl(self):
-        """_get_holding_fundamentals must fetch once and cache for 24 hours."""
+        """_get_holding_fundamentals returns (None, None) on cache miss (non-blocking), and caches for 24h once warmed."""
         now = time.time()
         mock_fin = {
             "symbol": "RELIANCE",
@@ -32,19 +33,23 @@ class TestPortfolioOptimization(unittest.TestCase):
         }
 
         with patch("app.main.fetch_stock_financials", return_value=mock_fin) as mock_fetch:
-            # 1. First call: Cache miss -> calls fetch_stock_financials
+            # 1. First synchronous call on cold cache: returns (None, None) immediately without blocking
             pe, de = _get_holding_fundamentals("RELIANCE", now)
-            self.assertEqual(pe, 28.45)
-            self.assertEqual(de, 0.38)
+            self.assertIsNone(pe)
+            self.assertIsNone(de)
+            self.assertEqual(mock_fetch.call_count, 0)
+
+            # 2. Background pre-warm task fetches and populates the cache
+            _async_pre_warm_holding_fundamentals(["RELIANCE"])
             self.assertEqual(mock_fetch.call_count, 1)
 
-            # 2. Second call within 24h: Cache hit -> zero new API calls
+            # 3. Subsequent call within 24h: Cache hit -> zero new API calls
             pe2, de2 = _get_holding_fundamentals("RELIANCE", now + 3600)  # 1 hour later
             self.assertEqual(pe2, 28.45)
             self.assertEqual(de2, 0.38)
             self.assertEqual(mock_fetch.call_count, 1)  # Still 1!
 
-            # 3. Normalized exchange suffix (.NS or .BO) must hit the same cache
+            # 4. Normalized exchange suffix (.NS or .BO) must hit the same cache
             pe3, de3 = _get_holding_fundamentals("RELIANCE.NS", now + 7200)
             self.assertEqual(pe3, 28.45)
             self.assertEqual(de3, 0.38)
@@ -67,8 +72,8 @@ class TestPortfolioOptimization(unittest.TestCase):
                 self.assertEqual(de, 0.15)
                 mock_fetch.assert_not_called()
 
-    def test_portfolio_response_contains_pe_and_de(self):
-        """get_user_portfolio response must contain pe_ratio and debt_to_equity for all holdings."""
+    def test_portfolio_response_sub_second_and_pre_warm(self):
+        """get_user_portfolio returns immediately with CMP/PnL and queues background task to pre-warm fundamentals."""
         mock_db = MagicMock()
         mock_cred_data = [{
             "user_id": "test_user_1",
@@ -106,6 +111,7 @@ class TestPortfolioOptimization(unittest.TestCase):
              patch("app.main._fetch_single_stock_quote", side_effect=mock_quote_fn), \
              patch("app.main.fetch_stock_financials", side_effect=mock_fin_fn):
 
+            # 1. Cold fetch: returns immediately with prices and P&L, zero synchronous fundamentals delay
             result = get_user_portfolio(
                 user_id="test_user_1",
                 refresh=True,
@@ -118,15 +124,29 @@ class TestPortfolioOptimization(unittest.TestCase):
 
             infy = next(h for h in result["holdings"] if h["symbol"] == "INFY")
             self.assertEqual(infy["current_price"], 1860.0)
-            self.assertEqual(infy["pe_ratio"], 24.2)
-            self.assertEqual(infy["debt_to_equity"], 0.08)
             self.assertEqual(infy["pnl"], round((1860.0 - 1800.0) * 50, 2))
 
             hdfc = next(h for h in result["holdings"] if h["symbol"] == "HDFCBANK")
             self.assertEqual(hdfc["current_price"], 1650.0)
-            self.assertEqual(hdfc["pe_ratio"], 18.5)
-            self.assertEqual(hdfc["debt_to_equity"], 1.12)
             self.assertEqual(hdfc["pnl"], round((1650.0 - 1600.0) * 100, 2))
+
+            # 2. Execute background pre-warm task (as FastAPI BackgroundTasks does)
+            _async_pre_warm_holding_fundamentals(["INFY", "HDFCBANK"], user_id="test_user_1")
+
+            # 3. Verify fundamentals are now cached and patched in portfolio cache
+            cached_res = get_user_portfolio(
+                user_id="test_user_1",
+                refresh=False,
+                auth_user_id="test_user_1",
+                db=mock_db
+            )
+            infy_cached = next(h for h in cached_res["holdings"] if h["symbol"] == "INFY")
+            self.assertEqual(infy_cached["pe_ratio"], 24.2)
+            self.assertEqual(infy_cached["debt_to_equity"], 0.08)
+
+            hdfc_cached = next(h for h in cached_res["holdings"] if h["symbol"] == "HDFCBANK")
+            self.assertEqual(hdfc_cached["pe_ratio"], 18.5)
+            self.assertEqual(hdfc_cached["debt_to_equity"], 1.12)
 
 
 if __name__ == "__main__":

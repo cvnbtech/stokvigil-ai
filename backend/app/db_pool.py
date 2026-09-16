@@ -74,9 +74,9 @@ async def init_db_pool() -> Optional[asyncpg.Pool]:
                 raw_url,
                 min_size=2,
                 max_size=10,
-                command_timeout=15.0,
+                command_timeout=10.0,
                 statement_cache_size=0,
-                max_inactive_connection_lifetime=300.0
+                max_inactive_connection_lifetime=180.0
             )
             logger.info("✅ Supabase PgBouncer Connection Pool (Port 6543) initialized successfully.")
             return _db_pool

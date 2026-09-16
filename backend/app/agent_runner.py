@@ -1325,28 +1325,60 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
     """
     generated_alerts = []
     
-    # 1. Fetch user profile & notification settings
-    profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
-    if not profile_res.data:
-        logger.warning(f"Profile not found for user {mask_id(user_id)}")
-        return []
-        
-    profile = profile_res.data[0]
+    # 1. Fetch user profile & notification settings (PgBouncer pool first, REST fallback)
+    profile = None
+    try:
+        from app.db_pool import fetch_one, fetch_all
+        pooled_profile = await fetch_one("SELECT * FROM profiles WHERE id = $1", user_id)
+        if pooled_profile:
+            profile = pooled_profile
+    except Exception as pool_err:
+        logger.debug(f"Pooled profile query note for user {mask_id(user_id)}: {pool_err}")
+
+    if profile is None:
+        profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
+        if not profile_res.data:
+            logger.warning(f"Profile not found for user {mask_id(user_id)}")
+            return []
+        profile = profile_res.data[0]
+
     fcm_token = profile.get("fcm_device_token")
     fcm_enabled = profile.get("fcm_enabled", False)
     telegram_chat_id = profile.get("telegram_chat_id")
     telegram_enabled = profile.get("telegram_enabled", False)
     alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()
-    
-    # 2. Fetch user's active watchlist
-    watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
-    symbols = set(item['symbol'] for item in (watchlist_res.data or []))
-    
-    # 3. Check ICICI credentials and sync Demat holdings
+
+    # 2. Fetch user's active watchlist (PgBouncer pool first, REST fallback)
+    symbols = set()
+    try:
+        from app.db_pool import fetch_all
+        pooled_watchlists = await fetch_all("SELECT symbol FROM user_watchlists WHERE user_id = $1", user_id)
+        if pooled_watchlists is not None:
+            symbols = set(item['symbol'] for item in pooled_watchlists if item.get('symbol'))
+    except Exception as pool_err:
+        logger.debug(f"Pooled watchlist query note for user {mask_id(user_id)}: {pool_err}")
+
+    if not symbols:
+        watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
+        symbols = set(item['symbol'] for item in (watchlist_res.data or []) if item.get('symbol'))
+
+    # 3. Check ICICI credentials and sync Demat holdings (PgBouncer pool first, REST fallback)
     holdings_map = {}
-    cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
-    if cred_res.data:
-        cred = cred_res.data[0]
+    cred = None
+    try:
+        from app.db_pool import fetch_one
+        pooled_cred = await fetch_one("SELECT * FROM user_credentials WHERE user_id = $1", user_id)
+        if pooled_cred:
+            cred = pooled_cred
+    except Exception as pool_err:
+        logger.debug(f"Pooled cred query note for user {mask_id(user_id)}: {pool_err}")
+
+    if cred is None:
+        cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
+        if cred_res.data:
+            cred = cred_res.data[0]
+
+    if cred:
         today_str = str(date.today())
         token_date = str(cred.get("token_date", ""))
 
