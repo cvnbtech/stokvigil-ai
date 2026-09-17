@@ -1,3 +1,4 @@
+import concurrent.futures
 import csv
 import io
 import json
@@ -11,9 +12,13 @@ from typing import Dict, Any, List, Optional, Set
 
 logger = logging.getLogger("stokvigil.flow_tracker")
 
-# In-memory option chain cache: (symbol -> {data, timestamp}) with 120s TTL
+# In-memory option chain cache: (symbol -> {data, timestamp}) with 900s (15-min) TTL
 _OPTION_CHAIN_CACHE: Dict[str, Dict[str, Any]] = {}
-_OPTION_CHAIN_TTL: float = 120.0
+_OPTION_CHAIN_TTL: float = 900.0
+
+# In-memory full F&O and delivery flow cache: (clean_symbol -> {data, timestamp}) with 900s TTL
+_FO_FLOW_CACHE: Dict[str, Dict[str, Any]] = {}
+_FO_FLOW_CACHE_TTL: float = 900.0
 
 # 100% Dynamic F&O Universe Loader (No hardcoded symbols)
 # Automatically fetched once daily from official NSE India archives with 24h caching.
@@ -291,6 +296,12 @@ def fetch_delivery_and_fo_flow(
     is_bse = str(symbol).strip().upper().endswith(".BO") or (str(symbol).strip().isdigit() and len(str(symbol).strip()) == 6)
     clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
     effective_pct = float(price_change_pct or 0.0)
+    now = time.time()
+    
+    # 0. High-speed In-Memory Cache Check (<0.001ms) with 15-minute institutional TTL
+    cached_flow = _FO_FLOW_CACHE.get(clean_sym)
+    if cached_flow and (now - cached_flow.get("timestamp", 0)) < _FO_FLOW_CACHE_TTL:
+        return cached_flow.get("data")
     
     default_res = {
         "symbol": clean_sym,
@@ -314,7 +325,7 @@ def fetch_delivery_and_fo_flow(
     
     try:
         pcr = None
-        is_fo = is_fo_symbol(clean_sym) if not is_bse else False
+        is_fo = is_fo_symbol(clean_sym)
         max_pain = None
         sup_strike = None
         res_strike = None
@@ -332,20 +343,26 @@ def fetch_delivery_and_fo_flow(
                 net_oi_bias = chain_data.get("net_oi_bias")
                 net_oi_change = chain_data.get("net_oi_change")
 
-        # 2. Secondary Fallback: Yahoo Finance Option Chain (Strictly for dynamically confirmed F&O stocks)
+        # 2. Secondary Fallback: Yahoo Finance Option Chain (Strictly for confirmed F&O stocks with bounded 2.0s execution)
         if is_fo and pcr is None:
             ticker_sym = f"{clean_sym}.NS"
             try:
-                ticker = yf.Ticker(ticker_sym)
-                opt_dates = ticker.options
-                if opt_dates and len(opt_dates) > 0:
-                    opt_chain = ticker.option_chain(opt_dates[0])
-                    calls = opt_chain.calls
-                    puts = opt_chain.puts
-                    call_oi = float(calls['openInterest'].sum()) if 'openInterest' in calls.columns else 0.0
-                    put_oi = float(puts['openInterest'].sum()) if 'openInterest' in puts.columns else 0.0
-                    if call_oi > 0:
-                        pcr = round(put_oi / call_oi, 2)
+                def _get_yf_pcr():
+                    t = yf.Ticker(ticker_sym)
+                    opt_dates = t.options
+                    if opt_dates and len(opt_dates) > 0:
+                        opt_chain = t.option_chain(opt_dates[0])
+                        calls = opt_chain.calls
+                        puts = opt_chain.puts
+                        call_oi = float(calls['openInterest'].sum()) if 'openInterest' in calls.columns else 0.0
+                        put_oi = float(puts['openInterest'].sum()) if 'openInterest' in puts.columns else 0.0
+                        if call_oi > 0:
+                            return round(put_oi / call_oi, 2)
+                    return None
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_get_yf_pcr)
+                    pcr = future.result(timeout=2.0)
             except Exception:
                 pass
 
@@ -402,7 +419,7 @@ def fetch_delivery_and_fo_flow(
                 vsa_regime = "OPERATOR_CHURN_TRAP"
                 vsa_note = f"Volume surge ({volume_multiple:.1f}x) with narrow price spread indicates potential churn"
 
-        return {
+        result_pack = {
             "symbol": clean_sym,
             "delivery_pct": real_delivery,
             "delivery_median_10d": None,
@@ -421,6 +438,8 @@ def fetch_delivery_and_fo_flow(
             "vsa_regime": vsa_regime,
             "vsa_note": vsa_note
         }
+        _FO_FLOW_CACHE[clean_sym] = {"data": result_pack, "timestamp": now}
+        return result_pack
     except Exception as e:
         logger.error(f"Error evaluating delivery & F&O flow for {symbol}: {e}")
         return default_res

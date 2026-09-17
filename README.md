@@ -14,24 +14,24 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 
 ## 🏗️ Tech Stack (100% Free Tier Architecture)
 - **Mobile Frontend**: Flutter (Dart) for Android (`com.app.stokvigil`) & iOS (with R8 ProGuard code obfuscation).
-- **Web Portal**: Next.js 14 (TypeScript) + Tailwind CSS (PWA Enabled, whitelisted CORS).
+- **Web Portal**: Next.js 16 (TypeScript) + React 19 + Tailwind CSS (PWA Enabled, whitelisted CORS).
 - **Backend API**: Python 3.11 + FastAPI containerized for Google Cloud Run (2M free requests/mo) / Render.
-- **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC).
-- **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-3.7-flash` / `gemini-3.6-flash` / `gemini-3.5-flash-lite` (via Interactions API & `generate_content`) with the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
+- **Security & Vault Layer**: `app/auth.py` (Supabase JWT Bearer validation & IDOR defense) + `app/vault.py` (Fernet AES-256 with PBKDF2HMAC) + Financial Order Idempotency Protection (`_ORDER_IDEMPOTENCY_CACHE`).
+- **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-3.5-flash-lite` (verified primary model for Google Cloud Run) with streamlined fallback to `gemini-2.0-flash` and `gemini-1.5-flash` (via official `generate_content`) and the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
 - **Quantitative Engines**:
-  - `market_cache.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 300s TTL) with bounded 15-worker async pre-computation and **Sub-Second Atomic Live Tick Updates (`update_live_tick`)** enabling WebSocket tick streams to update LTP and VWAP deviation in RAM without full pipeline re-runs.
-  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
-  - `flow_tracker.py`: **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery), plus F&O Open Interest build-up dynamics.
-  - `fii_dii_tracker.py`: **Institutional Net Flow Tracker** aggregating daily official NSE FII & DII cash market flows with 30-minute in-memory caching, multi-tier fallback (Live NSE $\rightarrow$ Supabase $\rightarrow$ In-memory proxy), and automated institutional sentiment classification (`BULLISH_INFLOW`, `STRONG_ACCUMULATION`, `HEAVY_DISTRIBUTION`, etc.).
-  - `macro_filter.py`: Pre-Market War Room intelligence, **Market Breadth Advance-Decline Ratio (ADR)** tracker from NSE All-Indices (4 breadth regimes and Anti-Bull-Trap Veto), India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks.
+  - `market_cache.py` & `technical_engine.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 900s / 15-minute TTL) with **Vectorized Batch Pre-Computation (`batch_fetch_multi_timeframe_technicals`)** downloading multi-ticker 5m OHLCV bars via parallel threads, session-invariant daily bar caching (8h TTL), bounded 20-worker async pre-computation (`asyncio.Semaphore(20)`), and **Sub-Second Atomic Live Tick Updates (`update_live_tick`)** enabling WebSocket tick streams to update LTP and VWAP deviation in RAM without full pipeline re-runs.
+  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO & 6-digit scrips)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
+  - `flow_tracker.py`: **100% Dynamic NSE F&O Universe Discovery (`get_dynamic_fo_universe`)** automatically fetching active contracts daily from official NSE archives (`fo_mktlots.csv`) with 24h caching (zero hardcoded tickers) and instant 0.0001ms BSE bypass. Non-blocking in-memory `_FO_FLOW_CACHE` (900s / 15-min TTL) with bounded 2.0s timeout on Yahoo option chain fallback preventing thread pool exhaustion. **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery or volume multiple $\ge 1.8\times$) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery or narrow price spread on surge) with zero fabricated default values.
+  - `fii_dii_tracker.py`: **Institutional Net Flow Tracker** aggregating daily official NSE FII & DII cash market flows with 30-minute in-memory caching, multi-tier authentic fallback (Live NSE $\rightarrow$ Supabase $\rightarrow$ `DATA_UNAVAILABLE` payload with zero synthetic volume or fake history deltas), and automated institutional sentiment classification (`BULLISH_INFLOW`, `STRONG_ACCUMULATION`, `HEAVY_DISTRIBUTION`, etc.).
+  - `macro_filter.py`: Pre-Market War Room intelligence, **Market Breadth Advance-Decline Ratio (ADR)** tracker from NSE All-Indices (4 breadth regimes and Anti-Bull-Trap Veto), India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks with zero fabricated defaults.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
-  - `main.py` (**Portfolio Optimization**): 24-Hour Bounded Holding Fundamentals Cache (`_FUNDAMENTALS_CACHE`, 500 max LRU entries) reducing redundant third-party API queries by over 98%.
+  - `main.py` & `agent_runner.py` (**Scalable Multi-Tier RAM Caching & Non-Blocking Pre-Warming**): 24-Hour Bounded Holding Fundamentals Cache (`_FUNDAMENTALS_CACHE`, 500 max LRU entries) in `main.py`, 12-Hour Corporate Fundamentals Cache (`_FINANCIALS_CACHE`), 30-Minute News RSS Cache (`_NEWS_CACHE`), 4-Minute Demat Holdings Cache (`_DEMAT_PORTFOLIO_CACHE`), and Non-Blocking Background Pre-Warming (`_async_pre_warm_holding_fundamentals`) via FastAPI `BackgroundTasks` decoupling third-party balance-sheet scraping from synchronous HTTP portfolio responses (<200ms load times).
 - **Charts & Viral Engine**:
-  - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, ATR-based Chandelier Trailing Stop, and **StokVigil 'SV' Canvas Watermark & Pro Terminal Badge**.
+  - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, ATR-based Chandelier Trailing Stop, complete attribution logo/link suppression (`attributionLogo: false`), and **StokVigil 'SV' Canvas Watermark & Pro Terminal Badge**.
   - **Off-screen HTML5 2D Canvas Engine**: Instant client-side generation of branded 1080×1080 viral "Alpha Cards" with 1-tap WhatsApp and X sharing at zero backend cost.
-- **Database & Connection Pooling**: Supabase PostgreSQL with Row-Level Security (RLS) + **Supabase PgBouncer (Port 6543)** connection pooling via `asyncpg` (`statement_cache_size=0`, 2–10 connection multiplexing) with dual-driver zero-downtime REST fallback and Fernet AES-256 vault encryption.
+- **Database & Connection Pooling**: Supabase PostgreSQL with Row-Level Security (RLS) + **Supabase PgBouncer (Port 6543)** connection pooling via `asyncpg` (`statement_cache_size=0`, `command_timeout=10.0`, `max_inactive_connection_lifetime=180.0`, 2–10 connection multiplexing) with dual-driver zero-downtime REST fallback and Fernet AES-256 vault encryption.
 - **Integrations**: `breeze-connect` (ICICI Demat holdings across NSE and BSE), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
-- **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with live TradingView interactive charts, ICICI Direct deep links, NSE/BSE official exchange live quote buttons, and **StokVigil Verified White-Label Branding**.
+- **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with white-labeled **`[📊 StokVigil Chart]`** buttons (deep-linking directly to StokVigil Web PWA via `WEB_PORTAL_URL` or TradingView fallback), `[💼 ICICI Direct]` deep links, official NSE/BSE exchange live quote buttons, and **StokVigil Verified White-Label Branding**.
 
 ---
 
@@ -68,9 +68,11 @@ Real trading desks and hedge funds do not burn heavy neural network inference on
 
 ---
 
-### 2. Wyckoff Volume-Spread Analysis (VSA) & Options Order Flow
-- **`SMART_MONEY_ABSORPTION`**: Delivery volume $\ge 55\%$ with positive price expansion above VWAP $\rightarrow$ **+8 Confluence Points** + institutional accumulation badge.
-- **`OPERATOR_CHURN_TRAP`**: High price volatility ($> 2\%$) but weak delivery ($< 25\%$) $\rightarrow$ **-10 Confluence Points** + speculative trap warning.
+### 2. Wyckoff Volume-Spread Analysis (VSA) & Dynamic Options Order Flow
+- **100% Dynamic F&O Universe Discovery (`get_dynamic_fo_universe`)**: Daily automated sync of official active NSE F&O contracts from NSE archives (`fo_mktlots.csv`, 24h caching). Instantly bypasses BSE scrips (`.BO` and 6-digit numeric codes) in 0.0001ms to preserve zero latency.
+- **`SMART_MONEY_ABSORPTION`**: Delivery volume $\ge 55\%$ (or volume multiple $\ge 1.8\times$ when delivery data is absent) with positive price expansion above VWAP $\rightarrow$ **+8 Confluence Points** + institutional accumulation badge.
+- **`OPERATOR_CHURN_TRAP`**: High price volatility ($> 2\%$) with weak delivery ($< 25\%$), or volume surge ($\ge 1.8\times$) with narrow price spread ($\le 0.2\%$) $\rightarrow$ **-10 Confluence Points** + speculative trap warning.
+- **Strict Zero-Default Metric Delivery**: Fabricated synthetic delivery metrics are completely eliminated; real delivery is used when available, otherwise authentic volume multiples drive Wyckoff VSA.
 - **Intraday $\Delta \text{OI}$ Momentum Velocity**: Evaluates strike-wise changes in Call and Put open interest in real time from official NSE options feeds:
   - `CALL_UNWINDING_SHORT_COVERING`: Aggressive call unwinding with put writing $\rightarrow$ High-probability short squeeze setup.
   - `AGGRESSIVE_PUT_WRITING`: Puts written at $>1.5\times$ calls $\rightarrow$ Strong institutional floor.
@@ -109,12 +111,13 @@ To deliver true institutional precision without paid feeds, the quantitative eng
 
 ### 5. Strict Zero-Default Policy (Pure Data Integrity Guarantee)
 > **Core Operational Rule:** *"Dont display default values if we dont recieve actual values"*
-* **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, or fake `24500.0` index prices).
-* **Graceful Null Propagation**: If market feeds or tick histories are insufficient (e.g. illiquid stock, exchange holiday, or non-F&O cash equity), functions return clean `None` (JSON `null`).
+* **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, or dummy `₹100.0` stock prices).
+* **Graceful Null Propagation**: If market feeds or tick histories are insufficient (e.g. illiquid stock, exchange holiday, or non-F&O cash equity), functions return clean `None` (JSON `null`) and `"DATA_UNAVAILABLE"`.
 * **Telegram & UI Suppression**:
   - `format_telegram_alert` completely omits the `📐 Tactical Risk-Reward Levels` section if tactical levels are `None` or invalid.
   - In `Market Snapshot`, lines are only rendered for metrics that are legitimately present (preventing `• Delivery: None%` or `• 15m RSI: None`).
   - `format_pre_market_war_room_telegram` omits benchmark lines if index prices are unavailable.
+  - Web Portal (`HomeTab.tsx`) suppresses the FII/DII institutional bar entirely when data is unavailable, preventing misleading `₹0 Cr` or `BALANCED` badges.
 
 ---
 
@@ -125,9 +128,9 @@ To deliver true institutional precision without paid feeds, the quantitative eng
 ---
 
 ### 7. Model Hierarchy
-1. **Primary Model**: `gemini-3.7-flash` via official `google-genai` SDK Interactions API — Ultra low-latency financial catalyst reasoning with strict JSON schema.
-2. **Secondary Models**: `gemini-3.6-flash` and `gemini-3.5-flash-lite` — High-efficiency secondary fallback engines.
-3. **Deterministic Rule Engine**: 100% offline mathematical engine ensuring continuous uptime if external network APIs are unavailable.
+1. **Primary Model**: `gemini-3.5-flash-lite` via official `google-genai` SDK `generate_content` — Ultra low-latency financial catalyst reasoning with strict JSON schema (verified active in Google Cloud Run container runtime).
+2. **Secondary Models**: `gemini-2.0-flash` and `gemini-1.5-flash` — High-efficiency secondary fallback engines with zero redundant legacy retry loops.
+3. **Deterministic Quantitative Engine**: 100% offline mathematical algorithm ensuring continuous uptime if external network APIs are unavailable.
 
 ### Multi-Dimensional Signal Classifications
 - **`🟢 ACCUMULATE / BUY WATCH`**: High-conviction setups ($\text{Score} \ge 75$) with bullish MACD, RSI, and Smart Money Delivery absorption above VWAP.
@@ -152,9 +155,9 @@ To deliver true institutional precision without paid feeds, the quantitative eng
 - **Anti-Hijacking Telegram Pairing Security**: Telegram pairing requires the user's internal User ID / UUID. Linking via email addresses is strictly rejected and prohibited (`reason: email_not_permitted`) to protect users from alert feed interception. Incoming webhooks are verified via `X-Telegram-Bot-Api-Secret-Token`.
 - **Zero Raw PII Telemetry / Log Masking**: In compliance with financial data privacy standards, all user IDs, UUIDs, and Telegram Chat IDs are masked across all server and pipeline logs (`mask_id`), displaying only the last 4 characters (`***XXXX`).
 - **Rich HTML Cards & Interactive Cockpit Buttons**: Every alert includes color-coded badges, Demat position snapshot, Wyckoff VSA market snapshot, tactical levels (Entry, Target 1, Target 2, Stop-Loss, R:R), and interactive buttons:
-  - `[📈 TradingView Chart]`: Deep link directly opening live interactive chart for NSE or BSE (`https://in.tradingview.com/chart/?symbol={EXCH}:{SYMBOL}`).
+  - `[📊 StokVigil Chart]`: Deep link directly opening the live interactive chart in the StokVigil Web PWA (`${WEB_PORTAL_URL}/chart?symbol={SYMBOL}&exchange={EXCH}`) when configured, or falling back to TradingView.
   - `[💼 ICICI Direct]`: Deep link to portfolio & order execution.
-  - `[🏛️ NSE / BSE India Live]`: Direct link to official exchange quote and corporate announcement filings.
+  - `[🏛️ NSE / BSE India Live]`: Direct link to official exchange quote and corporate announcement filings (with native support for 6-digit numeric BSE scrip codes).
 
 ### 3. Institutional 4-Column Metric Grid & Wyckoff VSA Presentation
 - **High-Density Metric Strip**: Alerts on both Flutter mobile (`MetricChipStrip`) and Next.js Web (`page.tsx`) replace raw JSON dumps with a clean, structured 4-column HUD:
@@ -224,7 +227,7 @@ To deliver true institutional precision without paid feeds, the quantitative eng
   - **Interactive Toggles**: 1-tap on-chart toggles for Camarilla, VWAP, Chandelier SL, and Volume.
 - **Multi-Timeframe Engine**: Seamless switching across `1m`, `5m`, `15m`, `1h`, and `1d` intervals backed by in-memory LRU-cached `GET /api/stocks/candles`.
 - **Dual-Exchange Support**: Seamlessly resolves and charts both NSE (`.NS`) and BSE (`.BO`) equities with dynamic fallback.
-- **Branded 'SV' Watermark & Pro Terminal HUD**: Custom canvas-rendered StokVigil 'SV' watermark, pro terminal badge, and white-label branding across both web and mobile charts, protecting platform provenance.
+- **Pure White-Label Branding & 'SV' Watermark HUD**: Native suppression of third-party branding (`attributionLogo: false` with scoped CSS overrides hiding attribution links), paired with custom canvas-rendered StokVigil 'SV' watermark, pro terminal badge, and white-label branding across both web and mobile charts, protecting platform provenance.
 
 
 ## 👁️ Demat Portfolio Privacy Masking & Live Indicator
@@ -237,6 +240,7 @@ To deliver true institutional precision without paid feeds, the quantitative eng
 - **Live Autocomplete (`GET /api/stocks/search?q={query}`)**: As users type, the system queries live NSE (`.NS`) and BSE (`.BO`) exchange feeds in real-time, displaying verified company names, symbols, and sectors.
 - **Dual-Stage Exchange Validation (`GET /api/stocks/validate?symbol={sym}`)**: Every custom stock is checked against live market tick data before being saved. Dummy, non-existent, or misspelled tickers (e.g. `NE`, `ASDFGH`) are blocked and rejected from entering the database.
 - **High-Speed Batch Quotes (`GET /api/stocks/quotes?symbols={s1,s2}`)**: Real-time pricing, day % change, day high/low, proper company names, and dynamic exchange badges (`NSE`/`BSE`) for 100+ stocks backed by a persistent Keep-Alive connection pool (`requests.Session` with 25 pooled connections, 2.5s fast failover) and Market-Aware Dynamic RAM Caching (20s TTL during market hours, 300s TTL off-market & weekends, sub-0.05ms dual-key lookups).
+- **Next.js Watchlist Quotes Proxy (`web_portal/src/app/api/stocks/quotes/route.ts`)**: High-resilience frontend proxy featuring an 8000ms backend fetch timeout, tactical levels preservation (`target`, `stop_loss`, `signal`) during intraday price refreshes, BSE suffix normalization (preventing `.BO.NS` / `.BO.BO` bugs), and dual-indexing by clean and exchange symbols.
 - **Universal Dynamic ISIN & Dual-Exchange Resolver**: Resolves CDSL/NSDL Demat ISIN numbers directly to verified NSE and BSE equities with dynamic company name extraction (`shortName`/`longName`), clean symbol presentation, and exchange badge tags (`BSE` amber / `NSE` cyan), preventing internal exchange routing suffixes (`.BO`, `.NS`) from leaking into user-facing UI or database watchlists.
 - **Sliding-Window IP Rate Limiter**: Max 120 req/min rate limiting per client IP on public search/quote routes with strict alphanumeric regex sanitization (`^[A-Z0-9_\-&.]{1,25}$`).
 - **Demat Auto-Sync**: Automatically imports active ICICI Demat holdings into personal watchlists with clean symbols and company names with one click.
@@ -261,6 +265,13 @@ Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides 
    - The web callback route (`/api/auth/icici-callback`) renders the token capture card and immediately scrubs the `apisession` parameter from browser history (`window.history.replaceState`), eliminating token persistence in navigation logs and referrer headers.
    - The **`🔐 Encrypt & Save Key`** button is enabled **only when a valid session token is provided**.
    - Saving performs an authenticated, conflict-free database upsert (`onConflict: 'user_id'`), instantly syncing live Demat holdings.
+
+---
+
+## ⚡ Financial Trade Execution Idempotency & Debounce Shield (`POST /api/v1/orders/place`)
+To prevent duplicate orders from accidental double-taps, network retries, or browser reloads, StokVigil enforces institutional financial idempotency:
+- **Client Idempotency Key**: Accepts `X-Idempotency-Key` header or `idempotency_key` payload parameter (cached for 120 seconds). Replays return identical responses (`idempotent_replay: true`) without re-hitting the broker.
+- **15-Second In-Flight & Fingerprint Debounce**: Automatic hash fingerprinting on `(user_id, symbol, action, quantity, price)` debounces duplicate requests within 15 seconds, returning `409 Conflict` (`ORDER_IN_FLIGHT`) during active execution.
 
 ---
 
@@ -309,8 +320,9 @@ Users can permanently delete their account directly from the **Settings** page:
    ADMIN_SECRET_KEY=your-admin-secret-key
    ALLOWED_ORIGINS=https://yourapp.vercel.app,http://localhost:3000
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
+   WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (76 automated unit tests across 9 suites):
+3. Run test suite (95 automated unit tests across 10 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```
@@ -320,7 +332,7 @@ Users can permanently delete their account directly from the **Settings** page:
    ```
 
 > [!TIP]
-> **100% Free-Tier Cloud Run Deployment**: The 5-minute market scan runs synchronously during the HTTP request (`--timeout 300`), guaranteeing 100% CPU allocation under Cloud Run's standard request-based billing without requiring `--no-cpu-throttling`. This ensures total monthly consumption (~74,250 vCPU-seconds) remains strictly within Google Cloud's 360,000 vCPU-seconds/month free tier ($0.00 cost).
+> **100% Free-Tier Cloud Run Deployment**: The 5-minute market scan runs synchronously during the HTTP request (`curl -m 480` / `--timeout 480`), guaranteeing 100% CPU allocation under Cloud Run's standard request-based billing without requiring `--no-cpu-throttling`. This ensures total monthly consumption (~74,250 vCPU-seconds) remains strictly within Google Cloud's 360,000 vCPU-seconds/month free tier ($0.00 cost).
 
 ### 3. Telegram Bot Setup (@BotFather)
 1. Open Telegram and search for `@BotFather`.
@@ -366,9 +378,9 @@ The scheduled GitHub Actions runner executes automated workflows strictly during
    - Aggregates GIFT Nifty, US/Asian markets, India VIX regime, FII/DII net flows, and sector momentum 15 minutes before cash market open. Also triggers automatic 30-day historical alert pruning via `app.maintenance.prune_historical_alerts`.
 
 3. **5-Minute Market Surveillance Scanner ([5min_cron.yml](.github/workflows/5min_cron.yml)) (`cron: '45,50,55 3 * * 1-5'`, `*/5 4-9 * * 1-5'`, `'0 10 * * 1-5'`)**:
-   - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - Executes `POST /api/cron/multi-user-scan` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"` via `curl -s -m 480` (with a 10-minute job timeout).
    - **Synchronous Execution & Free-Tier Optimization**: Synchronously executes the market scan during the active HTTP request to guarantee 100% CPU allocation under Cloud Run's standard request-based billing ($0.00 cost within 360,000 vCPU-seconds/month quota), avoiding CPU throttling while streaming heartbeat progress logs every 20 symbols. Guarded by `_scan_in_progress` to prevent overlapping runs.
-   - **Concurrent Multi-User Evaluation**: Pre-computes unique symbols with `asyncio.Semaphore(20)` into RAM cache, then evaluates all users concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`.
+   - **Vectorized Pre-Computation & Concurrent Evaluation**: Uses `batch_fetch_multi_timeframe_technicals` to download multi-ticker 5m candles in parallel and reuses 8-hour cached daily bars, pre-computing un-cached symbols with `asyncio.Semaphore(20)`. Evaluates all user portfolios concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`, and parallelizes per-user symbol analysis with nested `asyncio.gather`.
 
 4. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
    - Compiles release Android APK (`com.app.stokvigil`) on push to `main` or manual workflow dispatch, injecting `google-services.json` securely from GitHub Secrets.

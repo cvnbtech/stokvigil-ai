@@ -167,10 +167,10 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
                 indices = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
                 # Prioritize NIFTY 50 or NIFTY 500 breadth
                 target_index = next((item for item in indices if item.get("index") in ["NIFTY 50", "NIFTY 500"]), None)
-                if target_index:
-                    adv = int(target_index.get("advances", 25))
-                    dec = int(target_index.get("declines", 25))
-                    unch = int(target_index.get("unchanged", 0))
+                if target_index and target_index.get("advances") is not None and target_index.get("declines") is not None:
+                    adv = int(target_index.get("advances"))
+                    dec = int(target_index.get("declines"))
+                    unch = int(target_index.get("unchanged") or 0)
                     adr = round(adv / max(1, dec), 2)
                     
                     if adr >= 1.5:
@@ -196,38 +196,7 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
     except Exception as e:
         logger.debug(f"Direct NSE market breadth fetch skipped/unavailable: {e}")
 
-    # Fallback to broad market NIFTY 50 / SENSEX index movement approximation
-    try:
-        nifty = yf.Ticker("^NSEI")
-        hist = nifty.history(period="2d")
-        if len(hist) >= 2:
-            pct = ((hist['Close'].iloc[-1] - hist['Close'].iloc[-2]) / hist['Close'].iloc[-2]) * 100
-            if pct > 0.6:
-                adv, dec = 35, 15
-            elif pct > 0.1:
-                adv, dec = 28, 22
-            elif pct > -0.4:
-                adv, dec = 22, 28
-            elif pct > -1.0:
-                adv, dec = 15, 35
-            else:
-                adv, dec = 8, 42
-            adr = round(adv / max(1, dec), 2)
-            regime = "STRONG_BULLISH_BREADTH" if adr >= 1.5 else ("BALANCED_BREADTH" if adr >= 0.8 else ("MILD_BREADTH_WEAKNESS" if adr >= 0.6 else "SEVERE_MARKET_DISTRIBUTION"))
-            result = {
-                "adr_ratio": adr,
-                "advances": adv,
-                "declines": dec,
-                "unchanged": 0,
-                "breadth_regime": regime,
-                "source": "INDEX_PROXY"
-            }
-            _MARKET_BREADTH_CACHE = result
-            _MARKET_BREADTH_TS = now
-            return result
-    except Exception as e:
-        logger.debug(f"Market breadth index proxy fallback error: {e}")
-
+    # ZERO-DEFAULT POLICY: When direct exchange breadth data is unavailable, return clean unpopulated state
     return default_breadth
 
 def fetch_macro_market_regime() -> Dict[str, Any]:
@@ -237,59 +206,65 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
     - BSE SENSEX (^BSESN)
     - India VIX (^INDIAVIX)
     - Advance-Decline Ratio (Market Breadth ADR)
+    ZERO-DEFAULT POLICY: Returns None and DATA_UNAVAILABLE when realtime exchange data cannot be retrieved.
     """
     default_res = {
-        "nifty_price": 24500.0,
-        "nifty_change_pct": 0.0,
-        "nifty_trend": "NEUTRAL",
-        "sensex_price": 80000.0,
-        "sensex_change_pct": 0.0,
-        "india_vix": 14.5,
-        "vix_regime": "MODERATE_VOLATILITY",
-        "adr_ratio": 1.0,
-        "advances": 25,
-        "declines": 25,
-        "breadth_regime": "BALANCED_BREADTH",
-        "allow_breakout_trades": True
+        "nifty_price": None,
+        "nifty_change_pct": None,
+        "nifty_trend": "DATA_UNAVAILABLE",
+        "sensex_price": None,
+        "sensex_change_pct": None,
+        "india_vix": None,
+        "vix_regime": "DATA_UNAVAILABLE",
+        "adr_ratio": None,
+        "advances": None,
+        "declines": None,
+        "breadth_regime": "DATA_UNAVAILABLE",
+        "allow_breakout_trades": False
     }
     
     try:
         nifty = yf.Ticker("^NSEI")
         nifty_hist = nifty.history(period="2d")
         
-        nifty_change_pct = 0.0
-        nifty_price = 24500.0
+        nifty_change_pct = None
+        nifty_price = None
+        nifty_trend = "DATA_UNAVAILABLE"
         if len(nifty_hist) >= 2:
             prev_close = float(nifty_hist['Close'].iloc[-2])
             curr_close = float(nifty_hist['Close'].iloc[-1])
             nifty_price = round(curr_close, 2)
             nifty_change_pct = round(((curr_close - prev_close) / prev_close) * 100, 2)
+            nifty_trend = "BULLISH" if nifty_change_pct > 0.3 else ("BEARISH" if nifty_change_pct < -0.3 else "NEUTRAL")
+        elif not nifty_hist.empty:
+            curr_close = float(nifty_hist['Close'].iloc[-1])
+            nifty_price = round(curr_close, 2)
+            nifty_trend = "NEUTRAL"
             
-        nifty_trend = "BULLISH" if nifty_change_pct > 0.3 else ("BEARISH" if nifty_change_pct < -0.3 else "NEUTRAL")
-        
         # India VIX
         vix = yf.Ticker("^INDIAVIX")
         vix_hist = vix.history(period="2d")
-        vix_val = 14.5
+        vix_val = None
+        vix_regime = "DATA_UNAVAILABLE"
+        allow_breakout = True
         if not vix_hist.empty:
             vix_val = round(float(vix_hist['Close'].iloc[-1]), 2)
-            
-        if vix_val < 13.0:
-            vix_regime = "LOW_VOLATILITY_TRENDING"
-            allow_breakout = True
-        elif vix_val <= 19.0:
-            vix_regime = "NORMAL_VOLATILITY"
-            allow_breakout = True
-        elif vix_val <= 24.0:
-            vix_regime = "ELEVATED_VOLATILITY_CAUTION"
-            allow_breakout = True
-        else:
-            vix_regime = "EXTREME_VOLATILITY_HIGH_RISK"
-            allow_breakout = False
+            if vix_val < 13.0:
+                vix_regime = "LOW_VOLATILITY_TRENDING"
+                allow_breakout = True
+            elif vix_val <= 19.0:
+                vix_regime = "NORMAL_VOLATILITY"
+                allow_breakout = True
+            elif vix_val <= 24.0:
+                vix_regime = "ELEVATED_VOLATILITY_CAUTION"
+                allow_breakout = True
+            else:
+                vix_regime = "EXTREME_VOLATILITY_HIGH_RISK"
+                allow_breakout = False
             
         # BSE SENSEX (^BSESN)
-        sensex_price = 80000.0
-        sensex_change_pct = 0.0
+        sensex_price = None
+        sensex_change_pct = None
         try:
             sensex = yf.Ticker("^BSESN")
             sensex_hist = sensex.history(period="2d")
@@ -298,16 +273,18 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
                 s_curr = float(sensex_hist['Close'].iloc[-1])
                 sensex_price = round(s_curr, 2)
                 sensex_change_pct = round(((s_curr - s_prev) / s_prev) * 100, 2)
+            elif not sensex_hist.empty:
+                sensex_price = round(float(sensex_hist['Close'].iloc[-1]), 2)
         except Exception as e:
             logger.debug(f"BSE SENSEX fetch fallback: {e}")
 
         # Market Breadth Advance-Decline Ratio (ADR)
         breadth = fetch_market_breadth_adr()
-        adr_val = breadth.get("adr_ratio", 1.0)
-        breadth_regime = breadth.get("breadth_regime", "BALANCED_BREADTH")
+        adr_val = breadth.get("adr_ratio")
+        breadth_regime = breadth.get("breadth_regime", "DATA_UNAVAILABLE")
 
         # Market Breadth Veto: If severe distribution (ADR < 0.60), block breakout trades
-        if adr_val < 0.60:
+        if adr_val is not None and adr_val < 0.60:
             allow_breakout = False
 
         return {
@@ -319,8 +296,8 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
             "india_vix": vix_val,
             "vix_regime": vix_regime,
             "adr_ratio": adr_val,
-            "advances": breadth.get("advances", 25),
-            "declines": breadth.get("declines", 25),
+            "advances": breadth.get("advances"),
+            "declines": breadth.get("declines"),
             "breadth_regime": breadth_regime,
             "allow_breakout_trades": allow_breakout
         }
@@ -337,26 +314,27 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
     3. Global Cues: US (Dow Jones ^DJI, Nasdaq ^IXIC) and Asia (Nikkei ^N225)
     4. Sectoral Momentum: NIFTY Bank (^NSEBANK), NIFTY IT (^CNXIT), NIFTY Auto (^CNXAUTO)
     5. Actionable Session Guidance: Volatility warning, directional bias, and setup priority
+    ZERO-DEFAULT POLICY: Omits missing benchmarks, sector lists, and cues rather than fabricating fake defaults.
     """
     from datetime import date
     today_str = str(date.today())
     
     # 1. Base macro data
     base_macro = fetch_macro_market_regime()
-    nifty_price = base_macro.get("nifty_price", 24500.0)
-    nifty_chg = base_macro.get("nifty_change_pct", 0.0)
-    sensex_price = base_macro.get("sensex_price", 80000.0)
-    sensex_chg = base_macro.get("sensex_change_pct", 0.0)
-    vix_val = base_macro.get("india_vix", 14.5)
-    vix_regime = base_macro.get("vix_regime", "NORMAL_VOLATILITY")
+    nifty_price = base_macro.get("nifty_price")
+    nifty_chg = base_macro.get("nifty_change_pct")
+    sensex_price = base_macro.get("sensex_price")
+    sensex_chg = base_macro.get("sensex_change_pct")
+    vix_val = base_macro.get("india_vix")
+    vix_regime = base_macro.get("vix_regime", "DATA_UNAVAILABLE")
     allow_breakouts = base_macro.get("allow_breakout_trades", True)
     
     # 2. Global Cues
     global_cues = {
-        "dow_jones_pct": 0.0,
-        "nasdaq_pct": 0.0,
-        "nikkei_pct": 0.0,
-        "bias": "NEUTRAL"
+        "dow_jones_pct": None,
+        "nasdaq_pct": None,
+        "nikkei_pct": None,
+        "bias": "DATA_UNAVAILABLE"
     }
     
     ticker_map = {
@@ -378,15 +356,19 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
         except Exception as err:
             logger.debug(f"Pre-market global cue fetch failed for {t_sym}: {err}")
             
-    avg_global = (global_cues["dow_jones_pct"] + global_cues["nasdaq_pct"] + global_cues["nikkei_pct"]) / 3.0
-    if avg_global >= 0.5:
-        global_cues["bias"] = "BULLISH_TAILWINDS"
-    elif avg_global <= -0.5:
-        global_cues["bias"] = "BEARISH_HEADWINDS"
-    elif avg_global > 0:
-        global_cues["bias"] = "MILD_POSITIVE"
+    valid_cues = [v for v in [global_cues["dow_jones_pct"], global_cues["nasdaq_pct"], global_cues["nikkei_pct"]] if v is not None]
+    if valid_cues:
+        avg_global = sum(valid_cues) / len(valid_cues)
+        if avg_global >= 0.5:
+            global_cues["bias"] = "BULLISH_TAILWINDS"
+        elif avg_global <= -0.5:
+            global_cues["bias"] = "BEARISH_HEADWINDS"
+        elif avg_global > 0:
+            global_cues["bias"] = "MILD_POSITIVE"
+        else:
+            global_cues["bias"] = "MILD_NEGATIVE"
     else:
-        global_cues["bias"] = "MILD_NEGATIVE"
+        global_cues["bias"] = "DATA_UNAVAILABLE"
         
     # 3. Sectoral Momentum Check
     sector_tickers = {
@@ -414,19 +396,24 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
             continue
             
     sector_results.sort(key=lambda x: x["change_pct"], reverse=True)
-    leading_sectors = sector_results[:2] if sector_results else [{"name": "NIFTY AUTO", "change_pct": 0.5}]
-    lagging_sectors = sector_results[-1:] if sector_results else [{"name": "NIFTY IT", "change_pct": -0.2}]
+    leading_sectors = sector_results[:2] if sector_results else []
+    lagging_sectors = sector_results[-1:] if sector_results else []
     
     # 4. Tactical Session Guidance
-    adr_val = base_macro.get("adr_ratio", 1.0)
-    breadth_regime = base_macro.get("breadth_regime", "BALANCED_BREADTH")
+    adr_val = base_macro.get("adr_ratio")
+    breadth_regime = base_macro.get("breadth_regime", "DATA_UNAVAILABLE")
 
-    if not allow_breakouts or vix_val > 22.0 or adr_val < 0.60:
-        guidance = f"⚠️ High risk regime detected (VIX: {vix_val}, Market Breadth ADR: {adr_val:.2f}). Heavy market distribution. Vetoing new long breakouts."
-    elif global_cues["bias"] in ["BULLISH_TAILWINDS", "MILD_POSITIVE"] and nifty_chg >= 0:
-        guidance = f"🟢 Favorable bullish tailwinds (Breadth: {breadth_regime}). Prioritize Smart Money Absorption breakouts above VWAP in leading sectors ({', '.join(s['name'] for s in leading_sectors)})."
-    elif global_cues["bias"] == "BEARISH_HEADWINDS" or nifty_chg < -0.4:
+    if not allow_breakouts or (vix_val is not None and vix_val > 22.0) or (adr_val is not None and adr_val < 0.60):
+        vix_str = f"{vix_val}" if vix_val is not None else "N/A"
+        adr_str = f"{adr_val:.2f}" if adr_val is not None else "N/A"
+        guidance = f"⚠️ High risk regime detected (VIX: {vix_str}, Market Breadth ADR: {adr_str}). Heavy market distribution. Vetoing new long breakouts."
+    elif global_cues["bias"] in ["BULLISH_TAILWINDS", "MILD_POSITIVE"] and (nifty_chg is not None and nifty_chg >= 0):
+        sec_str = f" in leading sectors ({', '.join(s['name'] for s in leading_sectors)})" if leading_sectors else ""
+        guidance = f"🟢 Favorable bullish tailwinds (Breadth: {breadth_regime}). Prioritize Smart Money Absorption breakouts above VWAP{sec_str}."
+    elif global_cues["bias"] == "BEARISH_HEADWINDS" or (nifty_chg is not None and nifty_chg < -0.4):
         guidance = "🔴 Macro headwinds prevalent. Watch for Wyckoff operator bull-traps and protect Demat profits with Chandelier Trailing Stops."
+    elif global_cues["bias"] == "DATA_UNAVAILABLE" and nifty_price is None:
+        guidance = "⚪ Broad market feeds offline / pending open. Focus on stock-specific volume surges and disciplined risk management."
     else:
         guidance = "⚪ Mixed global cues. Focus on stock-specific volume surges and disciplined Camarilla L3 liquidity floor entries."
         

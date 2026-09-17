@@ -1771,10 +1771,20 @@ async def run_pre_market_briefing(
     
     profiles_res = db.table("profiles").select("id, telegram_chat_id, telegram_enabled, fcm_device_token, fcm_enabled").execute()
     users = profiles_res.data or []
-    
     briefed_count = 0
     fcm_title = "🌅 StokVigil AI: Pre-Market War Room Briefing"
-    fcm_body = f"NIFTY: {war_room_data.get('nifty_change_pct'):+.2f}% | VIX: {war_room_data.get('india_vix')} | Global Bias: {war_room_data.get('global_cues', {}).get('bias')}"
+    n_chg = war_room_data.get('nifty_change_pct')
+    vix_val = war_room_data.get('india_vix')
+    bias_val = (war_room_data.get('global_cues') or {}).get('bias')
+
+    body_parts = []
+    if n_chg is not None:
+        body_parts.append(f"NIFTY: {n_chg:+.2f}%")
+    if vix_val is not None:
+        body_parts.append(f"VIX: {vix_val}")
+    if bias_val and bias_val != "DATA_UNAVAILABLE":
+        body_parts.append(f"Global Bias: {str(bias_val).replace('_', ' ')}")
+    fcm_body = " | ".join(body_parts) if body_parts else "Pre-Market intelligence briefing is ready."
     
     sem = asyncio.Semaphore(20)
 

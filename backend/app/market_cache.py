@@ -27,9 +27,9 @@ class MarketCacheManager:
     def _normalize_symbol(self, symbol: str) -> str:
         return symbol.replace(".NS", "").replace(".BO", "").strip().upper()
 
-    def set_stock(self, symbol: str, data: Dict[str, Any], ttl_seconds: int = 300) -> None:
+    def set_stock(self, symbol: str, data: Dict[str, Any], ttl_seconds: int = 900) -> None:
         """
-        Stores pre-computed stock analysis into RAM cache with a TTL (default: 300s / 5 mins).
+        Stores pre-computed stock analysis into RAM cache with a TTL (default: 900s / 15 mins).
         """
         clean_sym = self._normalize_symbol(symbol)
         now = time.time()
@@ -41,7 +41,7 @@ class MarketCacheManager:
         }
         self._stats["writes"] += 1
 
-    def get_stock(self, symbol: str, max_age_seconds: int = 300) -> Optional[Dict[str, Any]]:
+    def get_stock(self, symbol: str, max_age_seconds: int = 900) -> Optional[Dict[str, Any]]:
         """
         Retrieves pre-computed stock analysis from RAM in O(1) time (< 0.1 ms).
         Returns None if cache miss or if data is expired.
@@ -60,7 +60,7 @@ class MarketCacheManager:
         self._stats["hits"] += 1
         return item.get("data")
 
-    def is_fresh(self, symbol: str, max_age_seconds: int = 300) -> bool:
+    def is_fresh(self, symbol: str, max_age_seconds: int = 900) -> bool:
         """Checks if a stock's pre-computed technicals are fresh in RAM."""
         clean_sym = self._normalize_symbol(symbol)
         item = self._cache.get(clean_sym)
@@ -68,7 +68,7 @@ class MarketCacheManager:
             return False
         return (time.time() - item.get("cached_at", 0)) <= max_age_seconds
 
-    def get_multiple_stocks(self, symbols: List[str], max_age_seconds: int = 300) -> Dict[str, Dict[str, Any]]:
+    def get_multiple_stocks(self, symbols: List[str], max_age_seconds: int = 900) -> Dict[str, Dict[str, Any]]:
         """Batch-retrieves pre-computed analysis for multiple symbols in < 1ms."""
         result = {}
         for s in symbols:

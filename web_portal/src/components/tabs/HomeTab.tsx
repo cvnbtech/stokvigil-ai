@@ -47,7 +47,7 @@ export default function HomeTab({
       </div>
 
       {/* Institutional FII / DII Flow Bar */}
-      {fiiDiiFlows && (
+      {fiiDiiFlows && fiiDiiFlows.fii != null && fiiDiiFlows.dii != null && fiiDiiFlows.combined_net != null && (
         <div style={{
           background: "#080B16",
           border: `1px solid ${C.border}`,

@@ -84,38 +84,28 @@ def _fetch_from_nse_direct() -> Optional[Dict[str, Any]]:
     return None
 
 
-def _get_synthetic_institutional_proxy() -> Dict[str, Any]:
+def _get_unavailable_institutional_payload() -> Dict[str, Any]:
     """
-    Generates reliable institutional proxy data based on the latest verified NSE session.
-    Guarantees ₹0 cost and 100% uptime even during exchange off-hours or rate limits.
+    ZERO-DEFAULT POLICY: Returns a clean unpopulated payload when exchange and DB sources are unavailable.
+    Never fabricates synthetic institutional volume figures.
     """
     today_str = date.today().isoformat()
-    # Baseline verified institutional volume figures for NSE cash market
-    fii_buy = 12450.80
-    fii_sell = 11180.20
-    fii_net = round(fii_buy - fii_sell, 2)  # +1,270.60 Cr
-
-    dii_buy = 9870.40
-    dii_sell = 8940.10
-    dii_net = round(dii_buy - dii_sell, 2)  # +930.30 Cr
-
-    combined = round(fii_net + dii_net, 2)
-    sentiment = classify_institutional_sentiment(fii_net, dii_net)
-
     return {
         "date": today_str,
-        "fii": {"buy": fii_buy, "sell": fii_sell, "net": fii_net},
-        "dii": {"buy": dii_buy, "sell": dii_sell, "net": dii_net},
-        "combined_net": combined,
-        "sentiment": sentiment,
-        "source": "INSTITUTIONAL_PROXY"
+        "status": "DATA_UNAVAILABLE",
+        "fii": None,
+        "dii": None,
+        "combined_net": None,
+        "sentiment": "DATA_UNAVAILABLE",
+        "source": "DATA_UNAVAILABLE",
+        "history": []
     }
 
 
 def fetch_daily_fii_dii_flows(db=None) -> Dict[str, Any]:
     """
     Returns latest FII/DII net flows with 30-minute caching.
-    Attempts live NSE query, falls back to Supabase historical table, and finally to institutional proxy.
+    Attempts live NSE query, falls back to Supabase historical table, and finally to DATA_UNAVAILABLE state.
     """
     global _FII_DII_CACHE, _CACHE_TIMESTAMP
 
@@ -127,70 +117,65 @@ def fetch_daily_fii_dii_flows(db=None) -> Dict[str, Any]:
     data = _fetch_from_nse_direct()
 
     # 2. Try Supabase Cache Table if DB available
-    if not data and db is not None:
+    # 2. Try Supabase Cache Table if DB available (to fetch or enrich with multi-day history)
+    if db is not None:
         try:
             res = db.table("fii_dii_flows").select("*").order("trade_date", desc=True).limit(5).execute()
             if res.data and len(res.data) > 0:
-                latest = res.data[0]
-                f_net = float(latest.get("fii_net_cr", 0))
-                d_net = float(latest.get("dii_net_cr", 0))
-                data = {
-                    "date": str(latest.get("trade_date")),
-                    "fii": {
-                        "buy": float(latest.get("fii_buy_cr", 0)),
-                        "sell": float(latest.get("fii_sell_cr", 0)),
-                        "net": f_net
-                    },
-                    "dii": {
-                        "buy": float(latest.get("dii_buy_cr", 0)),
-                        "sell": float(latest.get("dii_sell_cr", 0)),
-                        "net": d_net
-                    },
-                    "combined_net": float(latest.get("combined_net_cr", round(f_net + d_net, 2))),
-                    "sentiment": latest.get("sentiment_bias", classify_institutional_sentiment(f_net, d_net)),
-                    "source": "SUPABASE_STORED",
-                    "history": [
-                        {
-                            "date": str(row.get("trade_date")),
-                            "fii_net": float(row.get("fii_net_cr", 0)),
-                            "dii_net": float(row.get("dii_net_cr", 0)),
-                            "combined_net": float(row.get("combined_net_cr", 0)),
-                            "sentiment": row.get("sentiment_bias", "NEUTRAL")
-                        }
-                        for row in res.data
-                    ]
-                }
+                history_list = [
+                    {
+                        "date": str(row.get("trade_date")),
+                        "fii_net": float(row.get("fii_net_cr", 0)),
+                        "dii_net": float(row.get("dii_net_cr", 0)),
+                        "combined_net": float(row.get("combined_net_cr", 0)),
+                        "sentiment": row.get("sentiment_bias", "NEUTRAL")
+                    }
+                    for row in res.data
+                ]
+                if not data:
+                    latest = res.data[0]
+                    f_net = float(latest.get("fii_net_cr", 0))
+                    d_net = float(latest.get("dii_net_cr", 0))
+                    data = {
+                        "date": str(latest.get("trade_date")),
+                        "fii": {
+                            "buy": float(latest.get("fii_buy_cr", 0)),
+                            "sell": float(latest.get("fii_sell_cr", 0)),
+                            "net": f_net
+                        },
+                        "dii": {
+                            "buy": float(latest.get("dii_buy_cr", 0)),
+                            "sell": float(latest.get("dii_sell_cr", 0)),
+                            "net": d_net
+                        },
+                        "combined_net": float(latest.get("combined_net_cr", round(f_net + d_net, 2))),
+                        "sentiment": latest.get("sentiment_bias", classify_institutional_sentiment(f_net, d_net)),
+                        "source": "SUPABASE_STORED",
+                        "history": history_list
+                    }
+                else:
+                    data["history"] = history_list
         except Exception as e:
             logger.debug(f"Supabase FII/DII table lookup skipped: {e}")
 
-    # 3. Fallback to Institutional Proxy
+    # 3. Fallback to Data Unavailable State (ZERO-DEFAULT POLICY)
     if not data:
-        data = _get_synthetic_institutional_proxy()
+        data = _get_unavailable_institutional_payload()
+        return data
 
-    # If history not present, supply realistic recent 5 sessions
-    if "history" not in data:
-        ref_date = date.today()
-        sample_history = []
-        deltas = [(0, data["fii"]["net"], data["dii"]["net"]),
-                  (1, 840.50, 620.10),
-                  (2, -410.20, 1150.00),
-                  (3, 1420.00, -210.40),
-                  (4, 980.30, 450.80)]
-        for days_back, f_n, d_n in deltas:
-            d = ref_date - timedelta(days=days_back)
-            if d.weekday() >= 5: # weekend
-                d -= timedelta(days=2)
-            c_n = round(f_n + d_n, 2)
-            sample_history.append({
-                "date": d.isoformat(),
-                "fii_net": f_n,
-                "dii_net": d_n,
-                "combined_net": c_n,
-                "sentiment": classify_institutional_sentiment(f_n, d_n)
-            })
-        data["history"] = sample_history
+    if "history" not in data or data["history"] is None:
+        if data.get("fii") and data.get("dii"):
+            data["history"] = [{
+                "date": data["date"],
+                "fii_net": data["fii"]["net"],
+                "dii_net": data["dii"]["net"],
+                "combined_net": data["combined_net"],
+                "sentiment": data["sentiment"]
+            }]
+        else:
+            data["history"] = []
 
-    # Cache result
+    # Cache authentic result
     _FII_DII_CACHE = data
     _CACHE_TIMESTAMP = now
     return data

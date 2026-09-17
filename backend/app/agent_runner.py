@@ -492,15 +492,15 @@ async def evaluate_stock_with_ai(
     Evaluates 360-degree quantitative data and triggers high-conviction actionable alerts.
     Utilizes Gemini 3.6 / 2.5 / 1.5 Flash fallback chain, backed by a deterministic rule engine.
     """
-    current_price = technicals.get("current_price") or financials.get("price") or 100.0
-    atr_val = technicals.get("atr_14") or (current_price * 0.015)
+    current_price = float(technicals.get("current_price") or financials.get("price") or 0.0)
+    atr_val = float(technicals.get("atr_14") or ((current_price * 0.015) if current_price > 0 else 0.0))
     
     # Calculate Demat P&L
     demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
     if holding_info and holding_info.get("quantity", 0) > 0:
         qty = holding_info.get("quantity", 0)
         avg_price = holding_info.get("average_price", 0.0)
-        pnl_pct = round(((current_price - avg_price) / avg_price) * 100, 2) if avg_price > 0 else 0.0
+        pnl_pct = round(((current_price - avg_price) / avg_price) * 100, 2) if (avg_price > 0 and current_price > 0) else 0.0
         demat_context = {
             "is_in_portfolio": True,
             "quantity": qty,
@@ -603,31 +603,14 @@ Output ONLY valid JSON matching this exact structure:
 
     if settings.GEMINI_API_KEY:
         # Modern Official Google GenAI SDK (google.genai)
-        # Google Gemini 3 models (gemini-2.5-* and older models are deprecated by Google)
-        gemini_models = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']
+        # Prioritize gemini-3.5-flash-lite (verified active in Cloud Run runtime),
+        # with seamless high-performance fallbacks to gemini-2.0-flash and gemini-1.5-flash
+        gemini_models = ['gemini-3.5-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash']
         try:
             from google import genai
             client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-            # 1. Attempt Google-recommended Interactions API first
-            for model_name in gemini_models:
-                try:
-                    interaction = client.interactions.create(
-                        model=model_name,
-                        input=prompt,
-                        response_format=[{"type": "text", "mime_type": "application/json"}]
-                    )
-                    raw_text = getattr(interaction, "output_text", None) or ""
-                    parsed = _parse_and_validate_ai_response(
-                        raw_text, technicals, flow_data, forensics, symbol, f"Interactions/{model_name}"
-                    )
-                    if parsed:
-                        logger.info(f"Successfully evaluated {symbol} using Google GenAI Interactions API '{model_name}'.")
-                        return parsed
-                except Exception as inter_err:
-                    logger.debug(f"Interactions API '{model_name}' attempt for {symbol}: {inter_err}")
-
-            # 2. Attempt models.generate_content across supported Gemini 3 models
+            # Direct generation across prioritized models with zero redundant retry loops
             for model_name in gemini_models:
                 try:
                     response = client.models.generate_content(
@@ -646,11 +629,11 @@ Output ONLY valid JSON matching this exact structure:
                     logger.warning(f"GenAI SDK '{model_name}' attempt failed for {symbol}: {model_err}")
                     continue
         except ImportError:
-            # Temporary fallback only if google.genai is not yet installed in runtime
+            # Fallback only if google.genai is not yet installed in runtime
             try:
                 import google.generativeai as legacy_genai
                 legacy_genai.configure(api_key=settings.GEMINI_API_KEY)
-                for model_name in ['gemini-3.7-flash', 'gemini-3.6-flash']:
+                for model_name in ['gemini-2.0-flash', 'gemini-1.5-flash']:
                     try:
                         model = legacy_genai.GenerativeModel(model_name)
                         response = model.generate_content(
@@ -691,12 +674,13 @@ def get_adaptive_weights(macro_data: Dict[str, Any], adx_regime: Optional[str] =
     Prioritizes forensic health and flow during distribution/volatility, and technical momentum during strong trends.
     Returns (weights_dict, regime_name).
     """
-    vix = float(macro_data.get("india_vix") or macro_data.get("vix_value") or 14.0)
+    vix_val = macro_data.get("india_vix") or macro_data.get("vix_value")
+    vix = float(vix_val) if vix_val is not None else None
     adr_val = macro_data.get("market_breadth_adr") or macro_data.get("adr_ratio")
-    adr = float(adr_val) if adr_val is not None else 1.0
+    adr = float(adr_val) if adr_val is not None else None
     
-    # Regime 1: High Volatility or Market Distribution (Defensive)
-    if vix > 16.5 or adr < 0.8:
+    # Regime 1: High Volatility, Market Distribution, or Data Unavailable (Defensive posture)
+    if (vix is not None and vix > 16.5) or (adr is not None and adr < 0.8) or vix is None or adr is None:
         return {"tech": 0.15, "flow": 0.35, "forensics": 0.35, "news": 0.15}, "HIGH_VOLATILITY_DEFENSIVE"
     # Regime 2: Strong Trending Bull Market (Momentum)
     elif adr >= 1.2 and vix <= 14.5:
@@ -1323,7 +1307,7 @@ async def evaluate_single_symbol_full(
         "tactical_levels": analysis.get("tactical_levels", {})
     }
 
-    market_cache.set_stock(symbol, pack, ttl_seconds=300)
+    market_cache.set_stock(symbol, pack, ttl_seconds=900)
     return pack
 
 

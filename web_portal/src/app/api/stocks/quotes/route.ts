@@ -22,6 +22,9 @@ const quoteCache = new Map<string, { data: StockQuote; timestamp: number }>();
 const CACHE_TTL_MS = 15000;
 
 async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
+  const cleanSym = sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+  const isExplicitBse = sym.toUpperCase().endsWith(".BO") || /^\d{6}$/.test(cleanSym);
+
   const headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Referer": "https://finance.yahoo.com/",
@@ -29,15 +32,20 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
   };
 
   const hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
-  const exchanges = [
-    { suffix: ".NS", exch: "NSE" },
-    { suffix: ".BO", exch: "BSE" }
-  ];
+  const exchanges = isExplicitBse
+    ? [
+        { suffix: ".BO", exch: "BSE" },
+        { suffix: ".NS", exch: "NSE" }
+      ]
+    : [
+        { suffix: ".NS", exch: "NSE" },
+        { suffix: ".BO", exch: "BSE" }
+      ];
 
   for (const { suffix, exch } of exchanges) {
     for (const host of hosts) {
       try {
-        const url = `https://${host}/v8/finance/chart/${encodeURIComponent(sym)}${suffix}?range=1d&interval=1d`;
+        const url = `https://${host}/v8/finance/chart/${encodeURIComponent(cleanSym)}${suffix}?range=1d&interval=1d`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) continue;
 
@@ -52,9 +60,12 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
         const price = Number(Number(p).toFixed(2));
         const prev = meta?.chartPreviousClose || meta?.previousClose || price;
         const chgPct = prev > 0 ? Number((((price - prev) / prev) * 100).toFixed(2)) : 0.0;
-        const name = meta?.shortName || meta?.longName || `${sym} (${exch})`;
+        const name = meta?.shortName || meta?.longName || `${cleanSym} (${exch})`;
         const dayHigh = meta?.regularMarketDayHigh ? Number(Number(meta.regularMarketDayHigh).toFixed(2)) : null;
         const dayLow = meta?.regularMarketDayLow ? Number(Number(meta.regularMarketDayLow).toFixed(2)) : null;
+
+        // Preserve tactical levels from previous cache if available
+        const prevCached = quoteCache.get(sym)?.data || quoteCache.get(cleanSym)?.data;
 
         return {
           symbol: sym,
@@ -65,10 +76,10 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
           is_positive: chgPct >= 0,
           day_high: dayHigh,
           day_low: dayLow,
-          target: null,
-          stop_loss: null,
-          signal: "MONITORING",
-          signal_type: "monitoring"
+          target: prevCached?.target || null,
+          stop_loss: prevCached?.stop_loss || null,
+          signal: prevCached?.signal || "MONITORING",
+          signal_type: prevCached?.signal_type || "monitoring"
         };
       } catch {
         // Try next host/suffix
@@ -96,9 +107,10 @@ export async function GET(request: NextRequest) {
   const quotesMap: Record<string, StockQuote> = {};
   const missingSymbols: string[] = [];
 
-  // Check in-memory cache first (<0.1ms)
+  // Check in-memory cache first with dual-key clean matching (<0.1ms)
   for (const sym of symbols) {
-    const cached = quoteCache.get(sym);
+    const cleanSym = sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+    const cached = quoteCache.get(sym) || quoteCache.get(cleanSym);
     if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
       quotesMap[sym] = cached.data;
     } else {
@@ -116,15 +128,26 @@ export async function GET(request: NextRequest) {
   try {
     const backendRes = await fetch(
       `${backendUrl}/api/stocks/quotes?symbols=${encodeURIComponent(missingSymbols.join(","))}`,
-      { signal: AbortSignal.timeout(3500), cache: "no-store" }
+      { signal: AbortSignal.timeout(8000), cache: "no-store" }
     );
     if (backendRes.ok) {
       const backendData = await backendRes.json();
       const bQuotes = backendData.quotes || {};
       for (const [sym, q] of Object.entries(bQuotes)) {
         if (q && typeof q === "object" && (q as any).price > 0) {
-          quotesMap[sym] = q as StockQuote;
-          quoteCache.set(sym, { data: q as StockQuote, timestamp: now });
+          const typedQ = q as StockQuote;
+          quotesMap[sym] = typedQ;
+          quoteCache.set(sym, { data: typedQ, timestamp: now });
+          const cleanK = (typedQ as any).clean_symbol || sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+          if (cleanK) {
+            quotesMap[cleanK] = typedQ;
+            quoteCache.set(cleanK, { data: typedQ, timestamp: now });
+          }
+          const fullK = (typedQ as any).full_symbol;
+          if (fullK) {
+            quotesMap[fullK] = typedQ;
+            quoteCache.set(fullK, { data: typedQ, timestamp: now });
+          }
         }
       }
     }
@@ -141,6 +164,11 @@ export async function GET(request: NextRequest) {
         if (yfQuote) {
           quotesMap[sym] = yfQuote;
           quoteCache.set(sym, { data: yfQuote, timestamp: now });
+          const cleanK = sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+          if (cleanK) {
+            quotesMap[cleanK] = yfQuote;
+            quoteCache.set(cleanK, { data: yfQuote, timestamp: now });
+          }
         }
       })
     );
