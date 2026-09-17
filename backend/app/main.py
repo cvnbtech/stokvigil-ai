@@ -25,7 +25,7 @@ import pandas as pd
 from app.config import settings
 from app.vault import vault
 from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
-from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols
+from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
@@ -639,44 +639,48 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
         p = cached_stock.get("current_price") or cached_stock.get("price")
         if p and float(p) > 0:
             tech = cached_stock.get("technicals") or {}
-            prev = tech.get("prev_close") or p
             chg_pct = tech.get("change_pct")
-            if chg_pct is None:
-                chg_pct = round(((float(p) - float(prev)) / float(prev)) * 100, 2) if prev else 0.0
-            day_high = tech.get("day_high")
-            day_low = tech.get("day_low")
+            prev = tech.get("prev_close")
+            if chg_pct is None and prev:
+                chg_pct = round(((float(p) - float(prev)) / float(prev)) * 100, 2)
 
-            cached_tactical = cached_stock.get("tactical_levels", {})
-            t1 = cached_tactical.get("target_1")
-            s1 = cached_tactical.get("protective_stop_loss")
-            target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
-            sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
-            bias = cached_stock.get("action_bias")
-            signal = None
-            signal_type = None
-            if bias and bias != "HOLD_NEUTRAL":
-                signal = bias.replace("_", " ")
-                signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+            # Only return from Step 1 if authentic change_pct is known;
+            # otherwise fall through to live quote in Step 2 to get real change_pct
+            if chg_pct is not None:
+                day_high = tech.get("day_high")
+                day_low = tech.get("day_low")
 
-            exch = "BSE" if is_explicit_bse else "NSE"
-            cached_name = cached_stock.get("name") or (f"{clean_sym} (BSE)" if is_explicit_bse else f"{clean_sym} (NSE)")
+                cached_tactical = cached_stock.get("tactical_levels", {})
+                t1 = cached_tactical.get("target_1")
+                s1 = cached_tactical.get("protective_stop_loss")
+                target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
+                sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
+                bias = cached_stock.get("action_bias")
+                signal = None
+                signal_type = None
+                if bias and bias != "HOLD_NEUTRAL":
+                    signal = bias.replace("_", " ")
+                    signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
 
-            return {
-                "symbol": clean_sym,
-                "full_symbol": f"{clean_sym}.BO" if is_explicit_bse else f"{clean_sym}.NS",
-                "clean_symbol": clean_sym,
-                "name": cached_name,
-                "exchange": exch,
-                "price": round(float(p), 2),
-                "change_pct": round(float(chg_pct), 2),
-                "is_positive": float(chg_pct) >= 0,
-                "day_high": round(float(day_high), 2) if day_high is not None else None,
-                "day_low": round(float(day_low), 2) if day_low is not None else None,
-                "target": target_val,
-                "stop_loss": sl_val,
-                "signal": signal,
-                "signal_type": signal_type
-            }
+                exch = "BSE" if is_explicit_bse else "NSE"
+                cached_name = cached_stock.get("name") or (f"{clean_sym} (BSE)" if is_explicit_bse else f"{clean_sym} (NSE)")
+
+                return {
+                    "symbol": clean_sym,
+                    "full_symbol": f"{clean_sym}.BO" if is_explicit_bse else f"{clean_sym}.NS",
+                    "clean_symbol": clean_sym,
+                    "name": cached_name,
+                    "exchange": exch,
+                    "price": round(float(p), 2),
+                    "change_pct": round(float(chg_pct), 2),
+                    "is_positive": float(chg_pct) >= 0,
+                    "day_high": round(float(day_high), 2) if day_high is not None else None,
+                    "day_low": round(float(day_low), 2) if day_low is not None else None,
+                    "target": target_val,
+                    "stop_loss": sl_val,
+                    "signal": signal,
+                    "signal_type": signal_type
+                }
 
     # Step 2: Fetch via Yahoo Finance Chart API with pooled Keep-Alive session & dual-host fallbacks
     for suffix, exch in candidate_suffixes:
@@ -1362,9 +1366,9 @@ def get_user_portfolio(
                 if full_k:
                     _cache_set_quote(full_k, quote_data, now)
 
-        # Fallback to ICICI broker tick / average price if live quote is unavailable
+        # Fallback to ICICI broker tick if live quote is unavailable (do not use average purchase price as live price)
         if live_price <= 0.0:
-            live_price = float(h.get('current_market_price') or h.get('average_price') or 0.0)
+            live_price = float(h.get('current_market_price') or h.get('last_price') or 0.0)
 
         # 2. Authentic P/E Ratio and Debt-to-Equity with 24-hour in-memory cache
         pe_ratio, debt_to_equity = _get_holding_fundamentals(clean_sym, now)
@@ -1372,16 +1376,16 @@ def get_user_portfolio(
         qty = h.get('quantity', 0)
         avg_price = h.get('average_price', 0)
         
-        current_val = live_price * qty
-        investment_val = (avg_price * qty) if avg_price > 0 else current_val
-        pnl = (current_val - investment_val) if avg_price > 0 else 0.0
-        pnl_pct = ((pnl / investment_val) * 100) if (avg_price > 0 and investment_val > 0) else 0.0
+        current_val = (live_price * qty) if live_price > 0 else 0.0
+        investment_val = (avg_price * qty) if avg_price > 0 else 0.0
+        pnl = (current_val - investment_val) if (live_price > 0 and avg_price > 0) else 0.0
+        pnl_pct = ((pnl / investment_val) * 100) if (live_price > 0 and avg_price > 0 and investment_val > 0) else 0.0
 
         quote_obj = cached_quote["data"] if cached_quote else quote_data
-        day_high = quote_obj.get("day_high") if quote_obj else None
-        day_low = quote_obj.get("day_low") if quote_obj else None
-        chg_pct = float(quote_obj.get("change_pct", 0.0)) if quote_obj else 0.0
-        day_pnl = round(current_val * (chg_pct / 100.0), 2) if chg_pct != 0.0 else 0.0
+        day_high = (quote_obj.get("day_high") if quote_obj else None) if live_price > 0 else None
+        day_low = (quote_obj.get("day_low") if quote_obj else None) if live_price > 0 else None
+        chg_pct = float(quote_obj.get("change_pct", 0.0)) if (quote_obj and live_price > 0) else 0.0
+        day_pnl = round(current_val * (chg_pct / 100.0), 2) if (chg_pct != 0.0 and live_price > 0) else 0.0
 
         is_bse = sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6) or h.get("exchange") == "BSE"
         exch = "BSE" if is_bse else (quote_obj.get("exchange", "NSE") if quote_obj else "NSE")
@@ -1403,23 +1407,23 @@ def get_user_portfolio(
             "exchange": exch,
             "quantity": qty,
             "avg_price": avg_price,
-            "current_price": round(live_price, 2),
-            "current_value": round(current_val, 2),
-            "pnl": round(pnl, 2),
-            "pnl_percent": round(pnl_pct, 2),
+            "current_price": round(live_price, 2) if live_price > 0 else 0.0,
+            "current_value": round(current_val, 2) if live_price > 0 else 0.0,
+            "pnl": round(pnl, 2) if (live_price > 0 and avg_price > 0) else None,
+            "pnl_percent": round(pnl_pct, 2) if (live_price > 0 and avg_price > 0) else None,
             "day_high": day_high,
             "day_low": day_low,
             "change_pct": chg_pct,
-            "day_pnl": day_pnl if quote_obj else None,
+            "day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
             "pe_ratio": pe_ratio,
             "debt_to_equity": debt_to_equity,
-            "signal": quote_obj.get("signal") if quote_obj else None,
-            "signal_type": quote_obj.get("signal_type") if quote_obj else None,
-            "target": quote_obj.get("target") if quote_obj else None,
-            "stop_loss": quote_obj.get("stop_loss") if quote_obj else None,
+            "signal": (quote_obj.get("signal") if quote_obj else None) if live_price > 0 else None,
+            "signal_type": (quote_obj.get("signal_type") if quote_obj else None) if live_price > 0 else None,
+            "target": (quote_obj.get("target") if quote_obj else None) if live_price > 0 else None,
+            "stop_loss": (quote_obj.get("stop_loss") if quote_obj else None) if live_price > 0 else None,
             "_curr_val": current_val,
             "_inv_val": investment_val,
-            "_day_pnl": day_pnl if quote_obj else None,
+            "_day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
         }
 
     detailed_holdings = []
@@ -1527,6 +1531,7 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
 
     _scan_in_progress = True
     today_str = str(date.today())
+    reset_ai_scan_counter()
     try:
         logger.info("🚀 Multi-user market intelligence scan started...")
         # Step 1: Pre-compute market indicators for all unique watchlist symbols into RAM (Deduplication)

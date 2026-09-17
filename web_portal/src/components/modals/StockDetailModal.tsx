@@ -57,13 +57,35 @@ export default function StockDetailModal({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
           <div style={{ background: "#080B16", border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 700 }}>Current Price</div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: C.white, marginTop: 2 }}>₹{selectedStock.price.toFixed(2)}</div>
-            <div style={{ fontSize: 11, color: C.emerald, fontWeight: 800, marginTop: 2 }}>+{selectedStock.pnlPct}%</div>
+            <div style={{ fontSize: 16, fontWeight: 900, color: C.white, marginTop: 2 }}>
+              {selectedStock.price && selectedStock.price > 0 ? `₹${selectedStock.price.toFixed(2)}` : "--"}
+            </div>
+            <div style={{
+              fontSize: 11,
+              color: selectedStock.price && selectedStock.price > 0 && selectedStock.pnlPct != null
+                ? (selectedStock.pnlPct >= 0 ? C.emerald : C.rose)
+                : C.gray2,
+              fontWeight: 800, marginTop: 2
+            }}>
+              {selectedStock.price && selectedStock.price > 0 && selectedStock.pnlPct != null
+                ? `${selectedStock.pnlPct >= 0 ? "+" : ""}${selectedStock.pnlPct}%`
+                : "--"}
+            </div>
           </div>
 
           <div style={{ background: "#080B16", border: `1px solid ${C.border}`, borderRadius: 12, padding: 12 }}>
             <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 700 }}>Total P&L</div>
-            <div style={{ fontSize: 16, fontWeight: 900, color: C.emerald, marginTop: 2 }}>+₹{selectedStock.pnl.toLocaleString()}</div>
+            <div style={{
+              fontSize: 16, fontWeight: 900,
+              color: selectedStock.price && selectedStock.price > 0 && selectedStock.pnl != null
+                ? (selectedStock.pnl >= 0 ? C.emerald : C.rose)
+                : C.gray2,
+              marginTop: 2
+            }}>
+              {selectedStock.price && selectedStock.price > 0 && selectedStock.pnl != null
+                ? `${selectedStock.pnl >= 0 ? "+" : "-"}₹${Math.abs(selectedStock.pnl).toLocaleString()}`
+                : "--"}
+            </div>
             <div style={{ fontSize: 11, color: C.gray1, marginTop: 2 }}>Qty {selectedStock.qty}</div>
           </div>
 

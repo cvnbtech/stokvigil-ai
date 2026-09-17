@@ -79,20 +79,26 @@ export default function HomeTab({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, textAlign: "center" }}>
             <div style={{ background: "rgba(255,255,255,0.02)", padding: "6px 4px", borderRadius: 8 }}>
               <div style={{ fontSize: 9.5, color: C.gray2, fontWeight: 700 }}>FII NET</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: (fiiDiiFlows.fii?.net || 0) >= 0 ? C.emerald : C.rose }}>
-                {(fiiDiiFlows.fii?.net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.fii?.net || 0).toLocaleString()} Cr
+              <div style={{ fontSize: 12, fontWeight: 800, color: fiiDiiFlows.fii?.net != null ? (fiiDiiFlows.fii.net >= 0 ? C.emerald : C.rose) : C.gray2 }}>
+                {fiiDiiFlows.fii?.net != null
+                  ? `${fiiDiiFlows.fii.net >= 0 ? "+" : ""}₹${Number(fiiDiiFlows.fii.net).toLocaleString()} Cr`
+                  : "--"}
               </div>
             </div>
             <div style={{ background: "rgba(255,255,255,0.02)", padding: "6px 4px", borderRadius: 8 }}>
               <div style={{ fontSize: 9.5, color: C.gray2, fontWeight: 700 }}>DII NET</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: (fiiDiiFlows.dii?.net || 0) >= 0 ? C.emerald : C.rose }}>
-                {(fiiDiiFlows.dii?.net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.dii?.net || 0).toLocaleString()} Cr
+              <div style={{ fontSize: 12, fontWeight: 800, color: fiiDiiFlows.dii?.net != null ? (fiiDiiFlows.dii.net >= 0 ? C.emerald : C.rose) : C.gray2 }}>
+                {fiiDiiFlows.dii?.net != null
+                  ? `${fiiDiiFlows.dii.net >= 0 ? "+" : ""}₹${Number(fiiDiiFlows.dii.net).toLocaleString()} Cr`
+                  : "--"}
               </div>
             </div>
             <div style={{ background: "rgba(6,182,212,0.05)", border: `1px solid rgba(6,182,212,0.2)`, padding: "6px 4px", borderRadius: 8 }}>
               <div style={{ fontSize: 9.5, color: C.cyan, fontWeight: 800 }}>COMBINED</div>
-              <div style={{ fontSize: 12, fontWeight: 900, color: (fiiDiiFlows.combined_net || 0) >= 0 ? C.cyan : C.rose }}>
-                {(fiiDiiFlows.combined_net || 0) >= 0 ? "+" : ""}₹{Number(fiiDiiFlows.combined_net || 0).toLocaleString()} Cr
+              <div style={{ fontSize: 12, fontWeight: 900, color: fiiDiiFlows.combined_net != null ? (fiiDiiFlows.combined_net >= 0 ? C.cyan : C.rose) : C.gray2 }}>
+                {fiiDiiFlows.combined_net != null
+                  ? `${fiiDiiFlows.combined_net >= 0 ? "+" : ""}₹${Number(fiiDiiFlows.combined_net).toLocaleString()} Cr`
+                  : "--"}
               </div>
             </div>
           </div>
@@ -134,19 +140,23 @@ export default function HomeTab({
         </div>
         <div style={{ fontSize: 34, fontWeight: 900, color: C.white, letterSpacing: isPortfolioVisible ? "-1px" : "2px", lineHeight: 1 }}>
           {isPortfolioVisible
-            ? `₹${totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+            ? (totalValue > 0
+                ? `₹${totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                : (hasCredentials ? "₹0.00" : "--"))
             : "₹ • • • • • •"}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: totalPnl >= 0 ? C.emerald : C.rose }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: totalValue > 0 ? (totalPnl >= 0 ? C.emerald : C.rose) : C.gray2 }}>
             {isPortfolioVisible
-              ? `${totalPnl >= 0 ? "↑ +" : "↓ -"}₹${Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              ? (totalValue > 0
+                  ? `${totalPnl >= 0 ? "↑ +" : "↓ -"}₹${Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : "--")
               : "••••••"}
           </span>
           <Badge
-            label={isPortfolioVisible ? `${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}%` : "••• %"}
-            color={totalPnlPct >= 0 ? "emerald" : "rose"}
+            label={isPortfolioVisible ? (totalValue > 0 ? `${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(2)}%` : "--") : "••• %"}
+            color={totalValue > 0 ? (totalPnlPct >= 0 ? "emerald" : "rose") : "cyan"}
           />
           <span style={{ fontSize: 11, color: C.gray2 }}>Real-Time Breeze</span>
         </div>
@@ -269,12 +279,19 @@ export default function HomeTab({
                 </div>
               </div>
               <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>₹{h.price.toFixed(2)}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>
+                  {h.price && h.price > 0 ? `₹${h.price.toFixed(2)}` : "--"}
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: h.pnlPct >= 0 ? C.emerald : C.rose }}>
-                    {h.pnlPct >= 0 ? "+" : ""}{h.pnlPct.toFixed(2)}%
+                  <span style={{
+                    fontSize: 11, fontWeight: 800,
+                    color: h.price && h.price > 0 && h.pnlPct != null ? (h.pnlPct >= 0 ? C.emerald : C.rose) : C.gray2
+                  }}>
+                    {h.price && h.price > 0 && h.pnlPct != null
+                      ? `${h.pnlPct >= 0 ? "+" : ""}${h.pnlPct.toFixed(2)}%`
+                      : "--"}
                   </span>
-                  <SignalBadge signal={h.signal} type={h.signalType} />
+                  <SignalBadge signal={h.price && h.price > 0 ? h.signal : "MONITORING"} type={h.price && h.price > 0 ? h.signalType : "monitoring"} />
                 </div>
               </div>
             </Card>

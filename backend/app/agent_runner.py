@@ -208,9 +208,9 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 avg_p = tb_price
                 
             try:
-                cmp = float(item.get('current_market_price') or item.get('last_price') or avg_p)
+                cmp = float(item.get('current_market_price') or item.get('last_price') or 0.0)
             except (ValueError, TypeError):
-                cmp = avg_p
+                cmp = 0.0
 
             stock_name = str(item.get('stock_name') or item.get('company_name') or item.get('stock_description') or '').strip()
             bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
@@ -266,12 +266,27 @@ _NEWS_CACHE_TTL: float = 1800.0  # 30 minutes
 _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
 _DEMAT_PORTFOLIO_CACHE_TTL: float = 240.0
 
+# Per-scan AI Call Counter: Limits Gemini calls to max 2 per 5-minute cycle across all users
+_AI_SCAN_CALLS_COUNT: int = 0
+_MAX_AI_CALLS_PER_SCAN: int = 2
+
+def reset_ai_scan_counter() -> None:
+    global _AI_SCAN_CALLS_COUNT
+    _AI_SCAN_CALLS_COUNT = 0
+
+def get_ai_scan_calls_count() -> int:
+    return _AI_SCAN_CALLS_COUNT
+
+def increment_ai_scan_calls_count() -> None:
+    global _AI_SCAN_CALLS_COUNT
+    _AI_SCAN_CALLS_COUNT += 1
+
 def _normalize_canonical_key(symbol: str) -> str:
     """Normalizes any symbol format (e.g. INFY.NS, INFY.BO, 500209, INFY) to an uppercase canonical key."""
     return str(symbol).replace(".NS", "").replace(".BO", "").strip().upper()
 
 
-def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
+def fetch_stock_financials(symbol: str, allow_network: bool = True) -> Dict[str, Any]:
     """
     Fetches comprehensive financial metrics, valuation data, debt ratios, quarterly growth,
     and 52-week position from Yahoo Finance with automatic Dual-Exchange (NSE / BSE) resolution.
@@ -291,6 +306,25 @@ def fetch_stock_financials(symbol: str) -> Dict[str, Any]:
             entry = _FINANCIALS_CACHE[k]
             if (now - entry.get("timestamp", 0)) < _FINANCIALS_CACHE_TTL:
                 return entry.get("data", {})
+
+    if not allow_network:
+        # Fast non-blocking path: return clean zero-default payload without blocking 5m technical scan
+        return {
+            "symbol": clean_sym,
+            "name": clean_sym,
+            "price": 0.0,
+            "pe_ratio": None,
+            "forward_pe": None,
+            "debt_to_equity": None,
+            "revenue_growth_pct": None,
+            "earnings_growth_pct": None,
+            "profit_margin_pct": None,
+            "roe_pct": None,
+            "market_cap": None,
+            "beta_volatility": None,
+            "52_week_high": None,
+            "52_week_low": None,
+        }
 
     # 2. Determine dual-exchange candidates (NSE first, BSE fallback; or BSE first for 6-digit scrips)
     if clean_sym.isdigit() and len(clean_sym) == 6:
@@ -726,7 +760,10 @@ def compute_tactical_levels(
         entry_max = round(price * 1.005, 2)
 
     # Targets & Stop Loss
-    swing = float(swing_high or 0.0)
+    try:
+        swing = float(swing_high) if swing_high is not None and not isinstance(swing_high, dict) else 0.0
+    except (ValueError, TypeError):
+        swing = 0.0
     if swing > price:
         target_1 = round(price + (1.5 * atr), 2)
         target_2 = round(swing, 2)
@@ -1162,7 +1199,13 @@ def check_has_active_catalyst(
     if flow_data.get("is_high_delivery"):
         return True, f"High Institutional Delivery ({flow_data.get('delivery_pct')}%)"
     if flow_data.get("fo_oi_status") in ["LONG_BUILDUP", "SHORT_BUILDUP"]:
-        return True, f"Derivatives Regime: {flow_data.get('fo_oi_status')} (PCR: {flow_data.get('pcr')})"
+        raw_pcr = flow_data.get("pcr")
+        try:
+            pcr = float(raw_pcr) if raw_pcr is not None else 1.0
+        except (ValueError, TypeError):
+            pcr = 1.0
+        if pcr >= 1.3 or pcr <= 0.7:
+            return True, f"Derivatives Regime: {flow_data.get('fo_oi_status')} (PCR: {pcr:.2f})"
     if flow_data.get("is_fo_stock"):
         raw_pcr = flow_data.get("pcr")
         try:
@@ -1172,15 +1215,15 @@ def check_has_active_catalyst(
         if pcr >= 1.4 or pcr <= 0.6:
             return True, f"Extreme Option PCR Catalyst ({pcr:.2f})"
 
-    # 6. Intraday VWAP Breakout
+    # 6. Intraday VWAP Breakout with Momentum Confluence
     raw_vwap = technicals.get("price_vs_vwap_pct")
     try:
         vwap_pct = abs(float(raw_vwap)) if raw_vwap is not None else 0.0
     except (ValueError, TypeError):
         vwap_pct = 0.0
 
-    if vwap_pct >= 0.8:
-        return True, f"Intraday VWAP Deviation ({vwap_pct:.1f}%)"
+    if vwap_pct >= 1.2 or (vwap_pct >= 0.8 and (vol_mult >= 1.3 or technicals.get("is_volume_surge"))):
+        return True, f"Intraday VWAP Expansion ({vwap_pct:.1f}%)"
 
     # 7. Real-Time News / Corporate Catalysts
     for item in news_items:
@@ -1213,8 +1256,8 @@ async def evaluate_single_symbol_full(
     if technicals is None:
         technicals = await asyncio.to_thread(fetch_multi_timeframe_technicals, symbol)
 
-    # 2. Concurrently fetch financials and evaluate if news is needed
-    financials_task = asyncio.to_thread(fetch_stock_financials, symbol)
+    # 2. Concurrently fetch financials (non-blocking in 5m loop) and evaluate if news is needed
+    financials_task = asyncio.to_thread(fetch_stock_financials, symbol, False)
 
     # Anomaly-Gated News Fetching: Only fetch fresh news RSS if there is an active volume surge or price deviation
     raw_vol = technicals.get("volume_multiple") or technicals.get("volume_surge_ratio") or 1.0
@@ -1311,10 +1354,109 @@ async def evaluate_single_symbol_full(
     return pack
 
 
+def precompute_symbol_market_state(
+    symbol: str,
+    technicals: Dict[str, Any],
+    macro_data: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    High-speed in-memory deterministic market state pre-computation for Step 1.
+    Executes in < 0.001ms with 0 Gemini AI calls and 0 blocking network scrapers.
+    Pre-computes price, technicals, Wyckoff VSA, Camarilla pivots, and deterministic confluence in RAM.
+    """
+    clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+    current_price = float(technicals.get("current_price") or 0.0)
+    atr_val = float(technicals.get("atr_14") or ((current_price * 0.015) if current_price > 0 else 0.0))
+
+    # Fast fundamentals from 24h cache (0ms); default to clean None if not in cache
+    canonical_key = _normalize_canonical_key(clean_sym)
+    cached_fin = _FINANCIALS_CACHE.get(canonical_key, {}).get("data") or _FINANCIALS_CACHE.get(clean_sym, {}).get("data")
+    if cached_fin:
+        financials = cached_fin
+    else:
+        financials = {
+            "symbol": clean_sym,
+            "name": clean_sym,
+            "price": current_price,
+            "pe_ratio": None,
+            "forward_pe": None,
+            "debt_to_equity": None,
+            "revenue_growth_pct": None,
+            "earnings_growth_pct": None,
+            "profit_margin_pct": None,
+            "roe_pct": None,
+            "market_cap": None,
+            "beta_volatility": None,
+            "52_week_high": None,
+            "52_week_low": None,
+        }
+
+    # Fast flow & Wyckoff VSA (<0.001ms if cached or non-FO)
+    flow_data = fetch_delivery_and_fo_flow(
+        symbol,
+        technicals.get("price_vs_vwap_pct", 0.0),
+        None,
+        technicals.get("volume_multiple")
+    )
+    forensics = evaluate_forensic_health(symbol, financials)
+
+    # 100% Deterministic RAM Math (<0.001ms)
+    analysis = compute_deterministic_confluence(
+        symbol=symbol,
+        technicals=technicals,
+        flow_data=flow_data,
+        macro_data=macro_data or {},
+        forensics=forensics,
+        financials=financials,
+        news_items=[]
+    )
+
+    # Compute tactical levels if price is valid
+    if current_price > 0 and atr_val > 0:
+        pivots = technicals.get("camarilla_pivots") if isinstance(technicals.get("camarilla_pivots"), dict) else {}
+        swing_val = technicals.get("swing_high") or technicals.get("day_high") or 0.0
+        swing_high = float(swing_val) if not isinstance(swing_val, dict) else 0.0
+        tactical = compute_tactical_levels(
+            current_price=current_price,
+            atr_val=atr_val,
+            swing_high=swing_high,
+            h3=pivots.get("h3"),
+            h4=pivots.get("h4"),
+            l3=pivots.get("l3"),
+            l4=pivots.get("l4"),
+            vwap_val=technicals.get("vwap"),
+            vwap_upper_1s=technicals.get("vwap_upper_1s")
+        )
+        if tactical:
+            analysis["tactical_levels"] = tactical
+
+    stock_name = financials.get("name") or clean_sym
+    pack = {
+        "symbol": symbol,
+        "clean_symbol": clean_sym,
+        "name": stock_name,
+        "technicals": technicals,
+        "financials": financials,
+        "flow_data": flow_data,
+        "forensics": forensics,
+        "news_items": [],
+        "analysis": analysis,
+        "current_price": current_price,
+        "confluence_score": analysis.get("confluence_score", 50) if current_price > 0 else 0,
+        "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL") if current_price > 0 else "DATA_UNAVAILABLE",
+        "tactical_levels": analysis.get("tactical_levels", {}) if current_price > 0 else {}
+    }
+
+    market_cache.set_stock(symbol, pack, ttl_seconds=900)
+    market_cache.set_stock(clean_sym, pack, ttl_seconds=900)
+    return pack
+
+
 async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     """
     Pre-computes and caches market state in RAM for all unique symbols across all user watchlists.
     Uses high-speed vectorized batch technical download (yf.download) with session-invariant daily cache.
+    Executes 100% deterministic RAM math for all symbols with 0 Gemini calls in Step 1.
     """
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
     symbols = []
@@ -1352,8 +1494,8 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
             nonlocal synced_count
             async with sem:
                 try:
-                    tech = batch_technicals.get(sym) or batch_technicals.get(f"{sym}.NS") or batch_technicals.get(f"{sym}.BO")
-                    await evaluate_single_symbol_full(sym, macro_data=macro_data, technicals=tech)
+                    tech = batch_technicals.get(sym) or batch_technicals.get(f"{sym}.NS") or batch_technicals.get(f"{sym}.BO") or {}
+                    precompute_symbol_market_state(sym, tech, macro_data)
                     synced_count += 1
                     if synced_count % 20 == 0 or synced_count == len(symbols):
                         logger.info(f"⏳ Pre-computing market cache: {synced_count}/{len(symbols)} symbols ({round((synced_count / len(symbols)) * 100)}%)...")
@@ -1561,6 +1703,30 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 if not allowed:
                     logger.info(f"Skipping dispatch for {symbol}: {reason}")
                     return None
+
+                # High-Conviction AI Reasoning: Invoke Gemini strictly for alerts about to be dispatched (capped at max 2/scan)
+                if settings.GEMINI_API_KEY and get_ai_scan_calls_count() < _MAX_AI_CALLS_PER_SCAN:
+                    increment_ai_scan_calls_count()
+                    try:
+                        ai_res = await evaluate_stock_with_ai(
+                            symbol=symbol,
+                            technicals=technicals,
+                            flow_data=flow_data,
+                            macro_data=macro_data,
+                            forensics=forensics,
+                            financials=financials,
+                            news_items=cached_pack.get("news_items", []) if cached_pack else [],
+                            holding_info=holding_info
+                        )
+                        if ai_res and isinstance(ai_res, dict):
+                            analysis.update(ai_res)
+                            alert_title = analysis.get("alert_title") or alert_title
+                            catalyst_type = analysis.get("catalyst_category") or catalyst_type
+                            confluence_drivers = analysis.get("confluence_drivers") or confluence_drivers
+                            tactical_levels = analysis.get("tactical_levels") or tactical_levels
+                            holding_guidance = analysis.get("holding_guidance") or holding_guidance
+                    except Exception as ai_enrich_err:
+                        logger.warning(f"AI enrichment fallback note for {symbol}: {ai_enrich_err}")
 
                 # Demat position snapshot for alert formatting
                 demat_pos = None

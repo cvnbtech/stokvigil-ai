@@ -413,13 +413,15 @@ export default function LightweightCandleChart({
             <span style={{ fontSize: 9, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.8 }}>STOKVIGIL</span>
           </div>
           <span style={{ fontSize: 20, fontWeight: 900, color: "#ffffff" }}>{symbol}</span>
-          {lastPrice !== null && (
+          {lastPrice !== null && lastPrice > 0 ? (
             <span style={{ fontSize: 16, fontWeight: 800, color: priceChange >= 0 ? "#10b981" : "#f43f5e" }}>
               ₹{lastPrice.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
               <span style={{ fontSize: 11, marginLeft: 6, fontWeight: 600 }}>
                 ({priceChange >= 0 ? "+" : ""}{priceChange.toFixed(2)})
               </span>
             </span>
+          ) : (
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#64748b" }}>--</span>
           )}
         </div>
 

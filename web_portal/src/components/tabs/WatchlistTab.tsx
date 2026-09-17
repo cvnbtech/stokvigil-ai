@@ -223,6 +223,12 @@ export default function WatchlistTab({
             const cleanSym = (h.clean_symbol || h.symbol).replace(/\.(BO|NS)$/i, '').trim();
             const exch = h.exchange || (h.symbol.endsWith(".BO") ? "BSE" : "NSE");
             const properName = h.name && h.name !== h.symbol && !h.name.endsWith(".BO") ? h.name : cleanSym;
+            const rawChg = h.changePct != null ? h.changePct : h.pnlPct;
+            const numChg = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : null);
+            const isChgPos = numChg != null ? numChg >= 0 : true;
+            const formattedChg = (h.price && h.price > 0 && numChg != null)
+              ? `${isChgPos ? "+" : ""}${numChg.toFixed(2)}%`
+              : "--";
             return {
               id: `demat-${cleanSym}`,
               symbol: cleanSym,
@@ -231,8 +237,8 @@ export default function WatchlistTab({
               exchange: exch,
               auto: true,
               price: h.price || 0,
-              chg: (h.price && h.price > 0) ? (h.pnlPct >= 0 ? `+${h.pnlPct.toFixed(2)}%` : `${h.pnlPct.toFixed(2)}%`) : "--",
-              isPositive: h.pnlPct >= 0,
+              chg: formattedChg,
+              isPositive: isChgPos,
               signal: h.signal || "MONITORING",
               signalType: h.signalType || "monitoring",
               target: h.target || "--",
@@ -279,7 +285,11 @@ export default function WatchlistTab({
             );
           }
 
-          return displayedWatchlist.map(item => (
+          return displayedWatchlist.map(item => {
+            const chgStr = String(item.chg || "").trim();
+            const isNegative = chgStr.startsWith("-") || item.isPositive === false;
+            const isPos = !isNegative && Boolean(item.isPositive);
+            return (
             <div key={item.id} style={{
               background: "linear-gradient(145deg, #0D111E 0%, #12172A 100%)",
               border: `1px solid ${C.border}`,
@@ -293,10 +303,10 @@ export default function WatchlistTab({
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{
                     width: 38, height: 38, borderRadius: 11,
-                    background: item.isPositive ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-                    border: `1.5px solid ${item.isPositive ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
+                    background: isPos ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+                    border: `1.5px solid ${isPos ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 11, fontWeight: 900, color: item.isPositive ? C.emerald : C.rose,
+                    fontSize: 11, fontWeight: 900, color: isPos ? C.emerald : C.rose,
                   }}>
                     {item.symbol.replace(/\.(BO|NS)$/i, '').slice(0, 2)}
                   </div>
@@ -336,10 +346,10 @@ export default function WatchlistTab({
                   </div>
                   <div style={{
                     fontSize: 10.5, fontWeight: 800,
-                    color: item.price > 0 ? (item.isPositive ? C.emerald : C.rose) : C.gray2,
+                    color: item.price > 0 ? (isPos ? C.emerald : C.rose) : C.gray2,
                     display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2
                   }}>
-                    {item.price > 0 ? `${item.isPositive ? "▲" : "▼"} ${item.chg}` : "--"}
+                    {item.price > 0 ? `${isPos ? "▲" : "▼"} ${item.chg}` : "--"}
                   </div>
                 </div>
               </div>
@@ -396,8 +406,9 @@ export default function WatchlistTab({
                 </div>
               </div>
             </div>
-          ));
-        })()}
+          );
+        });
+      })()}
       </div>
     </div>
   );

@@ -84,7 +84,7 @@ export default function TradeOrderModal({
               <div style={{ fontSize: 28, marginBottom: 6 }}>🎉</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: C.emerald }}>Order Executed via ICICI Breeze!</div>
               <div style={{ fontSize: 11, color: C.gray1, marginTop: 4, lineHeight: 1.5 }}>
-                Placed <b>{tradeData.type}</b> order for <b>{orderQty} shares</b> of {tradeData.symbol} at <b>₹{(orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price).toFixed(2)}</b> (Total: ₹{(orderQty * (orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price)).toLocaleString()}).
+                Placed <b>{tradeData.type}</b> order for <b>{orderQty} shares</b> of {tradeData.symbol} at <b>{(orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price) > 0 ? `₹${(orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price).toFixed(2)}` : "--"}</b> (Total: {(orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price) > 0 ? `₹${(orderQty * (orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price)).toLocaleString()}` : "--"}).
               </div>
               <div style={{ fontSize: 10, color: C.cyan, fontWeight: 700, marginTop: 8 }}>
                 📱 Execution Receipt sent to @StokVigilAi_bot on Telegram
@@ -121,14 +121,14 @@ export default function TradeOrderModal({
               <div style={{ background: "#080B16", border: `1px solid ${C.borderCyan}`, borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 10, color: C.cyan, textTransform: "uppercase", fontWeight: 800 }}>Custom Limit Price (₹)</span>
-                  <span style={{ fontSize: 10, color: C.gray2, fontWeight: 700 }}>LTP: ₹{tradeData.price.toFixed(2)}</span>
+                  <span style={{ fontSize: 10, color: C.gray2, fontWeight: 700 }}>LTP: {tradeData.price > 0 ? `₹${tradeData.price.toFixed(2)}` : "--"}</span>
                 </div>
                 <input
                   type="number"
                   step="0.05"
                   value={limitPrice}
                   onChange={e => setLimitPrice(e.target.value)}
-                  placeholder={tradeData.price.toFixed(2)}
+                  placeholder={tradeData.price > 0 ? tradeData.price.toFixed(2) : "0.00"}
                   style={{
                     background: "#04060E", border: `1px solid ${C.borderCyan}`, borderRadius: 10,
                     padding: "10px 14px", fontSize: 16, fontWeight: 800, color: C.cyan, outline: "none",
@@ -136,14 +136,14 @@ export default function TradeOrderModal({
                   }}
                 />
                 <div style={{ fontSize: 10.5, color: C.gray1, lineHeight: 1.45, background: "rgba(6,182,212,0.06)", borderRadius: 8, padding: 8, marginTop: 2 }}>
-                  💡 <b>What is a Limit Order?</b> Sets the maximum price (₹{limitPrice || tradeData.price.toFixed(2)}) you are willing to pay. Triggers <b>only if market price reaches or drops below</b> your limit.
+                  💡 <b>What is a Limit Order?</b> Sets the maximum price ({limitPrice ? `₹${limitPrice}` : (tradeData.price > 0 ? `₹${tradeData.price.toFixed(2)}` : "--")}) you are willing to pay. Triggers <b>only if market price reaches or drops below</b> your limit.
                 </div>
               </div>
             ) : (
               <div style={{ background: "rgba(6,182,212,0.06)", border: `1px dashed ${C.borderCyan}`, borderRadius: 12, padding: "10px 12px" }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: C.cyan, marginBottom: 2 }}>⚡ What is a Market Order?</div>
                 <div style={{ fontSize: 10.5, color: C.gray1, lineHeight: 1.45 }}>
-                  Executes immediately at the best available current market price (LTP: <b>₹{tradeData.price.toFixed(2)}</b>). Guarantees instant execution.
+                  Executes immediately at the best available current market price (LTP: <b>{tradeData.price > 0 ? `₹${tradeData.price.toFixed(2)}` : "--"}</b>). Guarantees instant execution.
                 </div>
               </div>
             )}

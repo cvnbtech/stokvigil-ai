@@ -159,6 +159,7 @@ export default function App() {
               price: h.current_price,
               pnl: h.pnl,
               pnlPct: h.pnl_percent,
+              changePct: h.change_pct != null ? h.change_pct : null,
               dayHigh: h.day_high != null ? h.day_high : null,
               dayLow: h.day_low != null ? h.day_low : null,
               high52: h.high_52 != null ? h.high_52 : null,
@@ -217,19 +218,16 @@ export default function App() {
             const dematPos = rawSnap.demat_position || null;
 
             let livePrice = technicals.current_price || rawSnap.current_price || rawSnap.price || (rawSnap.financials && rawSnap.financials.price) || 0;
-            if (!livePrice && dematPos && dematPos.average_buy_price) {
-              livePrice = dematPos.average_buy_price;
-            }
 
             let dematSanitized = null;
             if (dematPos && dematPos.is_in_portfolio) {
               const avgP = dematPos.average_buy_price || 0;
-              let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : 0;
-              if (pnlPct <= -99.0) {
+              let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : null;
+              if (pnlPct !== null && pnlPct <= -99.0) {
                 if (livePrice > 0 && avgP > 0) {
                   pnlPct = Number((((livePrice - avgP) / avgP) * 100).toFixed(1));
                 } else {
-                  pnlPct = 0.0;
+                  pnlPct = null;
                 }
               }
               dematSanitized = {
@@ -332,15 +330,30 @@ export default function App() {
           let quotesMap: Record<string, any> = {};
 
           try {
-            const res = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
-              signal: AbortSignal.timeout(30000)
+            let res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+              signal: AbortSignal.timeout(8000)
             });
+            if (!res.ok) {
+              res = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+                signal: AbortSignal.timeout(10000)
+              });
+            }
             if (res.ok) {
               const qData = await res.json();
               quotesMap = qData.quotes || {};
             }
           } catch (qErr) {
-            console.warn("Error fetching live batch stock quotes:", qErr);
+            try {
+              const directRes = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+                signal: AbortSignal.timeout(10000)
+              });
+              if (directRes.ok) {
+                const qData = await directRes.json();
+                quotesMap = qData.quotes || {};
+              }
+            } catch (directErr) {
+              console.warn("Error fetching live batch stock quotes:", directErr);
+            }
           }
 
           setWatchlist(data.map((w: any) => {
@@ -348,14 +361,15 @@ export default function App() {
             const cleanSym = rawSym.replace(/\.(BO|NS)$/i, "").trim();
             const q = quotesMap[cleanSym] || quotesMap[rawSym] || {};
             const price = q.price !== undefined ? q.price : 0;
-            const chgPct = q.change_pct !== undefined ? q.change_pct : 0.0;
-            const isPos = q.is_positive !== undefined ? q.is_positive : chgPct >= 0;
+            const rawChg = q.change_pct;
+            const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
+            const isPos = chgPct >= 0;
             const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
             const name = (q.name && q.name !== rawSym && !q.name.endsWith(".BO")) ? q.name : cleanSym;
-            const signal = q.signal || "MONITORING";
-            const signalType = q.signal_type || "monitoring";
-            const target = q.target ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
-            const sl = q.stop_loss ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
+            const signal = price > 0 ? (q.signal || "MONITORING") : "MONITORING";
+            const signalType = price > 0 ? (q.signal_type || "monitoring") : "monitoring";
+            const target = (price > 0 && q.target) ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
+            const sl = (price > 0 && q.stop_loss) ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
 
             return {
               id: w.id,
@@ -365,7 +379,7 @@ export default function App() {
               name,
               auto: w.is_auto_synced || false,
               price,
-              chg: price > 0 ? (isPos ? `+${chgPct.toFixed(2)}%` : `${chgPct.toFixed(2)}%`) : "--",
+              chg: price > 0 ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
               isPositive: isPos,
               signal,
               signalType,

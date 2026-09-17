@@ -235,7 +235,10 @@ export default function AlertsTab({
               }}>
                 <span style={{ fontSize: 13 }}>💼</span>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: C.white }}>
-                  ICICI Demat: {a.dematPosition.quantity} Qty @ Avg ₹{Number(a.dematPosition.average_buy_price).toFixed(1)} (P&L: {a.dematPosition.unrealized_pnl_pct >= 0 ? '+' : ''}{a.dematPosition.unrealized_pnl_pct}%)
+                  ICICI Demat: {a.dematPosition.quantity} Qty @ Avg ₹{Number(a.dematPosition.average_buy_price).toFixed(1)}
+                  {a.dematPosition.unrealized_pnl_pct != null
+                    ? ` (P&L: ${a.dematPosition.unrealized_pnl_pct >= 0 ? '+' : ''}${a.dematPosition.unrealized_pnl_pct}%)`
+                    : ''}
                 </span>
               </div>
             )}

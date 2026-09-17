@@ -153,9 +153,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           final q = liveQuotes[sym] as Map<String, dynamic>;
           final price = (q['price'] as num? ?? 0.0).toDouble();
           item['price'] = price;
-          final isPos = q['is_positive'] == true;
-          final chgPct = q['change_pct'] ?? 0.0;
-          item['chg'] = price > 0 ? (isPos ? "+$chgPct%" : "$chgPct%") : "--";
+          final num? chgVal = q['change_pct'] as num?;
+          final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
+          final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
+          item['is_positive'] = isPos;
+          item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
           if (q['name'] != null && q['name'].toString().isNotEmpty) {
             item['name'] = q['name'];
           }
@@ -645,9 +647,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final symbol = rawSymbol.replaceAll('.BO', '').replaceAll('.NS', '').trim();
                           final exchange = (item['exchange'] as String?) ?? (rawSymbol.endsWith('.BO') ? 'BSE' : 'NSE');
                           final isAuto = item['is_auto_synced'] == true;
-                          final isPos = item['is_positive'] ?? true;
                           final priceNum = (item['price'] as num? ?? 0.0).toDouble();
-                          final chg = item['chg'] ?? (priceNum > 0 ? (isPos ? "+0.00%" : "-0.00%") : "--");
+                          final chg = item['chg']?.toString() ?? (priceNum > 0 ? "+0.00%" : "--");
+                          final isNegative = chg.startsWith('-') || item['is_positive'] == false;
+                          final isPos = !isNegative && (item['is_positive'] == true);
                           final signal = item['signal'] ?? 'MONITORING';
                           final target = item['target'] ?? '--';
                           final stopLoss = item['stop_loss'] ?? '--';

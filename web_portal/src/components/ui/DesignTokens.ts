@@ -46,6 +46,7 @@ export interface HoldingItem {
   price: number;
   pnl: number;
   pnlPct: number;
+  changePct?: number | null;
   dayHigh: number | null;
   dayLow: number | null;
   high52: number | null;
