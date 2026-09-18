@@ -266,9 +266,9 @@ _NEWS_CACHE_TTL: float = 1800.0  # 30 minutes
 _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
 _DEMAT_PORTFOLIO_CACHE_TTL: float = 240.0
 
-# Per-scan AI Call Counter: Limits Gemini calls to max 2 per 5-minute cycle across all users
+# Per-scan AI Call Counter: Limits Gemini calls to max 15 per 5-minute cycle across all users
 _AI_SCAN_CALLS_COUNT: int = 0
-_MAX_AI_CALLS_PER_SCAN: int = 2
+_MAX_AI_CALLS_PER_SCAN: int = getattr(settings, "MAX_AI_CALLS_PER_SCAN", 15)
 
 def reset_ai_scan_counter() -> None:
     global _AI_SCAN_CALLS_COUNT
@@ -734,10 +734,12 @@ def compute_tactical_levels(
     l3: Optional[float] = None,
     l4: Optional[float] = None,
     vwap_val: Optional[float] = None,
-    vwap_upper_1s: Optional[float] = None
+    vwap_upper_1s: Optional[float] = None,
+    action_bias: str = "HOLD_NEUTRAL"
 ) -> Optional[Dict[str, Any]]:
     """
     Computes institutional tactical levels: entry range, target 1, target 2, protective stop-loss, and R:R ratio.
+    Direction-Aware: Properly computes downside targets and protective buy-stops for SELL_WATCH short / breakdown trades.
     ZERO-DEFAULT RULE: Returns None if current_price is None or <= 0.
     """
     if current_price is None or float(current_price) <= 0:
@@ -748,7 +750,47 @@ def compute_tactical_levels(
     if atr <= 0:
         atr = price * 0.015
 
-    # Dynamic entry envelope
+    is_sell = action_bias in ["SELL_WATCH"]
+    is_sl_alert = action_bias in ["TRAILING_SL_ALERT"]
+
+    # 1. Bearish Breakdown / Short Setup (SELL_WATCH)
+    if is_sell:
+        # Entry Range around price / VWAP
+        if vwap_val is not None and vwap_val > 0:
+            entry_min = round(min(price, vwap_val), 2)
+            entry_max = round(max(price, vwap_val), 2)
+        else:
+            entry_min = round(price * 0.995, 2)
+            entry_max = round(price * 1.005, 2)
+
+        # Downside Price Targets (Target < Price)
+        if l3 and l4 and float(l3) > 0 and float(l4) > 0 and float(l3) < price:
+            target_1 = round(min(price - (1.5 * atr), float(l3)), 2)
+            target_2 = round(min(price - (2.5 * atr), float(l4)), 2)
+            stop_loss = round(max(price + (1.0 * atr), float(h3 or (price * 1.02))), 2)
+        else:
+            target_1 = round(price - (1.5 * atr), 2)
+            target_2 = round(price - (2.5 * atr), 2)
+            stop_loss = round(price + (1.0 * atr), 2)
+
+        # Strict directional bounds: Targets must be strictly below price, stop-loss strictly above
+        target_1 = min(target_1, round(price * 0.98, 2))
+        target_2 = min(target_2, round(price * 0.95, 2))
+        stop_loss = max(stop_loss, round(price * 1.02, 2))
+
+        risk_val = max(1.0, stop_loss - price)
+        reward_val = max(2.5, price - target_2)
+        rr_ratio = round(reward_val / risk_val, 1)
+
+        return {
+            "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
+            "target_1": f"₹{target_1:,.2f}",
+            "target_2": f"₹{target_2:,.2f}",
+            "protective_stop_loss": f"₹{stop_loss:,.2f}",
+            "risk_reward_ratio": f"1:{rr_ratio}"
+        }
+
+    # 2. Bullish Setup (BUY_WATCH / HOLD_NEUTRAL) or Demat Protection
     if vwap_val is not None and vwap_upper_1s is not None and vwap_val > 0:
         entry_min = round(min(price, vwap_val), 2)
         entry_max = round(max(price, vwap_upper_1s), 2)
@@ -1165,7 +1207,8 @@ def compute_deterministic_confluence(
             l3=l3,
             l4=l4,
             vwap_val=vwap_val,
-            vwap_upper_1s=vwap_upper_1s
+            vwap_upper_1s=vwap_upper_1s,
+            action_bias=action_bias
         )
         if demat_context["is_in_portfolio"] and tactical_dict:
             avg_buy = demat_context.get("average_buy_price", current_price)
@@ -1513,7 +1556,8 @@ def precompute_symbol_market_state(
             l3=pivots.get("l3"),
             l4=pivots.get("l4"),
             vwap_val=technicals.get("vwap"),
-            vwap_upper_1s=technicals.get("vwap_upper_1s")
+            vwap_upper_1s=technicals.get("vwap_upper_1s"),
+            action_bias=analysis.get("action_bias", "HOLD_NEUTRAL")
         )
         if tactical:
             analysis["tactical_levels"] = tactical
@@ -1803,7 +1847,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     logger.info(f"Skipping dispatch for {symbol}: {reason}")
                     return None
 
-                # High-Conviction AI Reasoning: Invoke Gemini strictly for alerts about to be dispatched (capped at max 2/scan)
+                # High-Conviction AI Reasoning: Invoke Gemini strictly for alerts about to be dispatched (capped at max 15/scan)
                 if settings.GEMINI_API_KEY and get_ai_scan_calls_count() < _MAX_AI_CALLS_PER_SCAN:
                     increment_ai_scan_calls_count()
                     try:

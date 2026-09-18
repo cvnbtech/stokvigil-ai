@@ -798,7 +798,7 @@ export default function App() {
       try {
         const headers = await getAuthHeaders();
         const idempotencyKey = `${user.id}-${tradeData.symbol}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
+        const res = await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
           method: "POST",
           headers: {
             ...headers,
@@ -814,8 +814,18 @@ export default function App() {
             idempotency_key: idempotencyKey
           })
         });
-      } catch (e) {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.detail || errData.message || `Order rejected (HTTP ${res.status})`;
+          alert(`⚠️ Order Rejection: ${errMsg}`);
+          setOrderSending(false);
+          return;
+        }
+      } catch (e: any) {
         console.warn("Trade order execution:", e);
+        alert(`❌ Network / Server Error: ${e.message || "Failed to place order."}`);
+        setOrderSending(false);
+        return;
       }
     }
     setOrderSending(false);

@@ -32,7 +32,7 @@ flowchart TD
         B2["auth.py (Supabase JWT Bearer, Zero IDOR & 4-Char PII Log Masking)"]
         B3["Cron Secret HMAC Constant-Time Validator (DoS & Quota Shield)"]
         B4["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
-        B4a["Order Idempotency & Routing (120s Replay, 15s Debounce, Cash/Margin Resolver & BSE Direct Route)"]
+        B4a["Order Execution Shield (Idempotency 120s, RMS 500 -> 422 Interceptor, ₹0.05 Tick Snap, SEBI MIS Notice, BSE/NSE Route)"]
         B5["In-Memory Multi-Tier Caches (Candles, Financials, News, FII/DII, Quotes)"]
         B6["FastAPI Synchronous Scan Engine (Concurrency Lock: _scan_in_progress & Free-Tier CPU)"]
         B7["Telegram Webhook Validator (Secret Header & Email Rejection Shield)"]
@@ -130,7 +130,7 @@ To operate with institutional speed and permanently eliminate Google Gemini `429
    - **Consumes 0 Gemini API calls**, completely preserving quota.
 3. **Tier-2 Google Gemini AI Synthesis (`evaluate_stock_with_ai`)**:
    - Only stocks with confirmed catalysts are submitted to Google Gemini for deep qualitative synthesis and institutional level structuring.
-   - **Reduces Gemini calls from 20+ down to 1–3 per 5-minute scan**, keeping RPM well under the 20 RPM ceiling.
+   - **Configurable `MAX_AI_CALLS_PER_SCAN = 15`**: Bounded by `Settings.MAX_AI_CALLS_PER_SCAN` (default: 15) in `agent_runner.py`. Allows evaluating up to 15 concurrent catalyst stocks per 5-minute scan cycle, maximizing AI throughput across large user portfolios while remaining strictly within the Gemini Free-Tier 15 RPM rate ceiling and preventing 429 quota exhaustion.
 
 ### 2.1.3 Wyckoff Volume Spread Analysis (VSA), Dynamic F&O Discovery & Sector Alpha
 - **100% Dynamic NSE F&O Universe Discovery (`get_dynamic_fo_universe` in `flow_tracker.py`)**:
@@ -255,13 +255,19 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
   6. `technicals.previous_close`
   7. `ticker.fast_info.last_price` or `regular_market_previous_close`
 
-### 2.1.6 Dynamic Target/Stop-Loss Guardrails & Demat P&L Sanitization (`agent_runner.py`)
-- **Mathematical Bounds**: Tactical levels must adhere to rigorous geometric constraints relative to `current_price`:
-  - **Target 1**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
-  - **Target 2**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
-  - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside risk buffer).
-  - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$ where $\text{Chandelier SL} = \text{Current Price} - (2.5 \times \text{ATR})$.
-  - **Risk-Reward Ratio**: Dynamically computed as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
+### 2.1.6 Direction-Aware Tactical Levels, Target/Stop-Loss Guardrails & Demat P&L Sanitization (`agent_runner.py`)
+- **Direction-Aware Mathematical Bounds (`compute_tactical_levels`)**: Tactical levels dynamically adapt to signal bias (`BUY_WATCH` vs `SELL_WATCH`):
+  - **Bullish / Accumulate Setups (`BUY_WATCH`)**:
+    - **Target 1 (First Resistance)**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
+    - **Target 2 (Breakout Ceiling)**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
+    - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside risk buffer below entry).
+    - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$ where $\text{Chandelier SL} = \text{Current Price} - (2.5 \times \text{ATR})$.
+    - **Risk-Reward Ratio**: Dynamically formulated as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
+  - **Bearish / Breakdown Setups (`SELL_WATCH`)**:
+    - **Target 1 (First Support / Profit Booking)**: $\min(\text{Target}_1, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside).
+    - **Target 2 (Extended Breakdown Target)**: $\min(\text{Target}_2, \text{Price} \times 0.95)$ (minimum $-5.0\%$ downside).
+    - **Protective Buy-Stop (Invalidation)**: $\max(\text{Stop-Loss}, \text{Price} \times 1.02)$ (protective stop placed strictly above entry, minimum $+2.0\%$).
+    - **Risk-Reward Ratio**: Formulated directionally for short/breakdown as $(\text{Price} - \text{Target}_2) / (\text{Stop-Loss} - \text{Price})$.
 - **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
 
 ### 2.1.7 Institutional 4-Column UI Grid & Actionable Presentation (`custom_widgets.dart` & `page.tsx`)
@@ -351,6 +357,31 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
    - **Dual-Exchange Support**: Automatically resolves and charts both NSE (`.NS`) and BSE (`.BO`) tickers.
    - **Pure White-Label Branding & 'SV' Watermark HUD**: Suppresses third-party attribution logos and links (`attributionLogo: false` with scoped CSS overrides hiding attribution anchors/classes), while embedding a subtle institutional 'SV' canvas watermark, pro terminal badge, and white-label identity on both web and mobile charts.
    - **In-Memory Bounded Cache**: Max 200 entries with 60-second TTL and LRU batch eviction to ensure sub-millisecond chart load times.
+
+### 2.1.10 Financial Trade Execution Safeguards & Broker Integration (`POST /api/v1/orders/place`)
+To deliver institutional execution safety when users execute BUY / SELL trade orders through ICICI Direct Breeze API, StokVigil enforces 6 automated execution safeguards:
+
+1. **Financial Idempotency & In-Flight Replay Shield (`_ORDER_IDEMPOTENCY_CACHE`)**:
+   - Accepts client-supplied `X-Idempotency-Key` headers, caching full order execution payloads in an in-memory TTL replay cache with a 120-second retention window.
+   - Subsequent requests matching an active idempotency key return the cached order response without duplicate broker API transmission.
+   - Computes an in-flight SHA-256 fingerprint hash `(user_id, symbol, action, quantity, price)` with a 15-second debounce window, returning `HTTP 409 Conflict` (`ORDER_IN_FLIGHT`) during active execution to prevent double-click executions.
+2. **Silent Broker RMS Rejection Interception (HTTP 422)**:
+   - ICICI Direct Breeze API frequently returns HTTP 200 containing JSON error bodies (e.g. `{"Status": 500, "Error": "RMS: Margin Shortage..."}`) without raising HTTP transport errors.
+   - The backend explicitly inspects broker response payloads. Any non-200 status or error payload immediately raises `HTTP 422 Unprocessable Entity` containing the exact broker RMS error message, ensuring user alerts and execution banners immediately display the true rejection reason.
+3. **Strict Limit Price Validation & Indian Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**:
+   - Enforces Pydantic `model_validator` requiring `price > 0.0` whenever `order_type == "LIMIT"`, rejecting zero or negative limit orders with descriptive validation errors.
+   - Snaps all limit prices to Indian exchange standard ₹0.05 tick size intervals using financial half-up rounding (`round(price * 20) / 20`), preventing exchange rejection due to non-tick price intervals (e.g. `₹1,245.33` $\rightarrow$ `₹1,245.35`).
+4. **Dynamic Product Resolution & SEBI Intraday MIS Margin Short Notice**:
+   - Cross-references user Demat portfolio holdings in RAM (`get_cached_holdings`).
+   - If selling shares held in Demat $\rightarrow$ routes as `product="cash"` (CNC delivery).
+   - If selling unheld shares $\rightarrow$ routes as `product="margin"` (intraday short) and injects mandatory SEBI regulatory disclosure:
+     > *"SEBI Notice: You do not hold this stock in your Demat account. This order has been placed as an Intraday MIS Margin Short. You must square off this position before 03:15 PM IST today, failing which your broker RMS will auto-square off or you will face exchange auction penalty charges (up to 20%)."*
+   - Renders explicit amber warning banners on both mobile and web execution modals.
+5. **Indian Market Hours & Session Awareness (`get_market_session_status`)**:
+   - Enforces real-time awareness of Indian exchange hours (09:15 AM – 03:30 PM IST, Monday–Friday).
+   - Orders placed outside regular trading hours succeed but return `"session_warning": "Market is currently closed. Order will be processed as AMO or queued by broker."`, alerting users to off-market queueing.
+6. **Automated BSE Order Routing & Ticker Sanitation**:
+   - Strips `.BO` suffixes, maps 6-digit numeric BSE security codes, and routes `exchange_code="BSE"` vs `"NSE"` directly to Breeze API.
 
 ---
 
@@ -491,8 +522,9 @@ G:\stokvigil-ai\
 │   │   ├── test_phase1.py           <-- 4 War Room Briefing, Confluence Radar, Alpha Cards Tests
 │   │   ├── test_portfolio_optimization.py <-- 3 Fundamentals Caching & Background Pre-Warming Tests
 │   │   ├── test_alert_edge_cases.py <-- 2 Daily Fallback, Demat P&L, Target/SL Clamping Tests
-│   │   └── test_institutional_engine.py <-- 1 Master Integration Suite (7 Quantitative Architecture Modules)
-│   │   # Total: 102 automated unit tests across 11 test suites (100% passing)
+│   │   ├── test_institutional_engine.py <-- 1 Master Integration Suite (7 Quantitative Architecture Modules)
+│   │   └── test_financial_trade_flaws.py <-- 8 Financial Trade Execution, Directional Tactical Levels, RMS 500 Interception, Tick Snapping & SEBI MIS Notice Tests
+│   │   # Total: 110 automated unit tests across 12 test suites (100% passing)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -629,7 +661,7 @@ G:\stokvigil-ai\
 | `/api/stocks/validate` | `GET` | Rate-Limited | Real-time exchange validation ensuring zero dummy/misspelled tickers |
 | `/api/stocks/quotes` | `GET` | Rate-Limited | High-speed batch quotes for 100+ stocks backed by Keep-Alive session pool, BSE ticker normalization (`.BO` & 6-digit security codes), and Market-Aware Dynamic TTL (20s market / 300s off-market). Next.js API proxy preserves previous tactical levels during price refreshes and enforces an 8000ms backend timeout. |
 | `/api/market/cache-stats` | `GET` | Public / CORS | Telemetry reporting in-memory market cache performance (hit ratio, writes) |
-| `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API with institutional financial idempotency protection (`_ORDER_IDEMPOTENCY_CACHE`, `X-Idempotency-Key` / 120s TTL replay cache & 15s auto-debounce), dynamic order product resolution (`product="cash"` for Demat deliveries vs `"margin"` for intraday/unheld sells), and automated BSE routing (`exchange_code="BSE"` with `.BO` suffix stripping) |
+| `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API with institutional financial idempotency protection (`_ORDER_IDEMPOTENCY_CACHE`, `X-Idempotency-Key` / 120s TTL replay cache & 15s auto-debounce), silent Breeze RMS 500 error interception (HTTP 422), strict LIMIT order validation (`price > 0.0`) & Indian exchange ₹0.05 tick snapping (`snap_to_exchange_tick`), dynamic order product resolution (`product="cash"` for Demat deliveries vs `"margin"` for intraday/unheld sells with mandatory SEBI Intraday MIS Short regulatory disclosure), Indian market session awareness (`get_market_session_status`), and automated BSE routing (`exchange_code="BSE"` with `.BO` suffix stripping) |
 
 ---
 

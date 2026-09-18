@@ -998,6 +998,36 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                     ],
                   ),
                 ),
+                if (!isBuy) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF59E0B).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text("⚠️", style: TextStyle(fontSize: 13)),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "SEBI MIS Notice: If unheld in Demat, this order executes as an Intraday Margin Short and must be squared off before 03:15 PM IST to prevent broker auto-squareoff or auction penalties.",
+                            style: TextStyle(
+                              color: Color(0xFFFCD34D),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
 
                 // MARKET / LIMIT Order Type Selector
@@ -1390,43 +1420,50 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                       ),
                     ],
                   ),
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      padding: EdgeInsets.zero,
-                    ),
-                    onPressed: _isSubmitting ? null : _executeOrder,
-                    child: _isSubmitting
-                        ? const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                              ),
-                              SizedBox(width: 10),
-                              Text(
-                                "⚡ Sending Order via Breeze…",
-                                style: TextStyle(
+                  child: Builder(
+                    builder: (context) {
+                      final isInvalidLimit = _orderType == 'LIMIT' && (double.tryParse(_limitPriceController.text.trim()) ?? 0.0) <= 0.0;
+                      return ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          padding: EdgeInsets.zero,
+                        ),
+                        onPressed: (_isSubmitting || isInvalidLimit) ? null : _executeOrder,
+                        child: _isSubmitting
+                            ? const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text(
+                                    "⚡ Sending Order via Breeze…",
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Text(
+                                isInvalidLimit
+                                    ? "⚠️ Enter a Valid Limit Price"
+                                    : "⚡ Confirm $_tradeType & Send Order via Breeze →",
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: 14,
+                                  fontSize: 14.5,
+                                  letterSpacing: -0.2,
                                 ),
                               ),
-                            ],
-                          )
-                        : Text(
-                            "⚡ Confirm $_tradeType & Send Order via Breeze →",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 14.5,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
+                      );
+                    },
                   ),
                 ),
               ],

@@ -3,6 +3,7 @@ import base64
 import hmac
 import json
 import logging
+import math
 import re
 import time
 import urllib.parse
@@ -17,7 +18,7 @@ from datetime import date, datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from supabase import create_client, Client
 import yfinance as yf
 import pandas as pd
@@ -170,6 +171,55 @@ class PlaceOrderRequest(BaseModel):
     price: Optional[float] = Field(default=0.0, ge=0.0)
     product: Optional[str] = Field(default=None, pattern=r'^(cash|margin|CASH|MARGIN)?$')
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_limit_price(self):
+        if self.order_type.upper() == "LIMIT":
+            if self.price is None or float(self.price) <= 0.0:
+                raise ValueError("Limit orders strictly require a positive non-zero limit price.")
+        return self
+
+
+def snap_to_exchange_tick(price: Optional[float], tick_size: float = 0.05) -> float:
+    """
+    Snaps order price to Indian exchange standard ₹0.05 tick size using standard half-up rounding.
+    NSE/BSE equity orders with invalid sub-tick fractions are rejected by exchange matching engines.
+    """
+    if price is None or price <= 0:
+        return 0.0
+    ticks = math.floor(float(price) / tick_size + 0.5)
+    return round(ticks * tick_size, 2)
+
+
+def get_market_session_status() -> Tuple[bool, str]:
+    """
+    Checks if current time is within standard Indian market hours (09:15 to 15:30 IST, Monday-Friday).
+    Returns (is_open: bool, message: str).
+    """
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(ist_tz)
+    # Weekday: 0 = Mon, 4 = Fri, 5 = Sat, 6 = Sun
+    if now_ist.weekday() >= 5:
+        return False, "Market is closed today (Weekend). Regular trading hours are Mon-Fri, 09:15 AM - 03:30 PM IST."
+    
+    market_open = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+    
+    if now_ist < market_open:
+        return False, f"Market is pre-open. Regular market trading opens at 09:15 AM IST (Current IST: {now_ist.strftime('%H:%M:%S')})."
+    if now_ist > market_close:
+        return False, f"Market is closed. Regular market hours ended at 03:30 PM IST (Current IST: {now_ist.strftime('%H:%M:%S')})."
+    
+    return True, "Market is open."
+
+
+def is_indian_market_open() -> bool:
+    """
+    Checks if Indian stock exchanges (NSE & BSE) are currently open for regular trading.
+    Regular trading hours: Monday through Friday, 09:15 AM to 03:30 PM IST.
+    """
+    is_open, _ = get_market_session_status()
+    return is_open
 
 # Financial Idempotency Cache for Order Execution
 # Scoped Key -> {"status": "in_flight"|"completed", "timestamp": float, "ttl": float, "response": dict, "user_id": str}
@@ -581,20 +631,6 @@ _MAX_QUOTE_CACHE_SIZE = 2000
 
 # Indian Standard Time (IST = UTC+5:30) for accurate market hour detection
 IST = timezone(timedelta(hours=5, minutes=30))
-
-def is_indian_market_open() -> bool:
-    """
-    Checks if Indian stock exchanges (NSE & BSE) are currently open for regular trading.
-    Regular trading hours: Monday through Friday, 09:15 AM to 03:30 PM IST.
-    """
-    now_ist = datetime.now(IST)
-    # Weekday check: Monday is 0, Sunday is 6. Weekends (Saturday=5, Sunday=6) are closed.
-    if now_ist.weekday() >= 5:
-        return False
-
-    market_open = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
-    market_close = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
-    return market_open <= now_ist <= market_close
 
 def get_quote_cache_ttl() -> float:
     """
@@ -1947,6 +1983,15 @@ def place_trade_order(
 
             action_type = "buy" if req.action.upper() == "BUY" else "sell"
             order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
+            snapped_price = snap_to_exchange_tick(req.price) if order_type == "limit" else 0.0
+
+            # Market Session Awareness
+            market_open, market_msg = get_market_session_status()
+            if getattr(settings, "ENFORCE_MARKET_HOURS", False) and not market_open:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Orders rejected during market close: {market_msg}"
+                )
 
             # Dynamic Product Type Resolution (Option A: Auto-detect CNC vs MIS)
             product_type = req.product.lower() if getattr(req, "product", None) else None
@@ -1965,6 +2010,18 @@ def place_trade_order(
                 else:
                     product_type = "cash"
 
+            # SEBI Intraday Short Regulatory Notice
+            is_intraday_short = False
+            sebi_notice = None
+            if action_type == "sell" and product_type == "margin":
+                is_intraday_short = True
+                sebi_notice = (
+                    "SEBI Notice: You do not hold this stock in your Demat account. "
+                    "This order has been placed as an Intraday MIS Margin Short. "
+                    "You must square off this position before 03:15 PM IST today, "
+                    "failing which your broker RMS will auto-square off or you will face exchange auction penalty charges (up to 20%)."
+                )
+
             clean_stock_code = req.symbol.upper().replace(".NS", "").replace(".BO", "").strip()
             is_bse = req.symbol.upper().endswith(".BO") or (clean_stock_code.isdigit() and len(clean_stock_code) == 6)
             exchange_code = "BSE" if is_bse else "NSE"
@@ -1977,20 +2034,39 @@ def place_trade_order(
                 order_type=order_type,
                 stoploss="0",
                 quantity=str(req.quantity),
-                price=str(req.price) if order_type == "limit" else "0",
+                price=str(snapped_price) if order_type == "limit" else "0",
                 validity="day"
             )
+
+            # Detect ICICI Breeze Silent RMS Rejection (Status 500 / Error without Python exception)
+            broker_status = order_res.get("Status") if isinstance(order_res, dict) else None
+            broker_error = order_res.get("Error") if isinstance(order_res, dict) else None
+
+            if isinstance(order_res, dict) and (broker_status not in [200, "200"] or broker_error):
+                err_msg = broker_error or f"Broker RMS rejected order with status {broker_status}"
+                logger.error(f"ICICI Breeze RMS rejection for {req.symbol}: {err_msg}")
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Broker RMS rejected order: {err_msg}"
+                )
+
             order_resp = {
                 "status": "success",
                 "symbol": req.symbol,
                 "exchange": exchange_code,
                 "action": req.action,
                 "quantity": req.quantity,
+                "price": snapped_price if order_type == "limit" else None,
                 "product": product_type,
+                "is_intraday_short": is_intraday_short,
+                "sebi_notice": sebi_notice,
+                "market_session": {"is_open": market_open, "message": market_msg},
                 "broker_response": order_res,
                 "idempotency_key": raw_key or None,
                 "idempotent_replay": False
             }
+            if not market_open:
+                order_resp["session_warning"] = "Market is currently closed. Order will be processed as AMO or queued by broker."
         except HTTPException:
             raise
         except Exception as e:
@@ -2002,10 +2078,16 @@ def place_trade_order(
                     "symbol": req.symbol,
                     "action": req.action,
                     "quantity": req.quantity,
+                    "price": snapped_price if req.order_type.upper() == "LIMIT" else None,
                     "product": locals().get("product_type", "cash"),
+                    "is_intraday_short": locals().get("is_intraday_short", False),
+                    "sebi_notice": locals().get("sebi_notice", None),
+                    "market_session": {"is_open": locals().get("market_open", True), "message": locals().get("market_msg", "Market is open.")},
                     "idempotency_key": raw_key or None,
                     "idempotent_replay": False
                 }
+                if not locals().get("market_open", True):
+                    order_resp["session_warning"] = "Market is currently closed. Order will be processed as AMO or queued by broker."
             else:
                 raise HTTPException(
                     status_code=502,

@@ -96,6 +96,24 @@ export default function TradeOrderModal({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* SEBI Intraday MIS Short Regulatory Warning */}
+            {tradeData.type === "SELL" && (
+              <div style={{
+                background: "rgba(245,158,11,0.1)",
+                border: "1px solid rgba(245,158,11,0.4)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+              }}>
+                <span style={{ fontSize: 14 }}>⚠️</span>
+                <span style={{ fontSize: 10.5, color: "#FCD34D", lineHeight: 1.4, fontWeight: 600 }}>
+                  <b>SEBI MIS Notice:</b> If you do not hold this stock in your Demat account, this order will be routed as an intraday short margin trade and must be squared off before 03:15 PM IST to avoid auto-squareoff or exchange auction penalties.
+                </span>
+              </div>
+            )}
+
             {/* Price & Order Type selector */}
             <div style={{ display: "flex", gap: 8 }}>
               {(["MARKET", "LIMIT"] as const).map(t => (
@@ -262,9 +280,11 @@ export default function TradeOrderModal({
             <Btn
               variant={tradeData.type === "BUY" ? "primary" : "danger"}
               onClick={onExecute}
-              disabled={orderSending}
+              disabled={orderSending || (orderType === "LIMIT" && (!limitPrice || parseFloat(limitPrice) <= 0))}
             >
-              {orderSending ? "⚡ Sending Order via Breeze…" : "⚡ Confirm & Send Order via Breeze →"}
+              {orderType === "LIMIT" && (!limitPrice || parseFloat(limitPrice) <= 0)
+                ? "⚠️ Enter a Valid Limit Price"
+                : (orderSending ? "⚡ Sending Order via Breeze…" : "⚡ Confirm & Send Order via Breeze →")}
             </Btn>
           </div>
         )}

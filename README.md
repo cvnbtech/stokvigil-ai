@@ -63,8 +63,8 @@ Real trading desks and hedge funds do not burn heavy neural network inference on
 7. **Corporate Filings / News**: Real-time contract wins, quarterly earnings, debt shifts, or block deals.
 
 * **Quiet / Consolidating Stocks**: Evaluated deterministically in RAM in **0.001 ms**, consuming **0 Gemini API calls**.
-* **Active Catalyst Stocks**: Handed off to **Tier-2 (Google Gemini AI)** for qualitative synthesis and institutional tactical level structuring.
-* **Impact**: Slashes Gemini requests from 20+ per scan down to **1–3 requests**, completely eliminating the 20 RPM free-tier `429 Quota Exceeded` bottleneck.
+* **Active Catalyst Stocks**: Handed off to **Tier-2 (Google Gemini AI)** for qualitative synthesis and institutional tactical level structuring, protected by a configurable per-scan ceiling (`MAX_AI_CALLS_PER_SCAN = 15`).
+* **Impact**: Slashes Gemini requests from 50+ per scan down to **1–15 requests**, eliminating the 15 RPM free-tier `429 Quota Exceeded` bottleneck while ensuring high-conviction breakout/breakdown signals receive deep AI reasoning.
 
 ---
 
@@ -299,17 +299,31 @@ Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides 
 
 ---
 
-## ⚡ Financial Trade Execution Idempotency & Debounce Shield (`POST /api/v1/orders/place`)
-To prevent duplicate orders from accidental double-taps, network retries, or browser reloads, StokVigil enforces institutional financial idempotency and seamless multi-exchange broker order routing:
+## ⚡ Financial Trade Execution Safeguards & Idempotency Shield (`POST /api/v1/orders/place`)
+To prevent duplicate orders from accidental double-taps, network retries, or browser reloads, StokVigil enforces institutional financial idempotency, exchange tick compliance, and multi-exchange broker order routing:
 - **Client Idempotency Key**: Accepts `X-Idempotency-Key` header or `idempotency_key` payload parameter (cached for 120 seconds). Replays return identical responses (`idempotent_replay: true`) without re-hitting the broker.
 - **15-Second In-Flight & Fingerprint Debounce**: Automatic hash fingerprinting on `(user_id, symbol, action, quantity, price)` debounces duplicate requests within 15 seconds, returning `409 Conflict` (`ORDER_IN_FLIGHT`) during active execution.
-- **Dynamic Order Product Type Resolution (`product`)**: Auto-detects whether the order should be routed as `cash` (CNC / Cash Delivery) or `margin` (MIS / MTF). For sell actions, the system checks whether the user owns sufficient shares in their active Demat holdings; if owned, it routes as `cash` to sell from delivery; if unheld, it resolves to `margin` for intraday/short positions, preventing broker rejection.
+- **Direction-Aware Tactical Risk Levels (`compute_tactical_levels`)**:
+  - **Bullish / Accumulate (`BUY_WATCH`)**: Computes upside Target 1 ($1.5\times$ ATR), Target 2 (Swing High / $2.5\times$ ATR), and protective Stop-Loss below price ($\le -2\%$).
+  - **Bearish / Breakdown (`SELL_WATCH`)**: Computes downside Target 1 ($\le -2\%$), Target 2 ($\le -5\%$), and protective Buy-Stop strictly above price ($\ge +2\%$). Risk-Reward ratio is formulated directionally as $(\text{Price} - \text{Target}_2) / (\text{Stop} - \text{Price})$.
+- **Silent Broker RMS Rejection Interception**: ICICI Breeze API returns `{"Status": 500, "Error": "RMS: Margin Shortage..."}` without raising Python exceptions. The backend explicitly inspects broker response status; non-200 or error codes immediately raise `HTTP 422 Unprocessable Entity` with the exact broker RMS message, alerting users instead of masking rejections as success.
+- **Strict Limit Price Validation & Indian Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**:
+  - Enforces Pydantic `model_validator(mode="after")` requiring `price > 0.0` when `order_type == "LIMIT"`.
+  - Automatically snaps all limit prices to Indian exchange standard ₹0.05 tick size intervals using financial half-up rounding (e.g. `₹1,245.33` $\rightarrow$ `₹1,245.35`).
+- **Dynamic Product Resolution & SEBI Intraday MIS Margin Short Notice**:
+  - Auto-detects whether the order should be routed as `cash` (CNC Delivery) or `margin` (MIS / Margin Short).
+  - When selling unheld shares, the order routes as `margin` and injects mandatory SEBI regulatory disclosure:
+    > *"SEBI Notice: You do not hold this stock in your Demat account. This order has been placed as an Intraday MIS Margin Short. You must square off this position before 03:15 PM IST today, failing which your broker RMS will auto-square off or you will face exchange auction penalty charges (up to 20%)."*
+  - Renders explicit amber regulatory warning banners on both mobile and web execution modals.
+- **Indian Market Hours & Session Awareness (`get_market_session_status`)**:
+  - Enforces awareness of Indian stock exchange regular trading hours (09:15 AM to 03:30 PM IST, Monday–Friday).
+  - Off-market orders include `"session_warning": "Market is currently closed. Order will be processed as AMO or queued by broker."`.
 - **Automated BSE Order Routing & Ticker Sanitation**: Automatically strips `.BO` suffixes, maps 6-digit numeric BSE scrip codes, and routes `exchange_code="BSE"` vs `"NSE"` directly to the ICICI Direct Breeze API.
 - **Cross-Platform Interactive `TradeOrderModal` (Mobile & Web)**: Integrated order execution modal in both Flutter mobile and Next.js Web:
   - Dynamic `BSE` (amber) vs `NSE` (cyan) exchange badge display.
   - One-tap quick quantity selectors (+1, +10, +25, +50, +100).
-  - Market vs Limit price execution.
-  - Live execution spinner (`⚡ Sending Order via Breeze…`) and instant in-modal error alert banners on broker errors or expired sessions.
+  - Market vs Limit price execution with live client-side validation (`⚠️ Enter a Valid Limit Price`).
+  - Live execution spinner (`⚡ Sending Order via Breeze…`) and instant in-modal error alert banners on broker RMS rejections or expired sessions.
 
 ---
 
@@ -360,7 +374,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (102 automated unit tests across 11 suites):
+3. Run test suite (110 automated unit tests across 12 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

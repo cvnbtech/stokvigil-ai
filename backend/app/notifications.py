@@ -207,15 +207,34 @@ def format_telegram_alert(
         # Validate that tactical levels are actual valid prices/ranges, not 0.00 / N/A / None
         is_valid_entry = entry and str(entry).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(entry)
         if is_valid_entry:
-            html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
-            html += f"• <b>Entry Range:</b> {entry}\n"
-            if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
-                html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
-            if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
-                html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
-            if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
-                rr_str = f" (R:R: {rr})" if rr and str(rr).strip() not in ("N/A", "None", "") else ""
-                html += f"• <b>Stop-Loss:</b> {sl}{rr_str}\n"
+            rr_str = f" (R:R: {rr})" if rr and str(rr).strip() not in ("N/A", "None", "") else ""
+            if "SELL" in bias_upper:
+                html += "📐 <b>Tactical Defense & Downside Levels:</b>\n"
+                html += f"• <b>Sell / Short Zone:</b> {entry}\n"
+                if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
+                    html += f"• <b>Downside Target 1:</b> {t1}\n"
+                if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
+                    html += f"• <b>Downside Target 2:</b> {t2}\n"
+                if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
+                    html += f"• <b>Protective Buy-Stop:</b> {sl}{rr_str}\n"
+            elif "TRAILING" in bias_upper:
+                html += "🛡️ <b>Capital Defense & Exit Levels:</b>\n"
+                html += f"• <b>Defense Range:</b> {entry}\n"
+                if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
+                    html += f"• <b>Target 1:</b> {t1}\n"
+                if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
+                    html += f"• <b>Target 2:</b> {t2}\n"
+                if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
+                    html += f"• <b>Trailing SL (Exit):</b> {sl}{rr_str}\n"
+            else:
+                html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
+                html += f"• <b>Entry Range:</b> {entry}\n"
+                if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
+                    html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
+                if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
+                    html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
+                if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
+                    html += f"• <b>Stop-Loss:</b> {sl}{rr_str}\n"
             html += "\n"
 
     # Technical Metrics Snapshot (ZERO-DEFAULT RULE: Only render actual received metrics)
