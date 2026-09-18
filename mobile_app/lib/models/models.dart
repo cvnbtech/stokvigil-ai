@@ -43,7 +43,7 @@ class PortfolioHolding {
   double get currentVal => currentValue;
   double get pnlPct => pnlPercent;
   String get cleanSymbol => symbol.replaceAll('.BO', '').replaceAll('.NS', '').trim().toUpperCase();
-  String get exch => exchange ?? (symbol.toUpperCase().endsWith('.BO') ? 'BSE' : 'NSE');
+  String get exch => exchange ?? ((symbol.toUpperCase().endsWith('.BO') || RegExp(r'^\d{6}$').hasMatch(cleanSymbol)) ? 'BSE' : 'NSE');
   String get displayName => (name != null && name!.isNotEmpty && name != symbol && !name!.endsWith('.BO')) ? name! : cleanSymbol;
 
   PortfolioHolding({
@@ -95,7 +95,7 @@ class StokAlert {
   final DateTime createdAt;
 
   String get cleanSymbol => symbol.replaceAll('.BO', '').replaceAll('.NS', '').trim().toUpperCase();
-  String get exchange => metricsSnapshot['exchange'] ?? (symbol.toUpperCase().endsWith('.BO') ? 'BSE' : 'NSE');
+  String get exchange => metricsSnapshot['exchange'] ?? ((symbol.toUpperCase().endsWith('.BO') || RegExp(r'^\d{6}$').hasMatch(cleanSymbol)) ? 'BSE' : 'NSE');
   String get companyName => metricsSnapshot['company_name'] ?? metricsSnapshot['stock_name'] ?? cleanSymbol;
   String get actionBias => metricsSnapshot['action_bias'] ?? 'HOLD_NEUTRAL';
   Map<String, dynamic> get tacticalLevels => Map<String, dynamic>.from(metricsSnapshot['tactical_levels'] ?? {});

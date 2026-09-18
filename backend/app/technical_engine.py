@@ -1,6 +1,7 @@
 import time
 import logging
 import concurrent.futures
+from datetime import datetime, date
 import yfinance as yf
 import numpy as np
 import pandas as pd
@@ -337,7 +338,21 @@ def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[flo
         return default_pivots
 
     try:
-        ref_row = df_daily.iloc[-2] if len(df_daily) >= 2 else df_daily.iloc[-1]
+        # Check if the last bar is today's incomplete/forming session or prior completed session
+        last_dt = df_daily.index[-1]
+        today_date = date.today()
+        if hasattr(last_dt, 'date'):
+            last_date = last_dt.date()
+        else:
+            last_date = pd.to_datetime(last_dt).date()
+
+        if last_date < today_date:
+            # df_daily only contains closed daily bars up to yesterday or earlier (weekend / pre-market)
+            ref_row = df_daily.iloc[-1]
+        else:
+            # df_daily includes today's forming/partial candle at iloc[-1]; use prior completed day at iloc[-2]
+            ref_row = df_daily.iloc[-2] if len(df_daily) >= 2 else df_daily.iloc[-1]
+
         h = float(ref_row['High'])
         l = float(ref_row['Low'])
         c = float(ref_row['Close'])
@@ -403,6 +418,13 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
     default_res = {
         "symbol": symbol,
         "current_price": None,
+        "change_pct": None,
+        "gap_pct": None,
+        "is_circuit_locked": False,
+        "circuit_lock_type": None,
+        "orb_high_15m": None,
+        "orb_low_15m": None,
+        "orb_status": "NONE",
         "rsi_5m": None,
         "rsi_15m": None,
         "rsi_daily": None,
@@ -498,6 +520,13 @@ def compute_technicals_from_frames(
     default_res = {
         "symbol": symbol,
         "current_price": None,
+        "change_pct": None,
+        "gap_pct": None,
+        "is_circuit_locked": False,
+        "circuit_lock_type": None,
+        "orb_high_15m": None,
+        "orb_low_15m": None,
+        "orb_status": "NONE",
         "rsi_5m": None,
         "rsi_15m": None,
         "rsi_daily": None,
@@ -541,6 +570,15 @@ def compute_technicals_from_frames(
         if valid_5m_close.empty:
             if not valid_daily_close.empty:
                 current_price = round(float(valid_daily_close.iloc[-1]), 2)
+                today_date = date.today()
+                last_dt = df_daily.index[-1]
+                last_date = last_dt.date() if hasattr(last_dt, 'date') else pd.to_datetime(last_dt).date()
+                if last_date < today_date:
+                    prev_close = float(df_daily['Close'].iloc[-1])
+                else:
+                    prev_close = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else float(df_daily['Close'].iloc[-1])
+                change_pct = round(((current_price - prev_close) / prev_close) * 100.0, 2) if prev_close and prev_close > 0 else 0.0
+
                 atr_series = calculate_atr(df_daily, 14)
                 atr_val = round(float(atr_series.iloc[-1]), 2) if not atr_series.empty and not pd.isna(atr_series.iloc[-1]) else None
                 
@@ -585,6 +623,13 @@ def compute_technicals_from_frames(
                 return {
                     "symbol": symbol,
                     "current_price": current_price,
+                    "change_pct": change_pct,
+                    "gap_pct": None,
+                    "is_circuit_locked": False,
+                    "circuit_lock_type": None,
+                    "orb_high_15m": None,
+                    "orb_low_15m": None,
+                    "orb_status": "DATA_INSUFFICIENT",
                     "rsi_5m": None,
                     "rsi_15m": None,
                     "rsi_daily": rsi_daily,
@@ -618,6 +663,71 @@ def compute_technicals_from_frames(
                 return default_res
             
         current_price = round(float(valid_5m_close.iloc[-1]), 2)
+
+        # Calculate Previous Close, Intraday Change %, Gap %, Circuit Locks, and ORB
+        prev_close = None
+        if not df_daily.empty:
+            today_date = date.today()
+            last_dt = df_daily.index[-1]
+            last_date = last_dt.date() if hasattr(last_dt, 'date') else pd.to_datetime(last_dt).date()
+            if last_date < today_date:
+                prev_close = float(df_daily['Close'].iloc[-1])
+            else:
+                prev_close = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else float(df_daily['Close'].iloc[-1])
+
+        change_pct = round(((current_price - prev_close) / prev_close) * 100.0, 2) if prev_close and prev_close > 0 else None
+
+        # Intraday Opening Price & Gap %
+        gap_pct = None
+        today_open = None
+        today_candles = pd.DataFrame()
+        try:
+            latest_session_date = df_5m.index[-1].date()
+            today_candles = df_5m[df_5m.index.date == latest_session_date]
+            if not today_candles.empty:
+                today_open = float(today_candles['Open'].iloc[0])
+            else:
+                today_open = float(df_5m['Open'].iloc[0])
+        except Exception:
+            today_open = float(df_5m['Open'].iloc[0]) if not df_5m.empty else None
+
+        if today_open is not None and prev_close and prev_close > 0:
+            gap_pct = round(((today_open - prev_close) / prev_close) * 100.0, 2)
+
+        # Circuit Lock Detection (NSE / BSE Upper or Lower circuit freeze)
+        is_circuit_locked = False
+        circuit_lock_type = None
+        if not df_5m.empty and len(df_5m) >= 1:
+            last_candle = df_5m.iloc[-1]
+            c_high = float(last_candle['High'])
+            c_low = float(last_candle['Low'])
+            c_close = float(last_candle['Close'])
+            # Check if high == low == close within sub-tick tolerance
+            if abs(c_high - c_low) < 1e-4 and abs(c_close - c_low) < 1e-4:
+                if change_pct is not None:
+                    if change_pct >= 1.90:
+                        is_circuit_locked = True
+                        circuit_lock_type = "UPPER_CIRCUIT"
+                    elif change_pct <= -1.90:
+                        is_circuit_locked = True
+                        circuit_lock_type = "LOWER_CIRCUIT"
+
+        # 15-Minute Opening Range Breakout (ORB)
+        orb_high_15m = None
+        orb_low_15m = None
+        orb_status = "NONE"
+        if not today_candles.empty and len(today_candles) >= 3:
+            orb_bars = today_candles.iloc[:3]
+            orb_high_15m = round(float(orb_bars['High'].max()), 2)
+            orb_low_15m = round(float(orb_bars['Low'].min()), 2)
+            if current_price > orb_high_15m:
+                orb_status = "BULLISH_ORB_BREAKOUT"
+            elif current_price < orb_low_15m:
+                orb_status = "BEARISH_ORB_BREAKDOWN"
+            else:
+                orb_status = "INSIDE_ORB_RANGE"
+        elif not today_candles.empty:
+            orb_status = "FORMING_ORB"
         
         # Calculate 5m Technicals
         rsi_5m_series = calculate_rsi(df_5m['Close'], 14)
@@ -748,6 +858,22 @@ def compute_technicals_from_frames(
         if is_volume_surge and current_price > df_5m['Open'].iloc[-1]:
             tech_score += 15
 
+        # Intraday momentum & price action scoring adjustments
+        if change_pct is not None:
+            if change_pct <= -5.0:
+                tech_score -= 25
+            elif change_pct <= -3.0:
+                tech_score -= 15
+            elif change_pct >= 5.0:
+                tech_score += 20
+            elif change_pct >= 3.0:
+                tech_score += 10
+
+        if orb_status == "BEARISH_ORB_BREAKDOWN":
+            tech_score -= 10
+        elif orb_status == "BULLISH_ORB_BREAKOUT":
+            tech_score += 10
+
         # TTM Squeeze Release bonus / Squeeze compression notice
         if ttm_squeeze.get("squeeze_release") and ttm_squeeze.get("momentum_trend") in ["EXPANDING_BULLISH", "CONTRACTING_BEARISH"]:
             tech_score += 8
@@ -771,6 +897,13 @@ def compute_technicals_from_frames(
         return {
             "symbol": symbol,
             "current_price": current_price,
+            "change_pct": change_pct,
+            "gap_pct": gap_pct,
+            "is_circuit_locked": is_circuit_locked,
+            "circuit_lock_type": circuit_lock_type,
+            "orb_high_15m": orb_high_15m,
+            "orb_low_15m": orb_low_15m,
+            "orb_status": orb_status,
             "rsi_5m": rsi_5m,
             "rsi_15m": rsi_15m,
             "rsi_daily": rsi_daily,

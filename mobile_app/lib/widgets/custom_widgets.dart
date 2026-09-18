@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
+import '../services/api_service.dart';
+import '../services/supabase_service.dart';
 
 // ─────────────────────────────────────────────
 // OFFICIAL 4-COLOR GOOGLE 'G' LOGO WIDGET
@@ -656,6 +658,7 @@ class TradeOrderModal extends StatefulWidget {
   final String initialType; // 'BUY' or 'SELL'
   final String targetPrice;
   final String stopLoss;
+  final String? exchange;
 
   const TradeOrderModal({
     super.key,
@@ -664,6 +667,7 @@ class TradeOrderModal extends StatefulWidget {
     this.initialType = 'BUY',
     this.targetPrice = '',
     this.stopLoss = '',
+    this.exchange,
   });
 
   static void show(
@@ -673,6 +677,7 @@ class TradeOrderModal extends StatefulWidget {
     String initialType = 'BUY',
     String targetPrice = '',
     String stopLoss = '',
+    String? exchange,
   }) {
     showModalBottomSheet(
       context: context,
@@ -684,6 +689,7 @@ class TradeOrderModal extends StatefulWidget {
         initialType: initialType,
         targetPrice: targetPrice,
         stopLoss: stopLoss,
+        exchange: exchange,
       ),
     );
   }
@@ -701,6 +707,11 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
   late TextEditingController _stopLossController;
   late TextEditingController _qtyController;
   bool _isSuccess = false;
+  bool _isSubmitting = false;
+  String? _errorMessage;
+
+  String get _cleanSymbol => widget.symbol.replaceAll('.BO', '').replaceAll('.NS', '').trim().toUpperCase();
+  String get _exchange => widget.exchange ?? ((widget.symbol.toUpperCase().endsWith('.BO') || RegExp(r'^\d{6}$').hasMatch(_cleanSymbol)) ? 'BSE' : 'NSE');
 
   @override
   void initState() {
@@ -729,8 +740,37 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
     return widget.currentPrice;
   }
 
-  void _executeOrder() {
-    setState(() => _isSuccess = true);
+  Future<void> _executeOrder() async {
+    final user = SupabaseService().currentUser;
+    if (user == null) {
+      setState(() => _errorMessage = "Please sign in to execute real trades via Breeze.");
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _errorMessage = null;
+    });
+
+    final res = await ApiService().placeTradeOrder(
+      userId: user.id,
+      symbol: widget.symbol,
+      action: _tradeType,
+      orderType: _orderType,
+      quantity: _qty,
+      price: _effectivePrice,
+    );
+
+    if (mounted) {
+      setState(() {
+        _isSubmitting = false;
+        if (res['success'] == true) {
+          _isSuccess = true;
+        } else {
+          _errorMessage = res['error']?.toString() ?? "Failed to send order to Breeze.";
+        }
+      });
+    }
   }
 
   String _formatIndian(double val) {
@@ -812,9 +852,26 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                        ),
+                        child: Text(
+                          _exchange,
+                          style: TextStyle(
+                            color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       Text(
-                        widget.symbol,
+                        _cleanSymbol,
                         style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
                       ),
                     ],
@@ -1283,6 +1340,30 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                     ],
                   ),
                 ),
+                if (_errorMessage != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    margin: const EdgeInsets.only(top: 14),
+                    decoration: BoxDecoration(
+                      color: AppTheme.dangerRose.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline, color: AppTheme.dangerRose, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: AppTheme.dangerRose, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 18),
 
                 // Confirm & Send CTA Button (Matches User Screenshot)
@@ -1316,16 +1397,36 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       padding: EdgeInsets.zero,
                     ),
-                    onPressed: _executeOrder,
-                    child: Text(
-                      "⚡ Confirm $_tradeType & Send Order via Breeze →",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 14.5,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
+                    onPressed: _isSubmitting ? null : _executeOrder,
+                    child: _isSubmitting
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              ),
+                              SizedBox(width: 10),
+                              Text(
+                                "⚡ Sending Order via Breeze…",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            "⚡ Confirm $_tradeType & Send Order via Breeze →",
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 14.5,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
                   ),
                 ),
               ],

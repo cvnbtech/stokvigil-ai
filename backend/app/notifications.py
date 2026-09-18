@@ -224,6 +224,20 @@ def format_telegram_alert(
         p = metrics_snapshot.get("current_price") or metrics_snapshot.get("price")
         if p is not None and str(p).strip() not in ("None", "N/A", "0", "0.0", "0.00", ""):
             snapshot_lines.append(f"• LTP: ₹{p}")
+
+        day_chg = metrics_snapshot.get("change_pct")
+        if day_chg is not None and str(day_chg).strip() not in ("None", "N/A", ""):
+            try:
+                chg_f = float(day_chg)
+                chg_sign = "+" if chg_f > 0 else ""
+                snapshot_lines.append(f"• Day Change: <b>{chg_sign}{chg_f:.2f}%</b>")
+            except (ValueError, TypeError):
+                snapshot_lines.append(f"• Day Change: <b>{day_chg}%</b>")
+
+        orb_st = metrics_snapshot.get("orb_status")
+        if orb_st and str(orb_st).strip() not in ("None", "N/A", "NONE", "DATA_INSUFFICIENT", ""):
+            safe_orb = html_lib.escape(str(orb_st).replace('_', ' '), quote=False)
+            snapshot_lines.append(f"• 15m ORB: <b>{safe_orb}</b>")
             
         rsi_15m = metrics_snapshot.get("rsi_15m")
         rsi_5m = metrics_snapshot.get("rsi_5m")
@@ -257,7 +271,7 @@ def format_telegram_alert(
                 html += f"{line}\n"
 
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    html += "<i>⚠️ Factual quantitative intelligence alert. Non-advisory analytical tracking.</i>"
+    html += "<i>⚖️ <b>SEBI Non-Advisory Compliance Disclosure:</b> StokVigil AI provides algorithmic quantitative data and mathematical tracking strictly for educational and surveillance purposes. Not investment advice or research recommendations. Trading in securities involves capital risk. Consult a SEBI-registered advisor before executing orders.</i>"
     return html
 
 def build_telegram_inline_keyboard(symbol: str) -> dict:

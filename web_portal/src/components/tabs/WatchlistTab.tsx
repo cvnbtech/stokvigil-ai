@@ -63,7 +63,7 @@ export default function WatchlistTab({
               value={ticker}
               onChange={e => handleStockChange(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addStock()}
-              placeholder="Search NSE stock (e.g. TATA, RELIANCE, HDFCBANK)"
+              placeholder="Search NSE/BSE stock (e.g. TATA, RELIANCE, 500325)"
               style={{
                 width: "100%", background: "none", border: "none",
                 padding: "11px 14px 11px 36px", fontSize: 12.5, fontWeight: 700,
@@ -103,7 +103,7 @@ export default function WatchlistTab({
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 6px 6px" }}>
               <span style={{ fontSize: 10, fontWeight: 800, color: C.cyan, letterSpacing: "0.5px" }}>
-                SUGGESTED STOCKS (CLICK TO ADD)
+                SUGGESTED NSE/BSE STOCKS (CLICK TO ADD)
               </span>
               <button
                 onClick={() => setTickerSuggestions([])}
@@ -277,7 +277,7 @@ export default function WatchlistTab({
                   <div style={{ fontSize: 15, fontWeight: 800, color: C.white }}>No Stocks in Watchlist</div>
                   <div style={{ fontSize: 11.5, color: C.gray1, marginTop: 4, lineHeight: 1.4, maxWidth: 300 }}>
                     {dematAutoSync
-                      ? "Search and add any NSE stock symbol above to monitor high-impact catalysts and automated signals."
+                      ? "Search and add any NSE/BSE stock symbol above to monitor high-impact catalysts and automated signals."
                       : "Demat auto-sync is paused. Add custom stocks above or enable auto-sync to view demat holdings."}
                   </div>
                 </div>

@@ -20,8 +20,8 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 - **AI Agent Engine**: `google-genai` (Official Google GenAI SDK) powered by `gemini-3.5-flash-lite` (verified primary model for Google Cloud Run) with streamlined fallback to `gemini-2.0-flash` and `gemini-1.5-flash` (via official `generate_content`) and the **2-Tier Smart Gatekeeper Architecture** (sub-millisecond deterministic RAM math for consolidating stocks + Gemini AI for active breakouts, slashing LLM calls by 90% and eliminating `429 Quota Exceeded` errors).
 - **Quantitative Engines**:
   - `market_cache.py` & `technical_engine.py`: High-speed thread-safe in-memory singleton cache storing indicators, prices, and Confluence Scores in RAM (<0.02ms $O(1)$ lookups, 900s / 15-minute TTL) with **Vectorized Batch Pre-Computation (`batch_fetch_multi_timeframe_technicals`)** downloading multi-ticker 5m OHLCV bars via parallel threads, session-invariant daily bar caching (8h TTL), bounded 20-worker async pre-computation (`asyncio.Semaphore(20)`), and **Sub-Second Atomic Live Tick Updates (`update_live_tick`)** enabling WebSocket tick streams to update LTP and VWAP deviation in RAM without full pipeline re-runs.
-  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO & 6-digit scrips)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
-  - `flow_tracker.py`: **100% Dynamic NSE F&O Universe Discovery (`get_dynamic_fo_universe`)** automatically fetching active contracts daily from official NSE archives (`fo_mktlots.csv`) with 24h caching (zero hardcoded tickers) and instant 0.0001ms BSE bypass. Non-blocking in-memory `_FO_FLOW_CACHE` (900s / 15-min TTL) with bounded 2.0s timeout on Yahoo option chain fallback preventing thread pool exhaustion. **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery or volume multiple $\ge 1.8\times$) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery or narrow price spread on surge) with zero fabricated default values.
+  - `technical_engine.py`: Multi-timeframe (5m/15m/1D) RSI, MACD crossovers, Intraday VWAP, 14-period ATR, EMAs (20/50/200), RSI Divergence detection, **15-Minute Opening Range Breakout (ORB)** tracking (`BULLISH_ORB_BREAKOUT`, `BEARISH_ORB_BREAKDOWN`, `INSIDE_ORB_RANGE`), **Upper & Lower Circuit Lock Freeze Detection** (`UPPER_CIRCUIT`, `LOWER_CIRCUIT`), **Date-Aware Camarilla Institutional Pivots** (strictly using prior completed session `iloc[-2]` to eliminate mid-day pivot distortion), automatic **Dual-Exchange Fallback (NSE .NS $\leftrightarrow$ BSE .BO & 6-digit scrips)**, and **1-Year Daily Candle Fallback** for off-market hours or illiquid tickers.
+  - `flow_tracker.py`: **100% Dynamic NSE F&O Universe Discovery (`get_dynamic_fo_universe`)** automatically fetching active contracts daily from official NSE archives (`fo_mktlots.csv`) with 24h caching (zero hardcoded tickers) and instant 0.0001ms BSE bypass. Non-blocking in-memory `_FO_FLOW_CACHE` (900s / 15-min TTL) with bounded 2.0s timeout on Yahoo option chain fallback preventing thread pool exhaustion. **Near-Month Expiry Option Chain Filtering** (`records["expiryDates"][0]`) eliminating far-month illiquid options from skewing PCR or Max Pain. **Wyckoff Volume-Spread Analysis (VSA)** differentiating `SMART_MONEY_ABSORPTION` ($\ge 55\%$ delivery or volume multiple $\ge 1.8\times$) from `OPERATOR_CHURN_TRAP` ($< 25\%$ delivery or narrow price spread on surge) with zero fabricated default values.
   - `fii_dii_tracker.py`: **Institutional Net Flow Tracker** aggregating daily official NSE FII & DII cash market flows with 30-minute in-memory caching, multi-tier authentic fallback (Live NSE $\rightarrow$ Supabase $\rightarrow$ `DATA_UNAVAILABLE` payload with zero synthetic volume or fake history deltas), and automated institutional sentiment classification (`BULLISH_INFLOW`, `STRONG_ACCUMULATION`, `HEAVY_DISTRIBUTION`, etc.).
   - `macro_filter.py`: Pre-Market War Room intelligence, **Market Breadth Advance-Decline Ratio (ADR)** tracker from NSE All-Indices (4 breadth regimes and Anti-Bull-Trap Veto), India VIX Volatility Regime (`^INDIAVIX`), Dual Market Benchmarks (**NIFTY 50** `^NSEI` & **BSE SENSEX** `^BSESN`), Sectoral Synchronization (`NIFTY IT`, `NIFTY AUTO`, `NIFTY BANK`, `NIFTY ENERGY`, `NIFTY PHARMA`, `NIFTY METAL`), and Forensic Health checks with zero fabricated defaults.
   - `alert_limiter.py`: 45-minute anti-fatigue cooldown state machine with Tier-1 emergency bypass.
@@ -109,6 +109,29 @@ To deliver true institutional precision without paid feeds, the quantitative eng
 
 ---
 
+### 4b. 🛡️ The 7 Quantitative Upgrades & Execution Realities
+To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 7 critical quantitative upgrades:
+
+1. **Hard Risk Veto for Severe Supply Shocks (Overcoming the Linear Blend Fallacy)**:
+   - *The Financial Reality*: Balance sheet fundamentals (P/E, D/E) operate on a multi-quarter time horizon, whereas intraday price and volume reflect immediate institutional liquidity and supply shocks. A clean balance sheet does not protect a trader from intraday margin liquidations, bulk dumps, or block sales.
+   - *Quantitative Hard Veto*: If a stock drops $\le -3.5\%$ with intraday VWAP breach and Camarilla $L_4$ structural floor breakdown, the engine enforces a **Hard Risk Veto**: Confluence score is hard-capped at $\le 28$ and `action_bias` is forced to `"SELL_WATCH"`, overriding fundamental buoys and preventing fatal drawdowns (such as Relaxo's -7.16% drop).
+2. **Demat Downside Capital Preservation Shield**:
+   - For portfolio holdings, if an owned stock's position P&L drops $\le -3.5\%$, an automatic `TRAILING_SL_ALERT` is triggered immediately regardless of baseline confluence score to protect capital.
+3. **Positive Momentum Surge Driver (Breakout Momentum Multiplier)**:
+   - For high-velocity breakouts (such as FCL surging $+7.61\%$), when `change_pct >= 5.0%` with a confirmed 15-Minute Opening Range Breakout (`BULLISH_ORB_BREAKOUT`), the engine injects an additional **+6 point momentum surge boost**, categorizing it as `PRICE_BREAKOUT` and guaranteeing alert delivery.
+4. **15-Minute Opening Range Breakout (ORB) Engine**:
+   - Quantifies the opening 15-minute price corridor (09:15–09:30 IST) into `orb_high_15m` and `orb_low_15m`. Categorizes momentum into `BULLISH_ORB_BREAKOUT` (price above corridor), `BEARISH_ORB_BREAKDOWN` (price below corridor), or `INSIDE_ORB_RANGE`.
+5. **Date-Aware Camarilla Pivot Indexation**:
+   - Strictly uses the prior completed session (`iloc[-2]`) when evaluating live market sessions, eliminating mid-day pivot shifts and distortion caused by incomplete intraday candles (`iloc[-1]`).
+6. **Upper & Lower Circuit Lock Freeze Detection**:
+   - Identifies $H=L=C$ freeze conditions with $\ge \pm 1.9\%$ moves, classifying stocks into `UPPER_CIRCUIT` or `LOWER_CIRCUIT` and activating catalyst triggers.
+7. **Granular Near-Month Options Expiry Filtering**:
+   - Filters official NSE option chain records strictly by current near-month/weekly expiry (`records["expiryDates"][0]`), eliminating far-month illiquid options from distorting Put-Call Ratio (PCR) and Max Pain.
+8. **Universal Sensitivity Delivery Gate**:
+   - Fixed sensitivity filtering so users configured with `ALL` sensitivity receive all valid actionable alerts, breakdowns, and capital preservation stop-loss defenses.
+
+---
+
 ### 5. Strict Zero-Default Policy (Pure Data Integrity Guarantee)
 > **Core Operational Rule:** *"Dont display default values if we dont recieve actual values"*
 * **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, or dummy `₹100.0` stock prices).
@@ -158,6 +181,14 @@ To deliver true institutional precision without paid feeds, the quantitative eng
   - `[📊 StokVigil Chart]`: Deep link directly opening the live interactive chart in the StokVigil Web PWA (`${WEB_PORTAL_URL}/chart?symbol={SYMBOL}&exchange={EXCH}`) when configured, or falling back to TradingView.
   - `[💼 ICICI Direct]`: Deep link to portfolio & order execution.
   - `[🏛️ NSE / BSE India Live]`: Direct link to official exchange quote and corporate announcement filings (with native support for 6-digit numeric BSE scrip codes).
+- **Live Intraday Market Snapshot**: Alerts dynamically render live market metrics when available:
+  - **LTP**: Last Traded Price in ₹.
+  - **Day Change (%)**: Intraday price change % with directional sign (`+X.XX%` / `-X.XX%`).
+  - **15m ORB**: 15-minute Opening Range Breakout status (`BULLISH ORB BREAKOUT`, `BEARISH ORB BREAKDOWN`, `INSIDE ORB RANGE`).
+  - **Delivery % & 15m RSI**: Volume delivery accumulation and 15m Relative Strength Index.
+  - **VWAP & F&O OI**: Session Volume-Weighted Average Price and derivative buildup bias.
+- **⚖️ Mandatory SEBI Non-Advisory Compliance Disclosure**: All Telegram cards and push notifications conclude with an explicit regulatory disclosure footer:
+  > *"⚖️ SEBI Non-Advisory Compliance Disclosure: StokVigil AI provides algorithmic quantitative data and mathematical tracking strictly for educational and surveillance purposes. Not investment advice or research recommendations. Trading in securities involves capital risk. Consult a SEBI-registered advisor before executing orders."*
 
 ### 3. Institutional 4-Column Metric Grid & Wyckoff VSA Presentation
 - **High-Density Metric Strip**: Alerts on both Flutter mobile (`MetricChipStrip`) and Next.js Web (`page.tsx`) replace raw JSON dumps with a clean, structured 4-column HUD:
@@ -269,9 +300,16 @@ Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides 
 ---
 
 ## ⚡ Financial Trade Execution Idempotency & Debounce Shield (`POST /api/v1/orders/place`)
-To prevent duplicate orders from accidental double-taps, network retries, or browser reloads, StokVigil enforces institutional financial idempotency:
+To prevent duplicate orders from accidental double-taps, network retries, or browser reloads, StokVigil enforces institutional financial idempotency and seamless multi-exchange broker order routing:
 - **Client Idempotency Key**: Accepts `X-Idempotency-Key` header or `idempotency_key` payload parameter (cached for 120 seconds). Replays return identical responses (`idempotent_replay: true`) without re-hitting the broker.
 - **15-Second In-Flight & Fingerprint Debounce**: Automatic hash fingerprinting on `(user_id, symbol, action, quantity, price)` debounces duplicate requests within 15 seconds, returning `409 Conflict` (`ORDER_IN_FLIGHT`) during active execution.
+- **Dynamic Order Product Type Resolution (`product`)**: Auto-detects whether the order should be routed as `cash` (CNC / Cash Delivery) or `margin` (MIS / MTF). For sell actions, the system checks whether the user owns sufficient shares in their active Demat holdings; if owned, it routes as `cash` to sell from delivery; if unheld, it resolves to `margin` for intraday/short positions, preventing broker rejection.
+- **Automated BSE Order Routing & Ticker Sanitation**: Automatically strips `.BO` suffixes, maps 6-digit numeric BSE scrip codes, and routes `exchange_code="BSE"` vs `"NSE"` directly to the ICICI Direct Breeze API.
+- **Cross-Platform Interactive `TradeOrderModal` (Mobile & Web)**: Integrated order execution modal in both Flutter mobile and Next.js Web:
+  - Dynamic `BSE` (amber) vs `NSE` (cyan) exchange badge display.
+  - One-tap quick quantity selectors (+1, +10, +25, +50, +100).
+  - Market vs Limit price execution.
+  - Live execution spinner (`⚡ Sending Order via Breeze…`) and instant in-modal error alert banners on broker errors or expired sessions.
 
 ---
 
@@ -322,7 +360,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (95 automated unit tests across 10 suites):
+3. Run test suite (102 automated unit tests across 11 suites):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

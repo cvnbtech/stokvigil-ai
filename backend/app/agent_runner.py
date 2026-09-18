@@ -943,6 +943,13 @@ def compute_deterministic_confluence(
     if sec_regime == "SECTOR_LEADER" and sec_rating is not None:
         confluence_drivers.append(f"Sector Leader: Outperforming {sector_rs_dict.get('sector_name')} by {sec_rating:+.1f}%")
         confluence_score = min(98, confluence_score + 4)
+
+    # 4. Intraday Momentum Surge Driver (+5% gain confirmed by ORB or VWAP)
+    day_chg = technicals.get("change_pct")
+    orb_stat = technicals.get("orb_status")
+    if day_chg is not None and day_chg >= 5.0 and orb_stat == "BULLISH_ORB_BREAKOUT":
+        confluence_drivers.append(f"Price Surge: Intraday breakout of {day_chg:+.1f}% confirmed by 15m Opening Range High.")
+        confluence_score = min(98, confluence_score + 6)
     elif sec_regime == "SECTOR_LAGGARD" and sec_rating is not None:
         confluence_drivers.append(f"Sector Laggard Warning: Underperforming {sector_rs_dict.get('sector_name')} by {sec_rating:+.1f}%")
         confluence_score = max(25, confluence_score - 6)
@@ -1016,21 +1023,85 @@ def compute_deterministic_confluence(
     # Determine Action Bias based on adjusted Confluence Score
     action_bias = "HOLD_NEUTRAL"
     has_actionable_signal = False
-    
-    # Check Trailing Stop-Loss for User Holding
     rsi_15m_val = technicals.get("rsi_15m")
-    if demat_context["is_in_portfolio"] and demat_context["unrealized_pnl_pct"] >= 5.0 and rsi_15m_val is not None and rsi_15m_val > 72:
-        action_bias = "TRAILING_SL_ALERT"
-        has_actionable_signal = True
-        catalyst_category = "TRAILING_STOP_TRIGGER"
-        alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{demat_context['unrealized_pnl_pct']}%)"
-        confluence_drivers.insert(0, f"Position gained {demat_context['unrealized_pnl_pct']}%; 15m RSI reached {rsi_15m_val} (Overbought zone).")
-    elif confluence_score >= 72 and has_real_price:
-        action_bias = "BUY_WATCH"
-        has_actionable_signal = True
-    elif confluence_score <= 38 and has_real_price:
+
+    # 1. Circuit Lock Detection & Handling (Trapped liquidity freeze)
+    is_locked = technicals.get("is_circuit_locked", False)
+    lock_type = technicals.get("circuit_lock_type")
+    if is_locked:
+        if lock_type == "LOWER_CIRCUIT":
+            confluence_drivers.insert(0, "Circuit Lock Warning: Stock locked at Lower Circuit. Order book frozen (No active buyers).")
+            confluence_score = min(15, confluence_score)
+            action_bias = "SELL_WATCH"
+            has_actionable_signal = True
+            catalyst_category = "PRICE_BREAKOUT"
+            alert_title = f"{symbol}: Trapped at Lower Circuit Freeze"
+        elif lock_type == "UPPER_CIRCUIT":
+            confluence_drivers.insert(0, "Circuit Lock Notice: Stock locked at Upper Circuit. Order book frozen (No active sellers).")
+            confluence_score = max(85, confluence_score)
+            action_bias = "BUY_WATCH"
+            has_actionable_signal = True
+            catalyst_category = "PRICE_BREAKOUT"
+            alert_title = f"{symbol}: Locked at Upper Circuit Freeze"
+
+    # 2. Hard Risk Veto for Severe Intraday Breakdown / Supply Shock (Eliminates Fundamental Buoy Trap)
+    day_change = technicals.get("change_pct")
+    p_vs_vwap = technicals.get("price_vs_vwap_pct")
+    l4_level = technicals.get("camarilla_pivots", {}).get("l4")
+    
+    is_severe_breakdown = False
+    breakdown_reasons = []
+
+    if day_change is not None and day_change <= -3.5:
+        is_severe_breakdown = True
+        breakdown_reasons.append(f"Severe intraday price drop ({day_change:+.2f}%)")
+    if p_vs_vwap is not None and p_vs_vwap <= -2.0 and technicals.get("is_volume_surge"):
+        is_severe_breakdown = True
+        breakdown_reasons.append(f"VWAP Breakdown with Volume Surge ({p_vs_vwap:+.2f}% below VWAP)")
+    if l4_level is not None and current_price > 0 and current_price < l4_level:
+        is_severe_breakdown = True
+        breakdown_reasons.append(f"Camarilla L4 institutional floor breached (₹{l4_level:,.2f})")
+
+    if is_severe_breakdown:
+        # Override fundamental buoy: immediate market supply vetoes balance sheet scores
+        confluence_score = min(28, confluence_score)
         action_bias = "SELL_WATCH"
         has_actionable_signal = True
+        catalyst_category = "PRICE_BREAKOUT"
+        chg_fmt = f"{day_change:+.1f}%" if day_change is not None else "-3.5%"
+        alert_title = f"{symbol}: Severe Price Breakdown Alert ({chg_fmt})"
+        for r in reversed(breakdown_reasons):
+            confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
+
+    # 3. Demat Holding Portfolio Protection Override (Both Downside Loss and Trailing Profit)
+    if demat_context["is_in_portfolio"]:
+        pnl = demat_context["unrealized_pnl_pct"]
+        if pnl <= -3.5:
+            # Capital preservation stop-loss triggered
+            action_bias = "TRAILING_SL_ALERT"
+            has_actionable_signal = True
+            catalyst_category = "TRAILING_STOP_TRIGGER"
+            alert_title = f"{symbol}: Stop-Loss Defense Trigger (P&L: {pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach.")
+            confluence_score = min(20, confluence_score)
+        elif pnl >= 5.0 and rsi_15m_val is not None and rsi_15m_val > 72:
+            action_bias = "TRAILING_SL_ALERT"
+            has_actionable_signal = True
+            catalyst_category = "TRAILING_STOP_TRIGGER"
+            alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"Position gained +{pnl:+.1f}%; 15m RSI reached {rsi_15m_val} (Overbought zone).")
+    elif not is_severe_breakdown and not is_locked:
+        # Fallback to standard confluence score thresholds
+        if confluence_score >= 72 and has_real_price:
+            action_bias = "BUY_WATCH"
+            has_actionable_signal = True
+            if day_change is not None and day_change >= 5.0:
+                catalyst_category = "PRICE_BREAKOUT"
+                alert_title = f"{symbol}: Intraday Momentum Breakout Surge ({day_change:+.1f}%)"
+                confluence_drivers.insert(0, f"Momentum Breakout: Strong intraday surge of {day_change:+.2f}% with bullish momentum.")
+        elif confluence_score <= 38 and has_real_price:
+            action_bias = "SELL_WATCH"
+            has_actionable_signal = True
 
     # Multi-Timeframe, Macro & Sector Veto Guardrails
     ema_200_val = technicals.get("ema_200")
@@ -1163,10 +1234,27 @@ def check_has_active_catalyst(
         pnl_pct = ((curr_p - avg_p) / avg_p * 100) if avg_p > 0 else 0.0
         raw_rsi = technicals.get("rsi_15m")
         rsi = float(raw_rsi) if raw_rsi is not None else 50.0
-        if (pnl_pct >= 5.0 and rsi > 70.0) or pnl_pct <= -4.0:
+        if (pnl_pct >= 5.0 and rsi > 70.0) or pnl_pct <= -3.5:
             return True, f"Demat Holding Protection Trigger (P&L: {pnl_pct:+.1f}%)"
 
-    # 2. Institutional Volume Surge (>= 1.5x 20-period volume MA)
+    # 2. Sharp Intraday Price Surge / Breakdown (Momentum & Volatility Core)
+    change_pct = technicals.get("change_pct")
+    if change_pct is not None:
+        try:
+            cp = float(change_pct)
+            if abs(cp) >= 2.5:
+                return True, f"Sharp Price Movement ({cp:+.1f}%)"
+        except (ValueError, TypeError):
+            pass
+
+    orb_status = technicals.get("orb_status")
+    if orb_status in ["BULLISH_ORB_BREAKOUT", "BEARISH_ORB_BREAKDOWN"]:
+        return True, f"15m Opening Range Break ({orb_status})"
+
+    if technicals.get("is_circuit_locked"):
+        return True, f"Circuit Lock Freeze ({technicals.get('circuit_lock_type')})"
+
+    # 3. Institutional Volume Surge (>= 1.5x 20-period volume MA)
     raw_vol = technicals.get("volume_multiple")
     if raw_vol is None:
         raw_vol = technicals.get("volume_surge_ratio")
@@ -1653,7 +1741,16 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         raw_rsi = technicals.get("rsi_15m")
                         rsi_15m = float(raw_rsi) if raw_rsi is not None else 50.0
                         
-                        if pnl_pct >= 5.0 and rsi_15m > 72.0:
+                        if pnl_pct <= -3.5:
+                            analysis["action_bias"] = "TRAILING_SL_ALERT"
+                            analysis["has_actionable_signal"] = True
+                            analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
+                            analysis["alert_title"] = f"{symbol}: Stop-Loss Defense Trigger (P&L: {pnl_pct:+.1f}%)"
+                            analysis["holding_guidance"] = f"CRITICAL RISK DEFENSE: Position down {pnl_pct:+.1f}%. Immediate capital preservation stop-loss active."
+                            drivers = list(analysis.get("confluence_drivers", []))
+                            drivers.insert(0, f"Portfolio Risk: Position dropped {pnl_pct:+.1f}%. Protective stop-loss breach.")
+                            analysis["confluence_drivers"] = drivers
+                        elif pnl_pct >= 5.0 and rsi_15m > 72.0:
                             analysis["action_bias"] = "TRAILING_SL_ALERT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
@@ -1683,21 +1780,23 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 tactical_levels = analysis.get("tactical_levels", {})
                 holding_guidance = analysis.get("holding_guidance")
                 
-                # Sensitivity Filter
+                # Sensitivity Filter: Guarantee alerts for critical breakdowns and stop-loss breaches
                 should_dispatch = False
+                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH"] or confluence_score <= 35)
+
                 if alert_sensitivity == "HIGH":
-                    should_dispatch = (confluence_score >= 80) or (action_bias == "TRAILING_SL_ALERT")
+                    should_dispatch = (confluence_score >= 80) or is_breakdown_or_sl
                 elif alert_sensitivity == "FII":
                     is_fii = (catalyst_type in ["BLOCK_DEAL", "DEBT_REDUCTION"] or flow_data.get("is_high_delivery"))
-                    should_dispatch = is_fii and (confluence_score >= 65 or has_actionable)
+                    should_dispatch = (is_fii and (confluence_score >= 65 or has_actionable)) or is_breakdown_or_sl
                 else: # ALL
-                    should_dispatch = has_actionable or (confluence_score >= 65)
+                    should_dispatch = has_actionable or (confluence_score >= 65) or is_breakdown_or_sl
 
                 if not should_dispatch:
                     return None
 
-                # Anti-Fatigue Cooldown Check
-                is_tier1 = (confluence_score >= 88 or action_bias == "TRAILING_SL_ALERT" or catalyst_type == "BLOCK_DEAL")
+                # Anti-Fatigue Cooldown Check: Treat severe breakdowns, stop-loss defenses, and block deals as Tier-1
+                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
                 allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
                 
                 if not allowed:
@@ -1779,6 +1878,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                         demat_position=demat_pos,
                         metrics_snapshot={
                             "current_price": technicals.get("current_price"),
+                            "change_pct": technicals.get("change_pct"),
+                            "orb_status": technicals.get("orb_status"),
                             "rsi_15m": technicals.get("rsi_15m"),
                             "rsi_5m": technicals.get("rsi_5m"),
                             "vwap": technicals.get("vwap"),
@@ -1795,6 +1896,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 CATALYST_SYNONYM_MAP = {
                     "EARNINGS_SURPRISE": "EARNINGS_BEAT",
                     "DEBT_REDUCTION": "DEBT_CHANGE",
+                    "PRICE_BREAKDOWN": "PRICE_BREAKOUT",
+                    "STOP_LOSS_DEFENSE": "TRAILING_STOP_TRIGGER"
                 }
                 normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
                 VALID_CATALYST_TYPES = {

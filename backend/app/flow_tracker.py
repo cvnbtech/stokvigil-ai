@@ -193,6 +193,20 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
                 if not data_rows:
                     return None
 
+                # Granular Expiry Filtering: Filter strictly for near-month / weekly current expiry
+                # Eliminates far-month illiquid options from distorting PCR and Max Pain
+                expiry_dates = records.get("expiryDates", [])
+                current_expiry = expiry_dates[0] if expiry_dates else None
+
+                filtered_rows = []
+                for row in data_rows:
+                    row_expiry = row.get("expiryDate") or row.get("CE", {}).get("expiryDate") or row.get("PE", {}).get("expiryDate")
+                    if current_expiry and row_expiry and row_expiry != current_expiry:
+                        continue
+                    filtered_rows.append(row)
+
+                data_rows = filtered_rows if filtered_rows else data_rows
+
                 strikes_data = []
                 total_ce_oi = 0
                 total_pe_oi = 0
@@ -262,6 +276,7 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
                         max_pain_strike = k
 
                 result = {
+                    "expiry_date": current_expiry,
                     "pcr": pcr,
                     "max_pain_strike": max_pain_strike,
                     "major_support_strike": sup_strike,

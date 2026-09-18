@@ -168,6 +168,7 @@ class PlaceOrderRequest(BaseModel):
     order_type: str = Field(..., pattern=r'^(MARKET|LIMIT|market|limit)$')
     quantity: int = Field(..., gt=0, le=100000)
     price: Optional[float] = Field(default=0.0, ge=0.0)
+    product: Optional[str] = Field(default=None, pattern=r'^(cash|margin|CASH|MARGIN)?$')
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
 
 # Financial Idempotency Cache for Order Execution
@@ -1947,10 +1948,31 @@ def place_trade_order(
             action_type = "buy" if req.action.upper() == "BUY" else "sell"
             order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
 
+            # Dynamic Product Type Resolution (Option A: Auto-detect CNC vs MIS)
+            product_type = req.product.lower() if getattr(req, "product", None) else None
+            if not product_type:
+                if action_type == "sell":
+                    # Check if user holds sufficient quantity in Demat holdings
+                    user_holdings = fetch_user_portfolio(app_key, secret_key, session_token)
+                    req_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "")
+                    has_holding = any(
+                        (str(h.get("symbol", "")).upper().replace(".NS", "").replace(".BO", "") == req_sym or
+                         str(h.get("stock_code", "")).upper() == req_sym) and
+                        int(h.get("quantity", 0) or 0) >= req.quantity
+                        for h in user_holdings
+                    )
+                    product_type = "cash" if has_holding else "margin"
+                else:
+                    product_type = "cash"
+
+            clean_stock_code = req.symbol.upper().replace(".NS", "").replace(".BO", "").strip()
+            is_bse = req.symbol.upper().endswith(".BO") or (clean_stock_code.isdigit() and len(clean_stock_code) == 6)
+            exchange_code = "BSE" if is_bse else "NSE"
+
             order_res = breeze.place_order(
-                stock_code=req.symbol.upper(),
-                exchange_code="NSE",
-                product="cash",
+                stock_code=clean_stock_code,
+                exchange_code=exchange_code,
+                product=product_type,
                 action=action_type,
                 order_type=order_type,
                 stoploss="0",
@@ -1961,8 +1983,10 @@ def place_trade_order(
             order_resp = {
                 "status": "success",
                 "symbol": req.symbol,
+                "exchange": exchange_code,
                 "action": req.action,
                 "quantity": req.quantity,
+                "product": product_type,
                 "broker_response": order_res,
                 "idempotency_key": raw_key or None,
                 "idempotent_replay": False
@@ -1978,6 +2002,7 @@ def place_trade_order(
                     "symbol": req.symbol,
                     "action": req.action,
                     "quantity": req.quantity,
+                    "product": locals().get("product_type", "cash"),
                     "idempotency_key": raw_key or None,
                     "idempotent_replay": False
                 }

@@ -464,5 +464,52 @@ class ApiService {
     }
     return null;
   }
+
+  Future<Map<String, dynamic>> placeTradeOrder({
+    required String userId,
+    required String symbol,
+    required String action,
+    required String orderType,
+    required int quantity,
+    required double price,
+    String? idempotencyKey,
+  }) async {
+    final cleanSym = symbol.trim().toUpperCase();
+    final key = idempotencyKey ?? '$userId-$cleanSym-${DateTime.now().millisecondsSinceEpoch}';
+    try {
+      final headers = _getAuthHeaders();
+      headers['X-Idempotency-Key'] = key;
+
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/v1/orders/place'),
+        headers: headers,
+        body: jsonEncode({
+          'user_id': userId,
+          'symbol': cleanSym,
+          'action': action.toUpperCase(),
+          'order_type': orderType.toUpperCase(),
+          'quantity': quantity,
+          'price': price,
+          'idempotency_key': key,
+        }),
+      ).timeout(const Duration(seconds: 25));
+
+      if (res.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(res.body)};
+      } else {
+        String msg = 'Execution error';
+        try {
+          final errBody = jsonDecode(res.body);
+          msg = errBody['detail'] ?? errBody['message'] ?? 'HTTP ${res.statusCode}';
+        } catch (_) {
+          msg = 'HTTP ${res.statusCode}';
+        }
+        return {'success': false, 'error': msg};
+      }
+    } catch (e) {
+      debugPrint("API Error placing trade order for $cleanSym: $e");
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 }
 
