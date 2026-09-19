@@ -149,7 +149,9 @@ def format_telegram_alert(
     Includes Action Badges, Demat context, Technical Drivers, and Risk-Reward Levels.
     """
     bias_upper = (action_bias or "HOLD_NEUTRAL").upper()
-    if "BUY" in bias_upper or "ACCUMULATE" in bias_upper:
+    if "TARGET_1" in bias_upper or "TRAIL_ALERT" in bias_upper:
+        header_badge = "🎯 <b>STOKVIGIL PROTOCOL: TACTICAL LEVEL 1 REACHED & TRAIL TO COST</b> 🎯"
+    elif "BUY" in bias_upper or "ACCUMULATE" in bias_upper:
         header_badge = "🟢 <b>STOKVIGIL SIGNAL: ACCUMULATE / BUY WATCH</b> 🟢"
     elif "SELL" in bias_upper:
         header_badge = "🔴 <b>STOKVIGIL SIGNAL: PROFIT BOOK / SELL WATCH</b> 🔴"
@@ -212,30 +214,30 @@ def format_telegram_alert(
                 html += "📐 <b>Tactical Defense & Downside Levels:</b>\n"
                 html += f"• <b>Sell / Short Zone:</b> {entry}\n"
                 if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
-                    html += f"• <b>Downside Target 1:</b> {t1}\n"
+                    html += f"• <b>Tactical Support 1 (1.5x ATR):</b> {t1}\n"
                 if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
-                    html += f"• <b>Downside Target 2:</b> {t2}\n"
+                    html += f"• <b>Expansion Support 2 (2.5x ATR):</b> {t2}\n"
                 if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
                     html += f"• <b>Protective Buy-Stop:</b> {sl}{rr_str}\n"
             elif "TRAILING" in bias_upper:
                 html += "🛡️ <b>Capital Defense & Exit Levels:</b>\n"
                 html += f"• <b>Defense Range:</b> {entry}\n"
                 if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
-                    html += f"• <b>Target 1:</b> {t1}\n"
+                    html += f"• <b>Tactical Benchmark 1:</b> {t1}\n"
                 if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
-                    html += f"• <b>Target 2:</b> {t2}\n"
+                    html += f"• <b>Expansion Benchmark 2:</b> {t2}\n"
                 if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
                     html += f"• <b>Trailing SL (Exit):</b> {sl}{rr_str}\n"
             else:
                 html += "📐 <b>Tactical Risk-Reward Levels:</b>\n"
                 html += f"• <b>Entry Range:</b> {entry}\n"
                 if t1 and str(t1).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t1):
-                    html += f"• <b>Target 1 (1.5x ATR):</b> {t1}\n"
+                    html += f"• <b>Tactical Resistance 1 (1.5x ATR):</b> {t1}\n"
                 if t2 and str(t2).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(t2):
-                    html += f"• <b>Target 2 (Swing High):</b> {t2}\n"
+                    html += f"• <b>Expansion Resistance 2 (2.5x ATR):</b> {t2}\n"
                 if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
                     html += f"• <b>Stop-Loss:</b> {sl}{rr_str}\n"
-            html += "\n"
+            html += "• <i>Note: Mathematical volatility benchmarks. Not an advisory price target.</i>\n\n"
 
     # Technical Metrics Snapshot (ZERO-DEFAULT RULE: Only render actual received metrics)
     if metrics_snapshot and isinstance(metrics_snapshot, dict):

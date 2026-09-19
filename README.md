@@ -3,11 +3,13 @@
 
 StokVigil AI is an automated, unsleeping 5-minute market watchtower operating strictly during Indian Stock Exchange trading hours (09:15 AM to 03:30 PM IST). 
 
+> 📖 **Comprehensive Developer & Prompt Engineering Specification**: See [`STOKVIGIL_MASTER_PROMPT.md`](./STOKVIGIL_MASTER_PROMPT.md) for the complete line-by-line master system prompt, quantitative algorithms, prompt engineering directives, and SEBI compliance guidelines.
+
 ---
 
 ## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
 - **No Unsolicited Automated Trades**: The application never executes trades without user confirmation.
-- **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts).
+- **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts). Projections are strictly labeled as **Tactical Resistance 1 (1.5x ATR Benchmark)** / **Expansion Resistance 2 (2.5x ATR Benchmark)** and **Tactical Support 1/2**, accompanied by mandatory mathematical non-advisory disclaimers.
 - **Bank-Grade Security & PII Privacy**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, Telegram webhook secret token validation (`X-Telegram-Bot-Api-Secret-Token`), anti-hijacking Telegram pairing (strictly rejecting public email addresses), complete identifier log masking (`mask_id` exposing only the last 4 characters), whitelisted CORS origins, AES-256 Fernet vault key encryption, and Android ProGuard/R8 code obfuscation.
 
 ---
@@ -102,15 +104,15 @@ To deliver true institutional precision without paid feeds, the quantitative eng
    - `CHOPPY_SIDEWAYS` ($\text{ADX} < 20$): Enforces an **8-point chop penalty** and blocks false breakouts in sideways consolidation zones.
 4. **Camarilla Equation Institutional Pivots ($H_4, H_3, L_3, L_4$)**:
    - Computes exact daily institutional order book floors and ceilings ($H_4 > H_3 > L_3 > L_4$).
-   - $L_3$: Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Target 1 (1.5x ATR), $H_4$: Target 2 breakout ceiling.
+   - $L_3$: Tactical Accumulation floor, $L_4$: Hard structural stop-loss, $H_3$: Tactical Resistance 1 (1.5x ATR Benchmark), $H_4$: Expansion Resistance 2 (2.5x ATR Benchmark).
 5. **Triple-Timeframe Fractal Harmony & Chandelier Trailing SL**:
    - Synthesizes **Daily Tide** (Daily price $\ge$ 50 EMA, Daily RSI $\ge 48$), **15m Wave** (Price vs VWAP $\ge -0.2\%$, no bearish divergence), and **5m Trigger** (Volume surge or MACD crossover).
    - Dynamic Chandelier Trailing Stop locks Demat profits at $\text{Current Price} - (2.5 \times \text{ATR})$, ratcheting upward monotonically.
 
 ---
 
-### 4b. 🛡️ The 7 Quantitative Upgrades & Execution Realities
-To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 7 critical quantitative upgrades:
+### 4b. 🛡️ The 13 Quantitative Upgrades & Institutional Execution Realities
+To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 13 critical quantitative upgrades:
 
 1. **Hard Risk Veto for Severe Supply Shocks (Overcoming the Linear Blend Fallacy)**:
    - *The Financial Reality*: Balance sheet fundamentals (P/E, D/E) operate on a multi-quarter time horizon, whereas intraday price and volume reflect immediate institutional liquidity and supply shocks. A clean balance sheet does not protect a trader from intraday margin liquidations, bulk dumps, or block sales.
@@ -129,6 +131,19 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 7
    - Filters official NSE option chain records strictly by current near-month/weekly expiry (`records["expiryDates"][0]`), eliminating far-month illiquid options from distorting Put-Call Ratio (PCR) and Max Pain.
 8. **Universal Sensitivity Delivery Gate**:
    - Fixed sensitivity filtering so users configured with `ALL` sensitivity receive all valid actionable alerts, breakdowns, and capital preservation stop-loss defenses.
+9. **Two-Way 200 EMA Macro Trend Anchor**:
+   - *The Market Reality*: Counter-trend breakouts suffer high statistical failure rates. Longs triggered in a macro bear trend or breakdown shorts triggered in a macro bull rally frequently trap retail traders.
+   - *Two-Way Macro Anchor*: Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, any `SELL_WATCH` breakdown setup is vetoed to `HOLD_NEUTRAL`. All trades are forced to align with the primary institutional trend tide.
+10. **15-Minute Candle Close Confirmation & Wick Rejection Engine**:
+    - *The Market Reality*: Mid-bar false breakout wicks (e.g. testing the ORB high or resistance for 30 seconds before reversing sharply) cause devastating repainting whipsaws.
+    - *Candle Close Verification*: Evaluates breakout catalysts (`BULLISH_ORB_BREAKOUT`, `PRICE_BREAKOUT`) strictly at the 15-minute candle close boundary (`is_15m_candle_closed` & `candle_close_confirmed`). Filters out long upper/lower wick rejections (`ORB_UPPER_WICK_REJECTION`, `ORB_LOWER_WICK_REJECTION`), ensuring that only price bars closing decisively beyond resistance trigger alerts.
+11. **Target 1 Achieved & Trail-to-Cost Lifecycle Alert (`TARGET_1_TRAIL_ALERT`)**:
+    - *The Quantitative Edge*: Institutional desks do not let winning positions turn into losers. When an active watchlist or portfolio stock reaches Tactical Resistance 1 (1.5x ATR Benchmark), the engine triggers an automated lifecycle alert: *"🎯 TARGET 1 REACHED: Lock 50% Gains & Trail Stop-Loss to Breakeven Cost"*, locking in risk-free execution.
+12. **SEBI Non-Advisory Mathematical Disclaimers & Terminology Shift**:
+    - Eliminates advisory tip phrasing. "Target 1" is formally defined and rendered as **"Tactical Resistance 1 (1.5x ATR Benchmark)"** and "Target 2" as **"Expansion Resistance 2 (2.5x ATR Benchmark)"**. Every alert notification, Telegram card, and Web/Mobile HUD embeds the explicit mathematical footnote:
+      > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
+13. **Stop-Loss Limit (`SL-L`) Execution Routing & SEBI/NSE `SL-M` Ban Enforcement**:
+    - Enforces full compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives to prevent freak-trade execution slippage. Validates stop-orders: any stop order submitted as `MARKET` is rejected with `HTTP 422 Unprocessable Entity`. Stop orders must be placed as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
 
 ---
 
@@ -177,7 +192,7 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 7
 - **Single Central Bot Architecture**: A single bot handle (`@StokVigilAi_bot`) serves unlimited individual users with complete tenant isolation.
 - **Anti-Hijacking Telegram Pairing Security**: Telegram pairing requires the user's internal User ID / UUID. Linking via email addresses is strictly rejected and prohibited (`reason: email_not_permitted`) to protect users from alert feed interception. Incoming webhooks are verified via `X-Telegram-Bot-Api-Secret-Token`.
 - **Zero Raw PII Telemetry / Log Masking**: In compliance with financial data privacy standards, all user IDs, UUIDs, and Telegram Chat IDs are masked across all server and pipeline logs (`mask_id`), displaying only the last 4 characters (`***XXXX`).
-- **Rich HTML Cards & Interactive Cockpit Buttons**: Every alert includes color-coded badges, Demat position snapshot, Wyckoff VSA market snapshot, tactical levels (Entry, Target 1, Target 2, Stop-Loss, R:R), and interactive buttons:
+- **Rich HTML Cards & Interactive Cockpit Buttons**: Every alert includes color-coded badges, Demat position snapshot, Wyckoff VSA market snapshot, tactical levels (Entry, Tactical Resistance 1 [1.5x ATR Benchmark], Expansion Resistance 2 [2.5x ATR Benchmark], Tactical Support 1/2, Stop-Loss, R:R), dedicated `🎯 TARGET 1 REACHED: TRAIL TO COST` header badges for profit-locking lifecycle transitions, non-advisory mathematical disclaimers, and interactive buttons:
   - `[📊 StokVigil Chart]`: Deep link directly opening the live interactive chart in the StokVigil Web PWA (`${WEB_PORTAL_URL}/chart?symbol={SYMBOL}&exchange={EXCH}`) when configured, or falling back to TradingView.
   - `[💼 ICICI Direct]`: Deep link to portfolio & order execution.
   - `[🏛️ NSE / BSE India Live]`: Direct link to official exchange quote and corporate announcement filings (with native support for 6-digit numeric BSE scrip codes).
@@ -304,12 +319,18 @@ To prevent duplicate orders from accidental double-taps, network retries, or bro
 - **Client Idempotency Key**: Accepts `X-Idempotency-Key` header or `idempotency_key` payload parameter (cached for 120 seconds). Replays return identical responses (`idempotent_replay: true`) without re-hitting the broker.
 - **15-Second In-Flight & Fingerprint Debounce**: Automatic hash fingerprinting on `(user_id, symbol, action, quantity, price)` debounces duplicate requests within 15 seconds, returning `409 Conflict` (`ORDER_IN_FLIGHT`) during active execution.
 - **Direction-Aware Tactical Risk Levels (`compute_tactical_levels`)**:
-  - **Bullish / Accumulate (`BUY_WATCH`)**: Computes upside Target 1 ($1.5\times$ ATR), Target 2 (Swing High / $2.5\times$ ATR), and protective Stop-Loss below price ($\le -2\%$).
-  - **Bearish / Breakdown (`SELL_WATCH`)**: Computes downside Target 1 ($\le -2\%$), Target 2 ($\le -5\%$), and protective Buy-Stop strictly above price ($\ge +2\%$). Risk-Reward ratio is formulated directionally as $(\text{Price} - \text{Target}_2) / (\text{Stop} - \text{Price})$.
+  - **Bullish / Accumulate (`BUY_WATCH`)**: Computes upside Tactical Resistance 1 ($1.5\times$ ATR benchmark), Expansion Resistance 2 (Swing High / $2.5\times$ ATR benchmark), and protective Stop-Loss below price ($\le -2\%$).
+  - **Bearish / Breakdown (`SELL_WATCH`)**: Computes downside Tactical Support 1 ($\le -2\%$), Extended Support 2 ($\le -5\%$), and protective Buy-Stop strictly above price ($\ge +2\%$). Risk-Reward ratio is formulated directionally as $(\text{Price} - \text{Support}_2) / (\text{Stop} - \text{Price})$.
+  - **SEBI Non-Advisory Volatility Disclaimer**: Appends the mandatory mathematical footnote clarifying that levels are non-advisory statistical projections based on 1.5x and 2.5x ATR volatility bands and prior session Camarilla pivots strictly for risk tracking.
 - **Silent Broker RMS Rejection Interception**: ICICI Breeze API returns `{"Status": 500, "Error": "RMS: Margin Shortage..."}` without raising Python exceptions. The backend explicitly inspects broker response status; non-200 or error codes immediately raise `HTTP 422 Unprocessable Entity` with the exact broker RMS message, alerting users instead of masking rejections as success.
 - **Strict Limit Price Validation & Indian Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**:
   - Enforces Pydantic `model_validator(mode="after")` requiring `price > 0.0` when `order_type == "LIMIT"`.
   - Automatically snaps all limit prices to Indian exchange standard ₹0.05 tick size intervals using financial half-up rounding (e.g. `₹1,245.33` $\rightarrow$ `₹1,245.35`).
+- **SEBI/NSE Stop-Loss Market (SL-M) Ban Enforcement & Mandatory Stop-Loss Limit (SL-L) Routing**:
+  - Enforces full regulatory compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives to protect traders from catastrophic freak-trade market impact slippage.
+  - If `order_type == "MARKET"` and `trigger_price > 0`, the endpoint immediately rejects the order with `HTTP 422 Unprocessable Entity`:
+    > *"Stop-Loss Market (SL-M) orders are prohibited under SEBI/NSE F&O rules. Please place a Stop-Loss Limit (SL-L) order with both price and trigger_price."*
+  - For compliant Stop-Loss Limit (`SL-L`) orders, both `price` (limit ceiling) and `trigger_price` are validated and snapped to the Indian exchange ₹0.05 tick size before being routed to ICICI Direct Breeze.
 - **Dynamic Product Resolution & SEBI Intraday MIS Margin Short Notice**:
   - Auto-detects whether the order should be routed as `cash` (CNC Delivery) or `margin` (MIS / Margin Short).
   - When selling unheld shares, the order routes as `margin` and injects mandatory SEBI regulatory disclosure:

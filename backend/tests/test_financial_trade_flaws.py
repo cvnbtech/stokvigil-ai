@@ -104,7 +104,7 @@ class TestFinancialTradeFlaws(unittest.TestCase):
         )
         self.assertIn("Tactical Defense & Downside Levels", sell_msg)
         self.assertIn("Sell / Short Zone", sell_msg)
-        self.assertIn("Downside Target 1", sell_msg)
+        self.assertIn("Tactical Support 1", sell_msg)
         self.assertIn("Protective Buy-Stop", sell_msg)
 
         # TRAILING_SL_ALERT formatting
@@ -273,6 +273,48 @@ class TestFinancialTradeFlaws(unittest.TestCase):
             self.assertIn("SEBI Notice", res["sebi_notice"])
             self.assertIn("03:15 PM IST", res["sebi_notice"])
             self.assertIn("auction penalty", res["sebi_notice"])
+
+    def test_place_order_sl_m_ban_and_sl_l_validation(self):
+        """SEBI/NSE SL-M ban: Reject MARKET stop-loss orders and enforce SL-L limit price."""
+        # 1. SL-M order must raise ValidationError under SEBI/NSE prohibition
+        with self.assertRaises(ValidationError) as ctx:
+            PlaceOrderRequest(
+                user_id="user_sl_test",
+                symbol="NIFTY",
+                action="SELL",
+                order_type="MARKET",
+                quantity=25,
+                trigger_price=24500.0
+            )
+        self.assertIn("SL-M", str(ctx.exception))
+        self.assertIn("prohibited", str(ctx.exception).lower())
+
+        # 2. SL-L order missing limit price must raise ValidationError
+        with self.assertRaises(ValidationError) as ctx:
+            PlaceOrderRequest(
+                user_id="user_sl_test",
+                symbol="NIFTY",
+                action="SELL",
+                order_type="LIMIT",
+                quantity=25,
+                price=0.0,
+                trigger_price=24500.0
+            )
+        self.assertIn("price > 0.0", str(ctx.exception))
+
+        # 3. Valid SL-L order with both price and trigger_price succeeds
+        req_sl_l = PlaceOrderRequest(
+            user_id="user_sl_test",
+            symbol="NIFTY",
+            action="SELL",
+            order_type="LIMIT",
+            quantity=25,
+            price=24480.0,
+            trigger_price=24500.0
+        )
+        self.assertEqual(req_sl_l.order_type, "LIMIT")
+        self.assertEqual(req_sl_l.price, 24480.0)
+        self.assertEqual(req_sl_l.trigger_price, 24500.0)
 
 
 if __name__ == "__main__":

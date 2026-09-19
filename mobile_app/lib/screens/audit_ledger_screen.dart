@@ -296,7 +296,7 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
               child: Row(
                 children: [
                   _buildFilterChip("ALL", "All Signals"),
-                  _buildFilterChip("TARGET_1_REACHED", "🎯 Target 1 Reached"),
+                  _buildFilterChip("TARGET_1_REACHED", "🎯 Tactical Level 1 Reached"),
                   _buildFilterChip("STOP_LOSS_DEFENDED", "🛡️ Stop Loss Defended"),
                 ],
               ),

@@ -266,6 +266,9 @@ _NEWS_CACHE_TTL: float = 1800.0  # 30 minutes
 _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
 _DEMAT_PORTFOLIO_CACHE_TTL: float = 240.0
 
+# Target 1 Reached Dispatch Cache: key -> timestamp (Prevents spamming Target 1 hit alerts)
+_TARGET_1_DISPATCHED_TODAY: Dict[str, float] = {}
+
 # Per-scan AI Call Counter: Limits Gemini calls to max 15 per 5-minute cycle across all users
 _AI_SCAN_CALLS_COUNT: int = 0
 _MAX_AI_CALLS_PER_SCAN: int = getattr(settings, "MAX_AI_CALLS_PER_SCAN", 15)
@@ -786,8 +789,11 @@ def compute_tactical_levels(
             "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
             "target_1": f"₹{target_1:,.2f}",
             "target_2": f"₹{target_2:,.2f}",
+            "tactical_support_1": f"₹{target_1:,.2f}",
+            "expansion_support_2": f"₹{target_2:,.2f}",
             "protective_stop_loss": f"₹{stop_loss:,.2f}",
-            "risk_reward_ratio": f"1:{rr_ratio}"
+            "risk_reward_ratio": f"1:{rr_ratio}",
+            "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
         }
 
     # 2. Bullish Setup (BUY_WATCH / HOLD_NEUTRAL) or Demat Protection
@@ -837,8 +843,11 @@ def compute_tactical_levels(
         "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
         "target_1": f"₹{target_1:,.2f}",
         "target_2": f"₹{target_2:,.2f}",
+        "tactical_resistance_1": f"₹{target_1:,.2f}",
+        "expansion_resistance_2": f"₹{target_2:,.2f}",
         "protective_stop_loss": f"₹{stop_loss:,.2f}",
-        "risk_reward_ratio": f"1:{rr_ratio}"
+        "risk_reward_ratio": f"1:{rr_ratio}",
+        "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
     }
 
 
@@ -1148,6 +1157,7 @@ def compute_deterministic_confluence(
     # Multi-Timeframe, Macro & Sector Veto Guardrails
     ema_200_val = technicals.get("ema_200")
     is_macro_downtrend = bool(ema_200_val and current_price < ema_200_val)
+    is_macro_uptrend = bool(ema_200_val and current_price > ema_200_val)
     is_high_vix = not macro_data.get("allow_breakout_trades", True)
     adr_val = macro_data.get("adr_ratio")
     is_breadth_veto = bool(adr_val is not None and float(adr_val) < 0.60)
@@ -1168,10 +1178,19 @@ def compute_deterministic_confluence(
         action_bias = "HOLD_NEUTRAL"
         has_actionable_signal = False
         confluence_score = min(55, confluence_score - 8)
+        if is_macro_downtrend:
+            confluence_drivers.append(f"Macro Trend Veto: Price ₹{current_price:,.2f} is below 200 EMA (₹{ema_200_val:,.2f}). Counter-trend long breakout blocked.")
         if is_breadth_veto:
             confluence_drivers.append(f"Market Breadth Veto: Broad market distribution ({macro_data.get('breadth_regime', 'DISTRIBUTION')}, ADR {adr_val}). Long breakout blocked.")
         if is_sector_laggard_veto:
             confluence_drivers.append(f"Sector Laggard Veto: Stock lagging sector by {sec_rating:+.1f}%. Long setup neutralized.")
+
+    if is_macro_uptrend and action_bias == "SELL_WATCH":
+        logger.info(f"Veto triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}). Downgrading SELL_WATCH to HOLD_NEUTRAL.")
+        action_bias = "HOLD_NEUTRAL"
+        has_actionable_signal = False
+        confluence_score = max(45, confluence_score + 8)
+        confluence_drivers.append(f"Macro Trend Veto: Price ₹{current_price:,.2f} is above 200 EMA (₹{ema_200_val:,.2f}). Shorting against primary bull trend blocked.")
 
     # Confluence Driver Highlights
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
@@ -1292,7 +1311,8 @@ def check_has_active_catalyst(
 
     orb_status = technicals.get("orb_status")
     if orb_status in ["BULLISH_ORB_BREAKOUT", "BEARISH_ORB_BREAKDOWN"]:
-        return True, f"15m Opening Range Break ({orb_status})"
+        if technicals.get("candle_close_confirmed", True):
+            return True, f"15m Opening Range Break ({orb_status} - Confirmed)"
 
     if technicals.get("is_circuit_locked"):
         return True, f"Circuit Lock Freeze ({technicals.get('circuit_lock_type')})"
@@ -1823,10 +1843,75 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 confluence_drivers = analysis.get("confluence_drivers", [])
                 tactical_levels = analysis.get("tactical_levels", {})
                 holding_guidance = analysis.get("holding_guidance")
+
+                # Target 1 Achieved & Trail-to-Cost Check
+                curr_price_val = float(
+                    technicals.get("current_price") or 
+                    financials.get("price") or 
+                    0.0
+                )
+                today_tag = date.today().isoformat()
+                t1_cache_key = f"{user_id}:{symbol}:{today_tag}"
+
+                if curr_price_val > 0 and t1_cache_key not in _TARGET_1_DISPATCHED_TODAY:
+                    try:
+                        recent_alert_res = supabase_client.table("stok_alerts") \
+                            .select("id, signal_type, tactical_levels, created_at") \
+                            .eq("symbol", symbol) \
+                            .order("created_at", desc=True) \
+                            .limit(1) \
+                            .execute()
+                        
+                        if recent_alert_res.data:
+                            last_alert = recent_alert_res.data[0]
+                            last_sig = last_alert.get("signal_type")
+                            last_tactical = last_alert.get("tactical_levels") or {}
+                            t1_str = last_tactical.get("target_1") or last_tactical.get("tactical_resistance_1") or last_tactical.get("tactical_support_1")
+                            
+                            if t1_str and last_sig in ["BUY_WATCH", "SELL_WATCH"]:
+                                t1_num = float(str(t1_str).replace("₹", "").replace(",", "").strip())
+                                entry_range_str = last_tactical.get("entry_range", "N/A")
+                                
+                                if last_sig == "BUY_WATCH" and curr_price_val >= t1_num:
+                                    action_bias = "TARGET_1_TRAIL_ALERT"
+                                    has_actionable = True
+                                    catalyst_type = "PRICE_BREAKOUT"
+                                    alert_title = f"🎯 {symbol}: Tactical Resistance 1 Achieved (₹{curr_price_val:,.2f})"
+                                    holding_guidance = (
+                                        f"🎯 TACTICAL BENCHMARK 1 HIT: Price achieved ₹{t1_num:,.2f}. "
+                                        f"Algorithmic execution rule: Lock in 50% profit immediately, and trail protective stop-loss to entry cost ({entry_range_str} / Breakeven). "
+                                        f"Remaining position is now operating with ZERO capital risk."
+                                    )
+                                    confluence_drivers = [
+                                        f"Tactical Resistance 1 (₹{t1_num:,.2f}, 1.5x ATR) hit with current price ₹{curr_price_val:,.2f}.",
+                                        "Profit Lock Protocol: Bank 50% gains.",
+                                        "Trailing Stop Protocol: Move SL to Cost/Breakeven to eliminate downside exposure."
+                                    ]
+                                    confluence_score = 90
+                                    _TARGET_1_DISPATCHED_TODAY[t1_cache_key] = time.time()
+                                elif last_sig == "SELL_WATCH" and curr_price_val <= t1_num:
+                                    action_bias = "TARGET_1_TRAIL_ALERT"
+                                    has_actionable = True
+                                    catalyst_type = "PRICE_BREAKOUT"
+                                    alert_title = f"🎯 {symbol}: Tactical Support 1 Achieved (₹{curr_price_val:,.2f})"
+                                    holding_guidance = (
+                                        f"🎯 TACTICAL SUPPORT 1 HIT: Price dropped to ₹{t1_num:,.2f}. "
+                                        f"Algorithmic execution rule: Cover 50% short exposure immediately, and trail protective buy-stop to entry cost ({entry_range_str} / Breakeven). "
+                                        f"Remaining position is now operating with ZERO capital risk."
+                                    )
+                                    confluence_drivers = [
+                                        f"Tactical Support 1 (₹{t1_num:,.2f}, 1.5x ATR) hit with current price ₹{curr_price_val:,.2f}.",
+                                        "Profit Lock Protocol: Cover 50% short exposure.",
+                                        "Trailing Stop Protocol: Move Buy-Stop to Cost/Breakeven to eliminate upside exposure."
+                                    ]
+                                    confluence_score = 90
+                                    _TARGET_1_DISPATCHED_TODAY[t1_cache_key] = time.time()
+                    except Exception as t1_err:
+                        logger.debug(f"Target 1 check note for {symbol}: {t1_err}")
                 
-                # Sensitivity Filter: Guarantee alerts for critical breakdowns and stop-loss breaches
+                # Sensitivity Filter: Guarantee alerts for critical breakdowns, stop-loss breaches, and Target 1 Trail
                 should_dispatch = False
-                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH"] or confluence_score <= 35)
+                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or confluence_score <= 35)
 
                 if alert_sensitivity == "HIGH":
                     should_dispatch = (confluence_score >= 80) or is_breakdown_or_sl
@@ -1839,8 +1924,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 if not should_dispatch:
                     return None
 
-                # Anti-Fatigue Cooldown Check: Treat severe breakdowns, stop-loss defenses, and block deals as Tier-1
-                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
+                # Anti-Fatigue Cooldown Check: Treat severe breakdowns, stop-loss defenses, block deals, and Target 1 Trail as Tier-1
+                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
                 allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
                 
                 if not allowed:
@@ -1900,7 +1985,7 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 # Dispatch FCM Lock-Screen Push Notification
                 fcm_sent = False
                 if fcm_token and fcm_enabled:
-                    fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Target: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
+                    fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Tactical Res: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
                     fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
                         "symbol": symbol,
                         "action_bias": action_bias,
@@ -1941,7 +2026,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                     "EARNINGS_SURPRISE": "EARNINGS_BEAT",
                     "DEBT_REDUCTION": "DEBT_CHANGE",
                     "PRICE_BREAKDOWN": "PRICE_BREAKOUT",
-                    "STOP_LOSS_DEFENSE": "TRAILING_STOP_TRIGGER"
+                    "STOP_LOSS_DEFENSE": "TRAILING_STOP_TRIGGER",
+                    "TARGET_1_ACHIEVED": "PRICE_BREAKOUT"
                 }
                 normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
                 VALID_CATALYST_TYPES = {

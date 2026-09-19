@@ -442,6 +442,9 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "ema_20": None,
         "ema_50": None,
         "ema_200": None,
+        "is_above_200_ema": None,
+        "is_15m_candle_closed": False,
+        "candle_close_confirmed": False,
         "ma_trend": "NEUTRAL",
         "atr_14": None,
         "adx_14": None,
@@ -544,6 +547,9 @@ def compute_technicals_from_frames(
         "ema_20": None,
         "ema_50": None,
         "ema_200": None,
+        "is_above_200_ema": None,
+        "is_15m_candle_closed": False,
+        "candle_close_confirmed": False,
         "ma_trend": "NEUTRAL",
         "atr_14": None,
         "adx_14": None,
@@ -720,10 +726,24 @@ def compute_technicals_from_frames(
             orb_bars = today_candles.iloc[:3]
             orb_high_15m = round(float(orb_bars['High'].max()), 2)
             orb_low_15m = round(float(orb_bars['Low'].min()), 2)
-            if current_price > orb_high_15m:
-                orb_status = "BULLISH_ORB_BREAKOUT"
-            elif current_price < orb_low_15m:
-                orb_status = "BEARISH_ORB_BREAKDOWN"
+            
+            # Use confirmed candle closes post-ORB to eliminate upper/lower wick bull/bear traps
+            latest_bar = today_candles.iloc[-1]
+            last_close = float(latest_bar['Close'])
+            last_high = float(latest_bar['High'])
+            last_low = float(latest_bar['Low'])
+            
+            if len(today_candles) > 3:
+                if last_close > orb_high_15m:
+                    orb_status = "BULLISH_ORB_BREAKOUT"
+                elif last_close < orb_low_15m:
+                    orb_status = "BEARISH_ORB_BREAKDOWN"
+                elif last_high > orb_high_15m and last_close <= orb_high_15m:
+                    orb_status = "ORB_UPPER_WICK_REJECTION"
+                elif last_low < orb_low_15m and last_close >= orb_low_15m:
+                    orb_status = "ORB_LOWER_WICK_REJECTION"
+                else:
+                    orb_status = "INSIDE_ORB_RANGE"
             else:
                 orb_status = "INSIDE_ORB_RANGE"
         elif not today_candles.empty:
@@ -783,6 +803,15 @@ def compute_technicals_from_frames(
             'Volume': 'sum'
         }).dropna()
         
+        # Check if latest 15m candle is closed (at least 3 completed 5m bars in the bin)
+        is_15m_candle_closed = True
+        candle_close_confirmed = True
+        if not df_15m.empty and not df_5m.empty:
+            latest_15m_bin = df_15m.index[-1]
+            bars_in_latest_bin = len(df_5m[df_5m.index >= latest_15m_bin])
+            is_15m_candle_closed = (bars_in_latest_bin >= 3)
+            candle_close_confirmed = is_15m_candle_closed
+
         if len(df_15m) >= 15:
             rsi_15m_series = calculate_rsi(df_15m['Close'], 14)
             rsi_15m = round(float(rsi_15m_series.iloc[-1]), 2) if not rsi_15m_series.empty and not pd.isna(rsi_15m_series.iloc[-1]) else None
@@ -804,6 +833,7 @@ def compute_technicals_from_frames(
         ema_20 = None
         ema_50 = None
         ema_200 = None
+        is_above_200_ema = None
         ma_trend = "NEUTRAL"
         
         if not df_daily.empty and len(df_daily) >= 20:
@@ -816,6 +846,8 @@ def compute_technicals_from_frames(
             if len(df_daily) >= 200:
                 ema_200 = round(float(df_daily['Close'].ewm(span=200, adjust=False).mean().iloc[-1]), 2)
                 
+            is_above_200_ema = bool(current_price > ema_200) if (ema_200 is not None and current_price is not None) else None
+
             if ema_20 and ema_50 and ema_200:
                 if current_price > ema_20 and ema_20 > ema_50 and ema_50 > ema_200:
                     ma_trend = "STRONG_BULLISH_ALIGNMENT"
@@ -921,6 +953,9 @@ def compute_technicals_from_frames(
             "ema_20": ema_20,
             "ema_50": ema_50,
             "ema_200": ema_200,
+            "is_above_200_ema": is_above_200_ema,
+            "is_15m_candle_closed": is_15m_candle_closed,
+            "candle_close_confirmed": candle_close_confirmed,
             "ma_trend": ma_trend,
             "atr_14": atr_val,
             "adx_14": adx_14,

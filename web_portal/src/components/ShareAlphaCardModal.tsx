@@ -124,7 +124,7 @@ export default function ShareAlphaCardModal({ alert, onClose }: ShareAlphaCardMo
       // Target
       ctx.fillStyle = "#94a3b8";
       ctx.font = "600 20px Inter, system-ui, sans-serif";
-      ctx.fillText("TARGET 1", 110, 475);
+      ctx.fillText("TACTICAL RES 1", 110, 475);
       ctx.fillStyle = "#10b981";
       ctx.font = "900 36px Inter, system-ui, sans-serif";
       ctx.fillText(alert.targetPrice || "-", 110, 525);
@@ -305,7 +305,7 @@ export default function ShareAlphaCardModal({ alert, onClose }: ShareAlphaCardMo
             textAlign: "center"
           }}>
             <div>
-              <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700 }}>TARGET 1</div>
+              <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 700 }}>TACTICAL RES 1</div>
               <div style={{ fontSize: 13, fontWeight: 900, color: "#10b981" }}>{alert.targetPrice}</div>
             </div>
             <div>

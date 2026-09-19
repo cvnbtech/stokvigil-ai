@@ -166,17 +166,29 @@ class PlaceOrderRequest(BaseModel):
     user_id: str
     symbol: str = Field(..., min_length=1, max_length=20, pattern=r'^[A-Z0-9_\-&]{1,20}$')
     action: str = Field(..., pattern=r'^(BUY|SELL|buy|sell)$')
-    order_type: str = Field(..., pattern=r'^(MARKET|LIMIT|market|limit)$')
+    order_type: str = Field(..., pattern=r'^(MARKET|LIMIT|market|limit|STOPLOSS_LIMIT|STOPLOSS|SL|SL-L|sl-l|sl|stoploss|SL-M|sl-m|STOPLOSS_MARKET)$')
     quantity: int = Field(..., gt=0, le=100000)
     price: Optional[float] = Field(default=0.0, ge=0.0)
+    trigger_price: Optional[float] = Field(default=None, ge=0.0)
     product: Optional[str] = Field(default=None, pattern=r'^(cash|margin|CASH|MARGIN)?$')
     idempotency_key: Optional[str] = Field(default=None, max_length=128)
 
     @model_validator(mode="after")
-    def validate_limit_price(self):
-        if self.order_type.upper() == "LIMIT":
+    def validate_order_parameters(self):
+        ot = self.order_type.upper()
+        if ot in ["SL-M", "STOPLOSS_MARKET"] or (ot == "MARKET" and self.trigger_price is not None and float(self.trigger_price) > 0.0):
+            raise ValueError(
+                "Stop-Loss Market (SL-M) orders are prohibited under SEBI/NSE F&O rules to prevent illiquid flash crashes. "
+                "Please place a Stop-Loss Limit (SL-L) order with both price and trigger_price."
+            )
+        if ot == "LIMIT":
             if self.price is None or float(self.price) <= 0.0:
-                raise ValueError("Limit orders strictly require a positive non-zero limit price.")
+                raise ValueError("Limit orders strictly require a positive non-zero limit price (price > 0.0).")
+        if ot in ["STOPLOSS_LIMIT", "STOPLOSS", "SL", "SL-L"]:
+            if self.price is None or float(self.price) <= 0.0:
+                raise ValueError("Stop-Loss Limit (SL-L) orders strictly require a positive non-zero limit execution price (price > 0.0).")
+            if self.trigger_price is None or float(self.trigger_price) <= 0.0:
+                raise ValueError("Stop-Loss Limit (SL-L) orders strictly require a positive non-zero trigger price (stoploss).")
         return self
 
 
@@ -1982,8 +1994,19 @@ def place_trade_order(
             breeze.generate_session(api_secret=secret_key, session_token=session_token)
 
             action_type = "buy" if req.action.upper() == "BUY" else "sell"
-            order_type = "market" if req.order_type.upper() == "MARKET" else "limit"
-            snapped_price = snap_to_exchange_tick(req.price) if order_type == "limit" else 0.0
+            ot_upper = req.order_type.upper()
+            if ot_upper in ["STOPLOSS_LIMIT", "STOPLOSS", "SL", "SL-L"]:
+                order_type = "stoploss"
+                snapped_price = snap_to_exchange_tick(req.price)
+                snapped_stoploss = snap_to_exchange_tick(req.trigger_price)
+            elif ot_upper == "MARKET":
+                order_type = "market"
+                snapped_price = 0.0
+                snapped_stoploss = 0.0
+            else:
+                order_type = "limit"
+                snapped_price = snap_to_exchange_tick(req.price)
+                snapped_stoploss = 0.0
 
             # Market Session Awareness
             market_open, market_msg = get_market_session_status()
@@ -2032,9 +2055,9 @@ def place_trade_order(
                 product=product_type,
                 action=action_type,
                 order_type=order_type,
-                stoploss="0",
+                stoploss=str(snapped_stoploss) if order_type == "stoploss" else "0",
                 quantity=str(req.quantity),
-                price=str(snapped_price) if order_type == "limit" else "0",
+                price=str(snapped_price) if order_type in ["limit", "stoploss"] else "0",
                 validity="day"
             )
 
@@ -2056,8 +2079,10 @@ def place_trade_order(
                 "exchange": exchange_code,
                 "action": req.action,
                 "quantity": req.quantity,
-                "price": snapped_price if order_type == "limit" else None,
+                "price": snapped_price if order_type in ["limit", "stoploss"] else None,
+                "trigger_price": snapped_stoploss if order_type == "stoploss" else None,
                 "product": product_type,
+                "order_type": order_type,
                 "is_intraday_short": is_intraday_short,
                 "sebi_notice": sebi_notice,
                 "market_session": {"is_open": market_open, "message": market_msg},

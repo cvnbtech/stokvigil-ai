@@ -68,7 +68,7 @@ function createCamarillaPriceLines(
       lineWidth: 1,
       lineStyle: LineStyle.Dotted,
       axisLabelVisible: true,
-      title: `H3 Target 1 (₹${cam.h3})`,
+      title: `H3 Tactical Res 1 (₹${cam.h3})`,
     }),
     series.createPriceLine({
       price: cam.l3,

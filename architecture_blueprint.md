@@ -8,8 +8,10 @@
 ## 1. System Purpose & Pure Intelligence Guarantee
 StokVigil AI is an automated, unsleeping market surveillance watchtower operating strictly during Indian Stock Exchange hours (09:15 AM – 03:30 PM IST). 
 
+> 📖 **Unified Master Prompt & Algorithmic Blueprint**: See [`STOKVIGIL_MASTER_PROMPT.md`](./STOKVIGIL_MASTER_PROMPT.md) for the complete developer system prompt, mathematical formulations, prompt engineering contracts, and SEBI compliance guidelines.
+
 > **Mandatory Operational Constraint:**  
-> The system **does not execute unsolicited automated trades** and **does not issue SEBI-unregistered financial advisory tips** (e.g. "BUY AT 200, TARGET 250"). It fetches real-time data from ICICI Demat accounts (via Breeze API), NSE real-time tick feeds, Google News RSS, and Yahoo Finance, feeds the quantitative data into the Gemini AI Agent Engine, filters out market noise, and dispatches **purely factual data alerts & quantitative confluence setups** (RSI/MACD signals, VWAP, ATR dynamic stops, volume spikes, block/bulk deals, quarterly result deviations, debt shifts) directly to user mobile devices and Telegram chats. All alerts and notifications include a mandatory **SEBI Non-Advisory Compliance Disclosure** affirming strictly analytical and educational surveillance.
+> The system **does not execute unsolicited automated trades** and **does not issue SEBI-unregistered financial advisory tips** (e.g. "BUY AT 200, TARGET 250"). It fetches real-time data from ICICI Demat accounts (via Breeze API), NSE real-time tick feeds, Google News RSS, and Yahoo Finance, feeds the quantitative data into the Gemini AI Agent Engine, filters out market noise, and dispatches **purely factual data alerts & quantitative confluence setups** (RSI/MACD signals, VWAP, ATR dynamic stops, volume spikes, block/bulk deals, quarterly result deviations, debt shifts) directly to user mobile devices and Telegram chats. All projections are strictly labeled as **Tactical Resistance 1 (1.5x ATR Benchmark)** / **Expansion Resistance 2 (2.5x ATR Benchmark)** and **Tactical Support 1/2**, concluding with a mandatory **SEBI Non-Advisory Compliance Disclosure** affirming strictly analytical and educational surveillance.
 
 ---
 
@@ -32,7 +34,7 @@ flowchart TD
         B2["auth.py (Supabase JWT Bearer, Zero IDOR & 4-Char PII Log Masking)"]
         B3["Cron Secret HMAC Constant-Time Validator (DoS & Quota Shield)"]
         B4["Crypto Vault (Fernet AES-256 with PBKDF2HMAC)"]
-        B4a["Order Execution Shield (Idempotency 120s, RMS 500 -> 422 Interceptor, ₹0.05 Tick Snap, SEBI MIS Notice, BSE/NSE Route)"]
+        B4a["Order Execution Shield (Idempotency 120s, RMS 500 -> 422 Interceptor, ₹0.05 Tick Snap, SEBI MIS Notice, BSE/NSE Route, SL-L Enforcement & SL-M Ban)"]
         B5["In-Memory Multi-Tier Caches (Candles, Financials, News, FII/DII, Quotes)"]
         B6["FastAPI Synchronous Scan Engine (Concurrency Lock: _scan_in_progress & Free-Tier CPU)"]
         B7["Telegram Webhook Validator (Secret Header & Email Rejection Shield)"]
@@ -49,12 +51,12 @@ flowchart TD
 
     subgraph Engine["AI & Quantitative Surveillance Engine"]
         D0["Market Cache Manager (Vectorized Batch Engine, 900s TTL, Semaphore(20))"]
-        D1["Technical Engine (Multi-TF RSI, MACD, VWAP, ATR, Date-Aware Camarilla iloc[-2], 15m ORB, Circuit Lock)"]
+        D1["Technical Engine (Multi-TF RSI, MACD, VWAP, ATR, Date-Aware Camarilla iloc[-2], 15m ORB Close & Wick Rejection, Two-Way 200 EMA Anchor, Circuit Lock)"]
         D2["Flow Tracker & Wyckoff VSA (Absorption vs Churn, Near-Month Expiry OI)"]
         D3["FII/DII Flow Engine (fii_dii_tracker.py with 30m Cache & Sentiment Classifier)"]
         D4["Macro & Pre-Market War Room Engine (fetch_pre_market_war_room_data)"]
         D5{"Tier-1 Quantitative Smart Gatekeeper (RAM Math in 0.001 ms & Catalysts)"}
-        D5a["Hard Risk Veto & Momentum Boost Engine (Breakdown Veto <=28 & Surge +6)"]
+        D5a["Hard Risk Veto, Two-Way 200 EMA Veto, Momentum Boost & Target 1 Trail Alert Engine"]
         D6["Tier-1: Deterministic Confluence Engine (0 Gemini Calls)"]
         D7["Tier-2: Google Gemini AI Reasoning (Active Catalysts Only)"]
         D8["Anti-Fatigue State Limiter (45-Min Cooldown & Tier-1 Bypass)"]
@@ -62,7 +64,7 @@ flowchart TD
 
     subgraph Dispatch["Multi-Channel Actionable Dispatcher"]
         E1["Firebase Cloud Messaging (FCM High-Priority Lock-Screen)"]
-        E2["Telegram Cockpit (Rich HTML Cards + StokVigil Chart/ICICI/Exchange Buttons + SEBI Disclaimer)"]
+        E2["Telegram Cockpit (Rich HTML Cards + Target 1 Trail Badge + StokVigil Chart/ICICI/Exchange Buttons + SEBI Disclaimer)"]
         E3["Public Accuracy Ledger Stream (/api/market/accuracy-ledger)"]
     end
 
@@ -116,8 +118,10 @@ Every 5 minutes during Indian market trading hours (`09:15–15:30 IST`), `agent
 To operate with institutional speed and permanently eliminate Google Gemini `429 Quota Exceeded` errors on the free tier (20 RPM limit), StokVigil enforces a two-tier evaluation architecture:
 1. **Tier-1 Gatekeeper Filter (`check_has_active_catalyst`)**: Evaluates mathematical catalysts in RAM:
    - **Demat Holding Risk & Target Guardrails**: Portfolio holding down $\le -3.5\%$ (capital preservation stop breach) or $+5.0\%$ surge with $15\text{m RSI} > 70.0$.
+   - **Target 1 Achieved & Trail-to-Cost Lifecycle Trigger (`TARGET_1_TRAIL_ALERT`)**: Detects when an active position hits Tactical Resistance 1 (1.5x ATR benchmark), generating an automated profit-lock trigger ("Lock 50% Gains & Trail to Cost").
    - **Sharp Intraday Price Surges / Breakdown**: Price move magnitude $|\Delta P| \ge 2.5\%$.
-   - **15-Minute Opening Range Break**: `BULLISH_ORB_BREAKOUT` or `BEARISH_ORB_BREAKDOWN`.
+   - **15-Minute Opening Range Break with Candle Close Confirmation**: `BULLISH_ORB_BREAKOUT` or `BEARISH_ORB_BREAKDOWN` evaluated strictly on completed 15m candle closes (`is_15m_candle_closed` & `candle_close_confirmed`), with filtering for upper/lower wick rejections (`ORB_UPPER_WICK_REJECTION`, `ORB_LOWER_WICK_REJECTION`) to prevent repainting traps.
+   - **Two-Way 200 EMA Macro Trend Filter**: Vetoes `BUY_WATCH` signals when trading below the Daily 200 EMA, and vetoes `SELL_WATCH` signals when trading above the Daily 200 EMA.
    - **Circuit Lock Freezes**: Upper or lower circuit freeze (`UPPER_CIRCUIT`, `LOWER_CIRCUIT`).
    - **Institutional Volume Surge**: Intraday volume $\ge 1.5\times$ 20-period volume MA.
    - **Momentum Extremes / Divergences**: $15\text{m RSI} \ge 68$ or $\le 32$, or active Bullish/Bearish Divergences.
@@ -173,18 +177,18 @@ To operate with institutional precision, the deterministic confluence engine exe
    - Computes exact mathematical floors and ceilings from prior completed session:
      $$H_4 = C + 1.1 \times \frac{H - L}{2}, \quad H_3 = C + 1.1 \times \frac{H - L}{4}, \quad L_3 = C - 1.1 \times \frac{H - L}{4}, \quad L_4 = C - 1.1 \times \frac{H - L}{2}$$
    - **Date-Aware Indexation**: If `daily_df.index[-1].date() == today`, the engine strictly calculates levels from `daily_df.iloc[-2]` (prior completed trading day). This completely prevents the current forming intraday bar from distorting institutional pivot floors mid-session.
-   - Liquidity Envelopes: $L_3$: Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Target 1, $H_4$: Target 2 breakout ceiling.
+   - Liquidity Envelopes: $L_3$: Tactical Accumulation entry floor, $L_4$: Hard structural stop-loss, $H_3$: Tactical Resistance 1 (1.5x ATR Benchmark), $H_4$: Expansion Resistance 2 (2.5x ATR Benchmark).
 5. **Triple-Timeframe Fractal Harmony & Chandelier Trailing SL**:
    - Synthesizes **Daily Tide** (Daily price $\ge$ 50 EMA, Daily RSI $\ge 48$), **15m Wave** (Price vs VWAP $\ge -0.2\%$, no bearish divergence), and **5m Trigger** (Volume surge or MACD crossover).
    - Dynamic Chandelier Trailing Stop for Demat holdings is locked at $\text{Current Price} - (2.5 \times \text{ATR})$, ratcheting upward monotonically.
 6. **15-Minute Opening Range Breakout (ORB) Engine (`technical_engine.py`)**:
    - Isolates the initial 15-minute price corridor (09:15–09:30 IST) across the first three 5m candles into `orb_high_15m` and `orb_low_15m`.
-   - Identifies institutional session opening momentum: `BULLISH_ORB_BREAKOUT` (LTP > High), `BEARISH_ORB_BREAKDOWN` (LTP < Low), or `INSIDE_ORB_RANGE`.
+   - Identifies institutional session opening momentum: `BULLISH_ORB_BREAKOUT` (LTP > High), `BEARISH_ORB_BREAKDOWN` (LTP < Low), or `INSIDE_ORB_RANGE`. Requires confirmed 15m candle close (`candle_close_confirmed`) to prevent intra-candle false wicks (`ORB_UPPER_WICK_REJECTION`).
 7. **Upper & Lower Circuit Lock Freeze Detection (`technical_engine.py`)**:
    - Evaluates sub-tick high/low/close equality ($|H - L| < 10^{-4}$ and $|C - L| < 10^{-4}$) coupled with significant price expansion ($|\Delta P| \ge 1.90\%$), classifying frozen order books as `UPPER_CIRCUIT` or `LOWER_CIRCUIT`.
 
-### 2.1.4d The 7 Critical Quantitative Upgrades & Execution Realities
-To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 7 critical algorithmic upgrades:
+### 2.1.4d The 13 Critical Quantitative Upgrades & Institutional Execution Realities
+To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 13 critical algorithmic upgrades:
 
 ```mermaid
 graph TD
@@ -192,14 +196,19 @@ graph TD
     B -- "Change <= -3.5% & VWAP Break & L4 Floor Breach" --> C["Hard Risk Veto (Score <= 28, Bias: SELL_WATCH)"]
     B -- "No Severe Shock" --> D{"Demat Position Risk?"}
     D -- "Unrealized P&L <= -3.5%" --> E["Demat Capital Defense (TRAILING_SL_ALERT)"]
-    D -- "P&L Stable" --> F{"Momentum Breakout?"}
-    F -- "Change >= +5.0% & 15m ORB Breakout" --> G["Momentum Surge Multiplier (+6 Points, PRICE_BREAKOUT)"]
-    F -- "Normal Flow" --> H["Regime-Adaptive Confluence Engine"]
-    C --> I["Tier-1 Anti-Fatigue Dispatch Bypass"]
-    E --> I
-    G --> I
-    H --> J["Multi-Channel Dispatcher (FCM / Telegram)"]
-    I --> J
+    D -- "P&L Stable" --> F{"Target 1 Benchmark Reached?"}
+    F -- "Price >= Tactical Resistance 1" --> G["Target 1 Trail Alert (Lock 50% & Trail to Cost)"]
+    F -- "Position Active" --> H{"Momentum Breakout & Closed Bar?"}
+    H -- "Change >= +5.0% & 15m ORB Closed & No Wick Rejection" --> I["Momentum Surge Multiplier (+6 Points, PRICE_BREAKOUT)"]
+    H -- "Normal Flow" --> J{"Macro 200 EMA Trend Alignment?"}
+    J -- "Counter-Trend to 200 EMA" --> K["Macro Trend Veto (Forced HOLD_NEUTRAL)"]
+    J -- "Trend Aligned" --> L["Regime-Adaptive Confluence Engine"]
+    C --> M["Tier-1 Anti-Fatigue Dispatch Bypass"]
+    E --> M
+    G --> M
+    I --> M
+    L --> N["Multi-Channel Dispatcher (FCM / Telegram)"]
+    M --> N
 ```
 
 1. **Hard Risk Veto for Severe Supply Shocks (Overcoming the "Linear Blend Fallacy")**:
@@ -222,6 +231,17 @@ graph TD
    - Restricts NSE option chain calculations strictly to `records["expiryDates"][0]`, eliminating far-month illiquid contracts from skewing Put-Call Ratios and Max Pain.
 8. **Universal Sensitivity Delivery Gate**:
    - Fixed the alert sensitivity filtering state machine so users configured with `ALL` sensitivity reliably receive all valid actionable alerts, breakdowns, and capital preservation stop-loss defenses.
+9. **Two-Way 200 EMA Macro Trend Anchor**:
+   - Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, any `SELL_WATCH` breakdown setup is vetoed to `HOLD_NEUTRAL`. Trades are strictly anchored to the institutional primary trend.
+10. **15-Minute Candle Close Confirmation & Wick Rejection Engine**:
+    - Evaluates breakout catalysts (`BULLISH_ORB_BREAKOUT`, `PRICE_BREAKOUT`) strictly at the 15-minute candle close boundary (`is_15m_candle_closed` & `candle_close_confirmed`). Filters out long upper/lower wick rejections (`ORB_UPPER_WICK_REJECTION`, `ORB_LOWER_WICK_REJECTION`), preventing false intra-bar breakout whipsaws and repainting traps.
+11. **Target 1 Achieved & Trail-to-Cost Lifecycle Alert (`TARGET_1_TRAIL_ALERT`)**:
+    - When an active watchlist or portfolio stock reaches Tactical Resistance 1 (1.5x ATR Benchmark), the engine triggers an automated lifecycle alert: *"🎯 TARGET 1 REACHED: Lock 50% Gains & Trail Stop-Loss to Breakeven Cost"*, locking in risk-free execution.
+12. **SEBI Non-Advisory Mathematical Disclaimers & Terminology Shift**:
+    - "Target 1" is formally defined and rendered as **"Tactical Resistance 1 (1.5x ATR Benchmark)"** and "Target 2" as **"Expansion Resistance 2 (2.5x ATR Benchmark)"**. Every alert notification, Telegram card, and Web/Mobile HUD embeds the explicit mathematical footnote:
+      > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
+13. **Stop-Loss Limit (`SL-L`) Execution Routing & SEBI/NSE `SL-M` Ban Enforcement**:
+    - Enforces full compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives. Validates stop orders in `main.py`: any stop order submitted as `MARKET` is rejected with `HTTP 422 Unprocessable Entity`. Stop orders must be placed as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
 
 ### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting (`agent_runner.py`)
 Rather than static weightings, factor weights adapt dynamically to real-time market regimes:
@@ -255,19 +275,22 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
   6. `technicals.previous_close`
   7. `ticker.fast_info.last_price` or `regular_market_previous_close`
 
-### 2.1.6 Direction-Aware Tactical Levels, Target/Stop-Loss Guardrails & Demat P&L Sanitization (`agent_runner.py`)
+### 2.1.6 Direction-Aware Tactical Resistance / Support Levels, Mathematical ATR Volatility Benchmarks & Demat P&L Sanitization (`agent_runner.py` & `notifications.py`)
 - **Direction-Aware Mathematical Bounds (`compute_tactical_levels`)**: Tactical levels dynamically adapt to signal bias (`BUY_WATCH` vs `SELL_WATCH`):
   - **Bullish / Accumulate Setups (`BUY_WATCH`)**:
-    - **Target 1 (First Resistance)**: $\max(\text{Target}_1, \text{Price} \times 1.02)$ (minimum $+2.0\%$ upside).
-    - **Target 2 (Breakout Ceiling)**: $\max(\text{Target}_2, \text{Price} \times 1.05)$ (minimum $+5.0\%$ upside).
+    - **Tactical Resistance 1 (First Volatility Boundary)**: $\max(\text{Resistance}_1, \text{Price} \times 1.02)$ (anchored to $1.5\times$ ATR benchmark, minimum $+2.0\%$ upside).
+    - **Expansion Resistance 2 (Breakout Ceiling)**: $\max(\text{Resistance}_2, \text{Price} \times 1.05)$ (anchored to Swing High / $2.5\times$ ATR benchmark, minimum $+5.0\%$ upside).
     - **Protective Stop-Loss**: $\min(\text{Stop-Loss}, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside risk buffer below entry).
     - **Demat Trailing Protection**: For portfolio holdings, $\text{Stop-Loss} = \max(\text{Stop-Loss}, \text{Base Cost SL}, \text{Chandelier Trailing SL})$ where $\text{Chandelier SL} = \text{Current Price} - (2.5 \times \text{ATR})$.
-    - **Risk-Reward Ratio**: Dynamically formulated as $(\text{Target}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
+    - **Risk-Reward Ratio**: Dynamically formulated as $(\text{Resistance}_2 - \text{Price}) / (\text{Price} - \text{Stop-Loss})$.
   - **Bearish / Breakdown Setups (`SELL_WATCH`)**:
-    - **Target 1 (First Support / Profit Booking)**: $\min(\text{Target}_1, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside).
-    - **Target 2 (Extended Breakdown Target)**: $\min(\text{Target}_2, \text{Price} \times 0.95)$ (minimum $-5.0\%$ downside).
+    - **Tactical Support 1 (First Volatility Boundary / Profit Booking)**: $\min(\text{Support}_1, \text{Price} \times 0.98)$ (minimum $-2.0\%$ downside).
+    - **Extended Support 2 (Extended Breakdown Target)**: $\min(\text{Support}_2, \text{Price} \times 0.95)$ (minimum $-5.0\%$ downside).
     - **Protective Buy-Stop (Invalidation)**: $\max(\text{Stop-Loss}, \text{Price} \times 1.02)$ (protective stop placed strictly above entry, minimum $+2.0\%$).
-    - **Risk-Reward Ratio**: Formulated directionally for short/breakdown as $(\text{Price} - \text{Target}_2) / (\text{Stop-Loss} - \text{Price})$.
+    - **Risk-Reward Ratio**: Formulated directionally for short/breakdown as $(\text{Price} - \text{Support}_2) / (\text{Stop-Loss} - \text{Price})$.
+- **SEBI Non-Advisory Volatility Disclaimer**: To guarantee regulatory non-advisory compliance, all alerts append the explicit mathematical footnote:
+  > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
+- **Target 1 Reached & Trail-to-Cost Alert (`TARGET_1_TRAIL_ALERT`)**: When an active position or watchlist ticker crosses Tactical Resistance 1 (1.5x ATR), the engine automatically fires a high-priority lifecycle notification instructing the user to "Lock 50% Gains & Trail Stop-Loss to Breakeven Cost", transforming profits into risk-free positions.
 - **Demat P&L Sanitization**: Computes unrealized P&L strictly when both current market price and average buy price are positive ($> 0$), or falls back gracefully to broker-reported holding P&L, preventing false $-100.0\%$ wipes when live ticks are delayed.
 
 ### 2.1.7 Institutional 4-Column UI Grid & Actionable Presentation (`custom_widgets.dart` & `page.tsx`)
@@ -291,7 +314,7 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 3. **Deterministic Quantitative Engine**: 100% offline mathematical algorithm ensuring zero downtime.
 
 ### Multi-Timeframe & Macro Veto Guardrails
-- **Daily 200 EMA Veto**: If a stock trades below its 200 EMA (macro downtrend), any `BUY_WATCH` signal is vetoed to `HOLD_NEUTRAL`.
+- **Two-Way 200 EMA Macro Trend Anchor**: If a stock trades below its Daily 200 EMA (macro downtrend), any `BUY_WATCH` signal is vetoed to `HOLD_NEUTRAL`. Conversely, if a stock trades above its Daily 200 EMA (macro uptrend), any `SELL_WATCH` breakdown signal is vetoed to `HOLD_NEUTRAL`.
 - **India VIX Volatility Veto**: If India VIX $> 24.0$ (extreme volatility regime), breakout trade generation is blocked to preserve capital.
 - **Market Breadth ADR Distribution Veto**: If NSE cash market breadth reflects severe distribution ($\text{ADR} < 0.60$) alongside elevated volatility, all `BUY_WATCH` setups are automatically vetoed to `HOLD_NEUTRAL` (anti-bull-trap guardrail).
 
@@ -299,9 +322,10 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 - `🟢 ACCUMULATE / BUY WATCH` (Confluence Score $\ge 75$)
 - `🔴 PROFIT BOOK / SELL WATCH` (Confluence Score $\le 35$)
 - `🟡 TRAILING STOP-LOSS TRIGGER` (Position-aware trigger protecting Demat gains)
+- `🎯 TARGET 1 REACHED: TRAIL TO COST` (`TARGET_1_TRAIL_ALERT` — Lock 50% profit & move SL to entry breakeven)
 - `⚡ Volume Surge` (5m volume $> 1.5\text{x}$ 20 MA with delivery accumulation)
 - `📈 Earnings Beat` (Quarterly profit & margin surprise)
-- `🚀 Price Breakout` (52-week & technical resistance level breaks)
+- `🚀 Price Breakout` (52-week & technical resistance level breaks with confirmed 15m candle close)
 - `📊 FII / Block Deals` (Institutional block & bulk deals)
 - `⚪ Hold / Neutral` (Maintenance watch signals)
 
@@ -359,7 +383,7 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
    - **In-Memory Bounded Cache**: Max 200 entries with 60-second TTL and LRU batch eviction to ensure sub-millisecond chart load times.
 
 ### 2.1.10 Financial Trade Execution Safeguards & Broker Integration (`POST /api/v1/orders/place`)
-To deliver institutional execution safety when users execute BUY / SELL trade orders through ICICI Direct Breeze API, StokVigil enforces 6 automated execution safeguards:
+To deliver institutional execution safety when users execute BUY / SELL trade orders through ICICI Direct Breeze API, StokVigil enforces 7 automated execution safeguards:
 
 1. **Financial Idempotency & In-Flight Replay Shield (`_ORDER_IDEMPOTENCY_CACHE`)**:
    - Accepts client-supplied `X-Idempotency-Key` headers, caching full order execution payloads in an in-memory TTL replay cache with a 120-second retention window.
@@ -371,16 +395,21 @@ To deliver institutional execution safety when users execute BUY / SELL trade or
 3. **Strict Limit Price Validation & Indian Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**:
    - Enforces Pydantic `model_validator` requiring `price > 0.0` whenever `order_type == "LIMIT"`, rejecting zero or negative limit orders with descriptive validation errors.
    - Snaps all limit prices to Indian exchange standard ₹0.05 tick size intervals using financial half-up rounding (`round(price * 20) / 20`), preventing exchange rejection due to non-tick price intervals (e.g. `₹1,245.33` $\rightarrow$ `₹1,245.35`).
-4. **Dynamic Product Resolution & SEBI Intraday MIS Margin Short Notice**:
+4. **SEBI/NSE Stop-Loss Market (SL-M) Ban Enforcement & Mandatory Stop-Loss Limit (SL-L) Routing**:
+   - Enforces strict compliance with SEBI and NSE circulars that ban Stop-Loss Market (`SL-M`) orders on derivatives contracts to eliminate catastrophic freak-trade slippage.
+   - In `main.py`, `PlaceOrderRequest` evaluates order types: any stop order submitted as `order_type == "MARKET"` with a trigger price is rejected with `HTTP 422 Unprocessable Entity`:
+     > *"Stop-Loss Market (SL-M) orders are prohibited under SEBI/NSE F&O rules. Please place a Stop-Loss Limit (SL-L) order with both price and trigger_price."*
+   - Stop-Loss orders must be placed as `SL-L` with explicit `price` (limit ceiling) and `trigger_price`, both snapped to ₹0.05 exchange ticks before routing to ICICI Direct Breeze.
+5. **Dynamic Product Resolution & SEBI Intraday MIS Margin Short Notice**:
    - Cross-references user Demat portfolio holdings in RAM (`get_cached_holdings`).
    - If selling shares held in Demat $\rightarrow$ routes as `product="cash"` (CNC delivery).
    - If selling unheld shares $\rightarrow$ routes as `product="margin"` (intraday short) and injects mandatory SEBI regulatory disclosure:
      > *"SEBI Notice: You do not hold this stock in your Demat account. This order has been placed as an Intraday MIS Margin Short. You must square off this position before 03:15 PM IST today, failing which your broker RMS will auto-square off or you will face exchange auction penalty charges (up to 20%)."*
    - Renders explicit amber warning banners on both mobile and web execution modals.
-5. **Indian Market Hours & Session Awareness (`get_market_session_status`)**:
+6. **Indian Market Hours & Session Awareness (`get_market_session_status`)**:
    - Enforces real-time awareness of Indian exchange hours (09:15 AM – 03:30 PM IST, Monday–Friday).
    - Orders placed outside regular trading hours succeed but return `"session_warning": "Market is currently closed. Order will be processed as AMO or queued by broker."`, alerting users to off-market queueing.
-6. **Automated BSE Order Routing & Ticker Sanitation**:
+7. **Automated BSE Order Routing & Ticker Sanitation**:
    - Strips `.BO` suffixes, maps 6-digit numeric BSE security codes, and routes `exchange_code="BSE"` vs `"NSE"` directly to Breeze API.
 
 ---
@@ -485,6 +514,7 @@ To sustain 100,000+ client requests without database connection exhaustion, data
 ```
 G:\stokvigil-ai\
 ├── architecture_blueprint.md
+├── STOKVIGIL_MASTER_PROMPT.md   <-- Master System Prompt, Quantitative Rules & Algorithmic Architecture Specification
 ├── .env.example
 ├── .gitignore
 ├── README.md
@@ -661,7 +691,7 @@ G:\stokvigil-ai\
 | `/api/stocks/validate` | `GET` | Rate-Limited | Real-time exchange validation ensuring zero dummy/misspelled tickers |
 | `/api/stocks/quotes` | `GET` | Rate-Limited | High-speed batch quotes for 100+ stocks backed by Keep-Alive session pool, BSE ticker normalization (`.BO` & 6-digit security codes), and Market-Aware Dynamic TTL (20s market / 300s off-market). Next.js API proxy preserves previous tactical levels during price refreshes and enforces an 8000ms backend timeout. |
 | `/api/market/cache-stats` | `GET` | Public / CORS | Telemetry reporting in-memory market cache performance (hit ratio, writes) |
-| `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API with institutional financial idempotency protection (`_ORDER_IDEMPOTENCY_CACHE`, `X-Idempotency-Key` / 120s TTL replay cache & 15s auto-debounce), silent Breeze RMS 500 error interception (HTTP 422), strict LIMIT order validation (`price > 0.0`) & Indian exchange ₹0.05 tick snapping (`snap_to_exchange_tick`), dynamic order product resolution (`product="cash"` for Demat deliveries vs `"margin"` for intraday/unheld sells with mandatory SEBI Intraday MIS Short regulatory disclosure), Indian market session awareness (`get_market_session_status`), and automated BSE routing (`exchange_code="BSE"` with `.BO` suffix stripping) |
+| `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API with institutional financial idempotency protection (`_ORDER_IDEMPOTENCY_CACHE`, `X-Idempotency-Key` / 120s TTL replay cache & 15s auto-debounce), silent Breeze RMS 500 error interception (HTTP 422), strict LIMIT order validation (`price > 0.0`) & Indian exchange ₹0.05 tick snapping (`snap_to_exchange_tick`), SEBI/NSE Stop-Loss Market (`SL-M`) ban enforcement rejecting market-stop orders with HTTP 422, mandatory Stop-Loss Limit (`SL-L`) routing with trigger and limit tick snapping, dynamic order product resolution (`product="cash"` for Demat deliveries vs `"margin"` for intraday/unheld sells with mandatory SEBI Intraday MIS Short regulatory disclosure), Indian market session awareness (`get_market_session_status`), and automated BSE routing (`exchange_code="BSE"` with `.BO` suffix stripping) |
 
 ---
 
