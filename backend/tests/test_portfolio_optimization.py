@@ -7,6 +7,9 @@ from unittest.mock import patch, MagicMock
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 from app.main import (
     _get_holding_fundamentals,
     _async_pre_warm_holding_fundamentals,

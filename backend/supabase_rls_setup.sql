@@ -92,8 +92,8 @@ CREATE TRIGGER on_auth_user_created
 CREATE TABLE IF NOT EXISTS public.user_credentials (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE UNIQUE,
-    encrypted_app_key TEXT NOT NULL,
-    encrypted_secret_key TEXT NOT NULL,
+    encrypted_app_key TEXT,
+    encrypted_secret_key TEXT,
     encrypted_session_token TEXT NOT NULL,
     token_date DATE NOT NULL DEFAULT CURRENT_DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),

@@ -20,8 +20,8 @@ StokVigil AI is an automated, unsleeping market surveillance watchtower operatin
 ```mermaid
 flowchart TD
     subgraph Clients["User Interaction & Client Layer"]
-        A1["Flutter Mobile App (Bearer JWT + CustomPainter Radar + FII/DII Bar + TradeOrderModal)"]
-        A2["Next.js 16 Web PWA (Bearer JWT + SVG Radar + 1080x1080 Alpha Cards + TradeOrderModal)"]
+        A1["Flutter Mobile App (Bearer JWT + CustomPainter Radar + Vector Broker Badges + TradeOrderModal)"]
+        A2["Next.js 16 Web PWA (Bearer JWT + SVG Radar + Vector Broker Badges + TradeOrderModal)"]
         A3["TradingView Lightweight Charts v5 (Camarilla + VWAP + Chandelier SL)"]
         A4["Public Audited Accuracy Ledger (/transparency Route)"]
         A5["Telegram Messenger (@StokVigilAi_bot)"]
@@ -41,7 +41,7 @@ flowchart TD
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
-        C1["ICICI Breeze Connect API (Holdings across NSE & BSE)"]
+        C1["Pluggable Broker Adapter Layer (app/brokers: BaseBrokerAdapter, IciciBrokerAdapter, Zerodha, Angel One)"]
         C2["yfinance API (Vectorized 5m Batch + 8h Cached 1D Candles, Dual-Exchange)"]
         C3["NSE F&O Dynamic Universe Feed (fo_mktlots.csv, 24h cache) & Near-Month Option Chain"]
         C4["Google News RSS & Exchange Filings (Block Deals, Results, 30m Cache)"]
@@ -78,7 +78,7 @@ flowchart TD
     B2 --> B4
     B3 -->|HTTP 200 OK ~50ms + Async Task| B6
     B6 -->|Execute Multi-User Scan & Briefing| D0
-    B4 -->|Decrypt App Key & Token| C1
+    B4 -->|Master App Key + Decrypted User Session Token| C1
     C1 --> C6
     D0 -->|Batch Pre-Compute All Watchlists| D1 & D2 & D3 & D4
     D1 & D2 & D3 & D4 --> D5
@@ -412,13 +412,36 @@ To deliver institutional execution safety when users execute BUY / SELL trade or
 7. **Automated BSE Order Routing & Ticker Sanitation**:
    - Strips `.BO` suffixes, maps 6-digit numeric BSE security codes, and routes `exchange_code="BSE"` vs `"NSE"` directly to Breeze API.
 
+### 2.1.11 Pluggable Multi-Broker Architecture & Zero-Manual-Keys Model (Strategy Pattern)
+To eliminate broker lock-in and provide a frictionless onboarding experience for non-technical retail users, StokVigil employs an extensible Strategy/Adapter pattern coupled with a **Pure Master App Publisher Model**:
+
+1. **Broker Strategy Abstraction (`backend/app/brokers/base.py`)**:
+   - `BaseBrokerAdapter`: Abstract base class defining uniform asynchronous contracts:
+     - `get_login_url() -> str`: Constructs official broker authentication gateway URL.
+     - `save_credentials(user_id, session_token, extra) -> Dict`: Vault-encrypts and persists daily session token.
+     - `fetch_holdings(user_id) -> List[Dict]`: Normalizes multi-exchange demat holdings across brokers.
+     - `place_order(user_id, order_request) -> Dict`: Routes execution with idempotency and RMS inspection.
+     - `validate_session(user_id) -> bool`: Verifies session validity without extraneous API overhead.
+2. **Central Broker Registry (`backend/app/brokers/registry.py`)**:
+   - Central catalog managing registered broker adapters (`get_broker(broker_id)`, `list_brokers()`).
+   - Supports active broker `icici` alongside upcoming broker contracts (`zerodha`, `angelone`, `upstox`).
+   - **Adding a New Broker in <30 Minutes**: New brokers require only subclassing `BaseBrokerAdapter` and registering in `registry.py`—zero changes required in core scan or alert dispatch loops.
+3. **Pure Master App Publisher Model (Zero Manual Keys)**:
+   - **Zero User App Registration**: Users never register developer apps or handle developer API keys. Master developer credentials (`ICICI_MASTER_APP_KEY`, `ICICI_MASTER_SECRET_KEY`) are secured exclusively on the backend server.
+   - **2-Step Flow**:
+     1. User clicks **`1-Tap Login`** $\rightarrow$ opens official broker login with pre-configured master app key.
+     2. User logs in with retail credentials & 2FA $\rightarrow$ pastes the generated session token (or mobile auto-captures `apisession`).
+   - **Zero Key Leakage**: `/api/user/credentials` returns `{ has_credentials, token_date, is_expired, login_url, broker }` with zero secrets exposed to client apps.
+4. **Pixel-Perfect Vector Brand Badges**:
+   - Integrated offline vector rendering for ICICI Direct (`IciciDirectLogo`), Zerodha Kite (`ZerodhaLogo`), and Angel One (`AngelOneLogo`) in Next.js (`BrokerLogos.tsx`) and Flutter (`broker_icons.dart`).
+
 ---
 
 ## 3. Database Architecture (Supabase PostgreSQL + RLS)
 
 ### Tables Definition
 1. **`profiles`**: Primary user identity, notification endpoints (FCM token, Telegram chat ID), alert sensitivity (`HIGH`, `ALL`, `FII`), execution mode (`INSTANT`, `CONFIRM`), and `demat_auto_sync` (BOOLEAN DEFAULT FALSE).
-2. **`user_credentials`**: Encrypted ICICI Breeze API credentials (AES-256 Fernet), restricted by RLS to `auth.uid() = user_id`.
+2. **`user_credentials`**: Encrypted broker session tokens and metadata (AES-256 Fernet) with broker identifier (`icici`, etc.), restricted by RLS to `auth.uid() = user_id`. Under the Master App Publisher Model, end-user `app_key` and `secret_key` fields are completely eliminated.
 3. **`user_watchlists`**: Tracks Demat holdings (`is_auto_synced: true`) and manually added stocks (`is_auto_synced: false`).
 4. **`stok_alerts`**: Persistent ledger of evaluated catalysts, tactical trade levels (Entry, Target 1, Target 2, Stop-Loss, R:R), metrics snapshots, and dispatch logs.
 5. **`fii_dii_flows`**: Persistent store of official daily NSE FII/DII net purchases, sales, combined net flows in ₹ Crores, and sentiment bias. Enabled with RLS granting `SELECT` to `anon` & `authenticated`, with write operations restricted to backend `service_role`.
@@ -448,13 +471,16 @@ To deliver institutional execution safety when users execute BUY / SELL trade or
    - Dual-Key Multi-Key Indexing in RAM (`clean_symbol` + `full_symbol`), delivering sub-0.05ms O(1) cache hits regardless of query format.
 4. **Universal Dynamic ISIN & Dual-Exchange Resolver (`resolve_isin_to_nse_symbol`)**:
    - Dynamically resolves CDSL/NSDL ISIN codes (`INE...`) to verified NSE and BSE equities with dynamic company name extraction (`shortName`/`longName`), clean symbol presentation, and exchange badge tags (`BSE` amber / `NSE` cyan), preventing internal exchange routing suffixes (`.BO`, `.NS`) from leaking into user-facing UI or database watchlists.
-5. **Sliding-Window IP Rate Limiting & Input Sanitization**:
+5. **Proxy-Aware Sliding-Window IP Rate Limiting & Input Sanitization**:
    - Public quote and search routes enforce a 120 req/min sliding-window rate limit per client IP.
+   - Multi-Tier Reverse-Proxy Client IP Resolution (`CF-Connecting-IP`, `X-Forwarded-For` first client hop, `X-Real-IP`) ensures users behind Google Cloud Run, Cloudflare, Render, or AWS ALB do not share rate-limiting buckets.
+   - Thread-Safe Periodic Auto-Pruning (`_prune_rate_limit_buckets` with `threading.Lock`) automatically evicts expired IP records every 60 seconds.
+   - Hard Memory Bounds & Anti-OOM Protection (`_RATE_LIMIT_MAX_BUCKETS = 10000`) with emergency LRU eviction prevents dictionary bloat from distributed spoofing attacks.
    - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&.]{1,25}$`) neutralizes injection attempts while permitting valid suffixed queries.
 6. **In-App Session Token Auto-Capture & Browser History Scrubbing (Flutter Mobile & Web Portal)**:
    - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
    - On the web callback route (`/api/auth/icici-callback`), `window.history.replaceState` immediately scrubs the sensitive `apisession` token from the browser address bar and history to prevent credential leakage in logs or referrers, enforced with strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
-   - Material Design vector outline icons (`VisibilityOutlinedIcon` / `VisibilityOffOutlinedIcon`) provide clean visibility toggles on both key fields.
+   - Under the Zero-Manual-Keys model, manual developer App Key / Secret Key fields and visibility toggles are completely eliminated; users simply paste or auto-capture their single daily broker session token with 1 tap.
 
 ---
 
@@ -530,6 +556,11 @@ G:\stokvigil-ai\
 │   │   ├── config.py
 │   │   ├── auth.py                  <-- Supabase JWT, IDOR Shield & 4-Char PII Masking
 │   │   ├── vault.py                 <-- AES-256 Fernet Crypto Vault
+│   │   ├── brokers/
+│   │   │   ├── __init__.py
+│   │   │   ├── base.py              <-- BaseBrokerAdapter Abstract Strategy Contract
+│   │   │   ├── icici_adapter.py     <-- IciciBrokerAdapter (Master Publisher + Breeze Connect)
+│   │   │   └── registry.py          <-- Central BrokerRegistry & Catalog Discovery
 │   │   ├── technical_engine.py      <-- Multi-timeframe RSI, MACD, VWAP, ATR, Date-Aware Camarilla (iloc[-2]), 15m ORB, Circuit Lock Detection & 1Y Fallback
 │   │   ├── flow_tracker.py          <-- Wyckoff VSA, Near-Month Expiry Options Chain Filter, Delivery %, 0.0001ms BSE Fast Exit
 │   │   ├── fii_dii_tracker.py       <-- Institutional FII & DII Net Cash Flow Tracker & Sentiment Classifier
@@ -542,6 +573,7 @@ G:\stokvigil-ai\
 │   │   ├── agent_runner.py          <-- 2-Tier Gatekeeper + Hard Risk Veto + Demat Downside Defense + Momentum Surge Boost + Gemini AI
 │   │   └── main.py                  <-- FastAPI Entrypoint, Concurrency Semaphore(10), Dynamic Order Product Resolver (Cash vs Margin) & BSE Routing
 │   ├── tests/
+│   │   ├── test_brokers.py          <-- 7 Pluggable Multi-Broker, Adapter Contracts & Registry Tests
 │   │   ├── test_quantitative_upgrades.py <-- 7 Quantitative Upgrades, Hard Risk Veto, Demat SL Defense & Momentum Surge Boost Tests
 │   │   ├── test_api_endpoints.py    <-- 34 API, Auth, Security, Email Rejection & Alert Pruning Tests
 │   │   ├── test_institutional_accuracy.py <-- 18 Volatility, TTM Squeeze, VWAP Bands, Delta-OI & Zero-Default Tests
@@ -554,7 +586,7 @@ G:\stokvigil-ai\
 │   │   ├── test_alert_edge_cases.py <-- 2 Daily Fallback, Demat P&L, Target/SL Clamping Tests
 │   │   ├── test_institutional_engine.py <-- 1 Master Integration Suite (7 Quantitative Architecture Modules)
 │   │   └── test_financial_trade_flaws.py <-- 8 Financial Trade Execution, Directional Tactical Levels, RMS 500 Interception, Tick Snapping & SEBI MIS Notice Tests
-│   │   # Total: 110 automated unit tests across 12 test suites (100% passing)
+│   │   # Total: 120 automated unit tests across 13 test suites (100% passing)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -575,7 +607,9 @@ G:\stokvigil-ai\
 │   └── lib/
 │       ├── main.dart
 │       ├── config/theme.dart
-│       ├── models/models.dart       <-- Confluence factorBreakdown, 6-Digit BSE Numeric Scrip Detection & Alert Models
+│       ├── models/
+│       │   ├── broker_model.dart    <-- Broker Catalog & Status Model
+│       │   └── models.dart          <-- Confluence factorBreakdown, 6-Digit BSE Numeric Scrip Detection & Alert Models
 │       ├── services/
 │       │   ├── supabase_service.dart <-- Zero Dummy Fallback; Strict isConfigured validation
 │       │   ├── api_service.dart     <-- Injects JWT Bearer Tokens, Breeze Trade Execution (placeTradeOrder), FII/DII & Yahoo Fallback
@@ -583,6 +617,7 @@ G:\stokvigil-ai\
 │       ├── utils/
 │       │   └── error_handler.dart   <-- Centralized Feedback & Snackbars
 │       ├── widgets/
+│       │   ├── broker_icons.dart    <-- Pixel-Perfect CustomPainter Logos (ICICI Direct, Zerodha Kite, Angel One)
 │       │   ├── candle_chart_modal.dart   <-- Bottom-Sheet TradingView Chart Modal with 'SV' Watermark
 │       │   └── custom_widgets.dart       <-- ConfluenceRadarChart CustomPainter, FII/DII Net Flow Bar & TradeOrderModal (Breeze Execution)
 │       └── screens/
@@ -604,17 +639,18 @@ G:\stokvigil-ai\
 │   └── src/
 │       ├── components/
 │       │   ├── ui/
+│       │   │   ├── BrokerLogos.tsx        <-- Pixel-Perfect Inline SVG Logos (ICICI Direct, Zerodha Kite, Angel One)
 │       │   │   ├── DesignTokens.ts        <-- Theme Palette, Supabase Client & HoldingItem Interface
 │       │   │   └── UiAtoms.tsx            <-- Card, Btn, Input, Badge, Logo, Modal & Base Elements
 │       │   ├── tabs/
 │       │   │   ├── HomeTab.tsx            <-- Portfolio Card, Privacy Masking, FII/DII Flow Bar, Holdings
 │       │   │   ├── AlertsTab.tsx          <-- Real-time Alerts Stream, Filters, Confluence Radar
 │       │   │   ├── WatchlistTab.tsx       <-- Ticker Search, Suggestions, Demat Auto-Sync, Stock Cards
-│       │   │   └── SettingsTab.tsx        <-- Breeze Keys, Telegram Pairing, Sensitivity, Account Deletion
+│       │   │   └── SettingsTab.tsx        <-- Broker Switcher, Breeze Keys, Telegram Pairing, Sensitivity, Account Deletion
 │       │   ├── modals/
 │       │   │   ├── TradeOrderModal.tsx    <-- ICICI Breeze Interactive Trade Order Placement
 │       │   │   ├── StockDetailModal.tsx   <-- Holding Metrics Breakdown Modal
-│       │   │   ├── IciciKeyModal.tsx      <-- Breeze API Credentials & 1-Tap Login
+│       │   │   ├── IciciKeyModal.tsx      <-- Multi-Broker Switcher & 1-Tap Login
 │       │   │   ├── PasswordModal.tsx      <-- Password Management Modal
 │       │   │   └── DeleteAccountModal.tsx <-- Account Deletion Safeguard Modal
 │       │   ├── auth/
@@ -672,8 +708,11 @@ G:\stokvigil-ai\
 | Endpoint | Method | Auth Scheme | Purpose |
 | :--- | :---: | :---: | :--- |
 | `/api/health/db` | `GET` | Public / CORS | Health check reporting Supabase Connection Pool (Port 6543) and underlying database connectivity |
-| `/api/user/credentials` | `GET` | `Bearer <JWT>` | Retrieves decrypted App Key and Secret Key for pre-filling with eye toggles |
-| `/api/user/credentials` | `POST` | `Bearer <JWT>` | Encrypts (AES-256 Fernet) and upserts ICICI App Key, Secret Key, and Session Token |
+| `/api/brokers` | `GET` | Public / CORS | Returns catalog of active (`icici`) and upcoming (`zerodha`, `angelone`, `upstox`) supported brokers |
+| `/api/brokers/{broker_id}/login-url` | `GET` | Public / CORS | Generates dynamic official 1-tap broker login URL using server-side Master App Key |
+| `/api/broker/icici/login-url` | `GET` | Public / CORS | Fast backward-compatible alias for ICICI Direct official login URL |
+| `/api/user/credentials` | `GET` | `Bearer <JWT>` | Retrieves broker connection status, token date, expiry status, and official login URL (zero key leakage) |
+| `/api/user/credentials` | `POST` | `Bearer <JWT>` | Vault-encrypts (AES-256 Fernet) and saves user broker session token (`{ user_id, session_token, broker }`) |
 | `/api/user/profile` | `GET` | `Bearer <JWT>` | Retrieves user profile and notification preferences |
 | `/api/auth/register-device` | `POST` | `Bearer <JWT>` | Registers FCM notification token and Telegram chat ID |
 | `/api/user/portfolio` | `GET` | `Bearer <JWT>` | Returns live portfolio holdings, valuation, and P&L (15s RAM caching & background pre-warming) |
@@ -692,6 +731,26 @@ G:\stokvigil-ai\
 | `/api/stocks/quotes` | `GET` | Rate-Limited | High-speed batch quotes for 100+ stocks backed by Keep-Alive session pool, BSE ticker normalization (`.BO` & 6-digit security codes), and Market-Aware Dynamic TTL (20s market / 300s off-market). Next.js API proxy preserves previous tactical levels during price refreshes and enforces an 8000ms backend timeout. |
 | `/api/market/cache-stats` | `GET` | Public / CORS | Telemetry reporting in-memory market cache performance (hit ratio, writes) |
 | `/api/v1/orders/place` | `POST` | `Bearer <JWT>` | Executes BUY / SELL trade orders via ICICI Direct Breeze API with institutional financial idempotency protection (`_ORDER_IDEMPOTENCY_CACHE`, `X-Idempotency-Key` / 120s TTL replay cache & 15s auto-debounce), silent Breeze RMS 500 error interception (HTTP 422), strict LIMIT order validation (`price > 0.0`) & Indian exchange ₹0.05 tick snapping (`snap_to_exchange_tick`), SEBI/NSE Stop-Loss Market (`SL-M`) ban enforcement rejecting market-stop orders with HTTP 422, mandatory Stop-Loss Limit (`SL-L`) routing with trigger and limit tick snapping, dynamic order product resolution (`product="cash"` for Demat deliveries vs `"margin"` for intraday/unheld sells with mandatory SEBI Intraday MIS Short regulatory disclosure), Indian market session awareness (`get_market_session_status`), and automated BSE routing (`exchange_code="BSE"` with `.BO` suffix stripping) |
+
+### 6.1 Enterprise Security Controls & Vulnerability Defenses
+
+StokVigil AI implements multi-layered enterprise defensive controls across the CI/CD pipeline, API gateway, and backend execution runtime:
+
+1. **CI/CD Client Binary Secret Shield (`build_apk.yml`)**:
+   - Compiles Android release APKs strictly using `SUPABASE_ANON_KEY`.
+   - Explicitly eliminates and blocks any fallback to `SUPABASE_SERVICE_ROLE_KEY`. If anon credentials are missing in CI/CD variables, the workflow aborts with exit code 1 to guarantee administrative database keys are never exposed via binary decompilation or string extraction (`libapp.so`).
+2. **Proxy-Aware Sliding-Window Rate Limiting (`_extract_client_ip` & `check_rate_limit`)**:
+   - Multi-hop reverse-proxy resolution evaluates `CF-Connecting-IP`, `X-Forwarded-For` (first client hop), and `X-Real-IP` before falling back to connection host, preventing shared rate-limit buckets across Cloud Run, Cloudflare, or AWS ALB instances.
+   - Thread-safe sliding-window bucket management (`_RATE_LIMIT_LOCK`) auto-prunes expired client IP buckets every 60 seconds.
+   - Enforces a hard memory cap (`_RATE_LIMIT_MAX_BUCKETS = 10000`) with emergency LRU eviction to neutralize distributed state accumulation and Out-Of-Memory (OOM) Denial-of-Service attacks.
+3. **Production Information Disclosure Sanitization**:
+   - Internal database connection errors in `/api/health/db` are sanitized to generic status messages (`"Database connectivity degraded."`) when `ENVIRONMENT == "production"`, preventing internal hostnames, ports, and connection string disclosure.
+   - Account deletion (`/api/user/delete-account`) and broker order placement (`/api/v1/orders/place`) return sanitized, client-safe error messages instead of raw Python driver exceptions (`str(e)`).
+4. **Broken Object Level Authorization (BOLA/IDOR) Immunity**:
+   - Every user-scoped endpoint enforces `verify_user_access(user_id, auth_user_id)` matching the verified Supabase JWT Bearer token against the requested record.
+5. **Cryptographic Secret & Constant-Time Verification**:
+   - Sensitive broker session tokens are encrypted using AES-256 Fernet in the database vault.
+   - `CRON_SECRET_KEY` and `TELEGRAM_WEBHOOK_SECRET` headers use constant-time `hmac.compare_digest` to eliminate timing attack vulnerabilities.
 
 ---
 

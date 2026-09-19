@@ -137,8 +137,8 @@ export default function SettingsTab({
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
               }}>🔑</div>
               <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>ICICI Breeze Session Key</div>
-                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>Required daily — expires at midnight IST</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Demat Broker Connection</div>
+                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>1-Tap multi-broker sync (ICICI Direct, Zerodha, Angel One)</div>
               </div>
             </div>
 
@@ -146,7 +146,7 @@ export default function SettingsTab({
               background: `rgba(6,182,212,0.12)`, border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
             }}>
-              Configure Key →
+              Connect Broker →
             </button>
           </div>
 

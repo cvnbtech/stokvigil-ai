@@ -10,7 +10,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
 ## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
 - **No Unsolicited Automated Trades**: The application never executes trades without user confirmation.
 - **SEBI Non-Advisory Compliance**: All alerts are structured as objective **Quantitative Confluence Probability Scores** with mathematical risk-reward levels (RSI/MACD signals, VWAP, ATR dynamic stops, block/bulk deals, quarterly earnings surprises, debt shifts). Projections are strictly labeled as **Tactical Resistance 1 (1.5x ATR Benchmark)** / **Expansion Resistance 2 (2.5x ATR Benchmark)** and **Tactical Support 1/2**, accompanied by mandatory mathematical non-advisory disclaimers.
-- **Bank-Grade Security & PII Privacy**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, Telegram webhook secret token validation (`X-Telegram-Bot-Api-Secret-Token`), anti-hijacking Telegram pairing (strictly rejecting public email addresses), complete identifier log masking (`mask_id` exposing only the last 4 characters), whitelisted CORS origins, AES-256 Fernet vault key encryption, and Android ProGuard/R8 code obfuscation.
+- **Bank-Grade Security & PII Privacy**: Supabase Auth JWT token validation on all user endpoints (eliminating BOLA/IDOR), `X-Cron-Secret` header protection against spam/DoS, Telegram webhook secret token validation (`X-Telegram-Bot-Api-Secret-Token`), anti-hijacking Telegram pairing (strictly rejecting public email addresses), complete identifier log masking (`mask_id` exposing only the last 4 characters), whitelisted CORS origins, AES-256 Fernet vault key encryption, Proxy-Aware Rate Limiting (`CF-Connecting-IP`, `X-Forwarded-For`) with auto-pruning and anti-OOM capacity limits, strict CI/CD Secret Isolation (guaranteeing `SUPABASE_SERVICE_ROLE_KEY` is never injected into client APKs), production exception disclosure sanitization, and Android ProGuard/R8 code obfuscation.
 
 ---
 
@@ -32,7 +32,7 @@ StokVigil AI is an automated, unsleeping 5-minute market watchtower operating st
   - `@tradingview/lightweight-charts` v5: Interactive client-side canvas charts rendering OHLCV candles, Camarilla $H_4/L_4$ breakout envelopes, intraday cumulative VWAP, ATR-based Chandelier Trailing Stop, complete attribution logo/link suppression (`attributionLogo: false`), and **StokVigil 'SV' Canvas Watermark & Pro Terminal Badge**.
   - **Off-screen HTML5 2D Canvas Engine**: Instant client-side generation of branded 1080×1080 viral "Alpha Cards" with 1-tap WhatsApp and X sharing at zero backend cost.
 - **Database & Connection Pooling**: Supabase PostgreSQL with Row-Level Security (RLS) + **Supabase PgBouncer (Port 6543)** connection pooling via `asyncpg` (`statement_cache_size=0`, `command_timeout=10.0`, `max_inactive_connection_lifetime=180.0`, 2–10 connection multiplexing) with dual-driver zero-downtime REST fallback and Fernet AES-256 vault encryption.
-- **Integrations**: `breeze-connect` (ICICI Demat holdings across NSE and BSE), Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
+- **Integrations & Pluggable Multi-Broker Architecture (`app/brokers/`)**: Strategy-pattern adapter framework (`BaseBrokerAdapter`, `BrokerRegistry`) supporting ICICI Direct (`breeze-connect`) under the **Pure Master App Publisher Model (Zero Manual Keys)**, with pluggable extension contracts for Zerodha Kite (`kiteconnect`), Angel One (`smartapi`), and Upstox (<30m onboarding); Universal Dynamic ISIN Resolver (`resolve_isin_to_nse_symbol` across 2,000+ equities), `yfinance` (Real-time ticks & valuation), `feedparser` (Google News RSS & Exchange Filings).
 - **Alert Dispatch**: Firebase Cloud Messaging (FCM High-Priority) + Multi-Tenant Interactive Telegram Cockpit (`@StokVigilAi_bot`) with white-labeled **`[📊 StokVigil Chart]`** buttons (deep-linking directly to StokVigil Web PWA via `WEB_PORTAL_URL` or TradingView fallback), `[💼 ICICI Direct]` deep links, official NSE/BSE exchange live quote buttons, and **StokVigil Verified White-Label Branding**.
 
 ---
@@ -293,24 +293,28 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
 
 ---
 
-## 🔑 ICICI Direct Breeze API Authentication & Key Vault Workflow
+## 🔑 Pluggable Multi-Broker Architecture & Zero-Manual-Keys Model
 
-Per SEBI regulations, broker session tokens expire daily. StokVigil AI provides an automated, secure workflow for mobile and web:
+StokVigil AI features an institutional, pluggable **Multi-Broker Architecture (`app/brokers/`)** designed around the **Pure Master App Publisher Model**:
+- **Zero Developer Knowledge Required**: Retail investors never need to visit developer portals (`api.icicidirect.com`), register custom applications, or handle cryptic API Keys and Secret Keys.
+- **Server-Side Master Publisher Credentials**: StokVigil maintains verified Master App credentials (`ICICI_MASTER_APP_KEY`, `ICICI_MASTER_SECRET_KEY`) securely on the backend server.
+- **Pluggable Broker Catalog (`GET /api/brokers`)**: Dynamically catalogs active (`icici`) and upcoming (`zerodha`, `angelone`, `upstox`) broker adapters via the central `BrokerRegistry`.
+- **Pixel-Perfect Vector Brand Badges**: Integrated resolution-independent vector icons for ICICI Direct, Zerodha Kite, and Angel One across Next.js Web (`BrokerLogos.tsx`) and Flutter Mobile (`broker_icons.dart`).
 
-1. **Broker App Configuration**: In the [ICICI Direct Breeze Portal](https://api.icicidirect.com/apiuser/home), register your App with **Redirect URL** set to:
-   - **Official URL**: `https://Yourapp.vercel.app/api/auth/icici-callback`
-2. **Permanent Key Pre-Fill & Decryption (`GET /api/user/credentials`)**:
-   - `App Key` and `Secret Key` are entered **only once** and encrypted in the vault.
-   - On subsequent days, opening the setup screen **automatically fetches and decrypts** the permanent keys.
-   - Includes **`👁️ Show / Hide`** privacy eye toggle buttons on both key inputs.
-3. **1-Tap In-App Login & Session Auto-Capture (Mobile)**:
-   - Tap **`⚡ 1-Tap Login & Auto-Capture Token`** $\rightarrow$ Secure In-App WebView sheet opens.
-   - User logs in with ICICI credentials & TOTP OTP.
-   - App intercepts the `apisession` query parameter instantly, closes the webview, auto-populates the session token, and triggers AES-256 encrypted auto-save.
-4. **Session Token Validation, History Scrubbing & Instant Upsert (`POST /api/user/credentials`)**:
-   - The web callback route (`/api/auth/icici-callback`) renders the token capture card and immediately scrubs the `apisession` parameter from browser history (`window.history.replaceState`), eliminating token persistence in navigation logs and referrer headers.
-   - The **`🔐 Encrypt & Save Key`** button is enabled **only when a valid session token is provided**.
-   - Saving performs an authenticated, conflict-free database upsert (`onConflict: 'user_id'`), instantly syncing live Demat holdings.
+### Streamlined 2-Step Demat Connect Workflow
+
+Per SEBI compliance regulations, Indian broker session tokens expire daily at midnight. StokVigil AI makes daily authentication seamless:
+
+1. **Step 1: 1-Tap Broker Login (`GET /api/brokers/{broker_id}/login-url`)**:
+   - Tap **`[ 1-Tap ICICI Direct Login ↗ ]`** (or switch to upcoming Zerodha Kite / Angel One tabs).
+   - Opens the official broker login portal with the verified master app key and redirect URL.
+   - User logs in with their standard retail broker credentials and 2FA TOTP / Biometrics.
+2. **Step 2: Session Token Connect (`POST /api/user/credentials`)**:
+   - The user copies their generated session token (or mobile auto-captures `apisession` via the secure in-app WebView).
+   - Tapping **`[ 🔐 Connect Demat & Sync Holdings ]`** transmits `{ user_id, session_token, broker: "icici" }`.
+   - The token is encrypted using Fernet AES-256 with PBKDF2HMAC before persisting in `user_credentials`.
+   - Live Demat holdings are instantly decrypted and synchronized in RAM.
+   - The web callback route (`/api/auth/icici-callback`) scrubs `apisession` tokens from browser history (`window.history.replaceState`), eliminating token leakage in navigation logs or referrer headers.
 
 ---
 
@@ -395,7 +399,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (110 automated unit tests across 12 suites):
+3. Run test suite (120 automated unit tests across 13 suites, including multi-broker adapters & security hardening):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

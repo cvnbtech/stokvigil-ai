@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import hmac
 import json
 import logging
@@ -33,6 +32,7 @@ from app.notifications import send_telegram_notification, send_fcm_notification,
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
+from app.brokers import get_broker, list_supported_brokers
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -47,25 +47,84 @@ STOCK_SYMBOL_REGEX = re.compile(r'^[A-Z0-9_\-&.]{1,25}$')
 
 # In-Memory Sliding Window Rate Limiter (Max 120 req/min per client IP)
 _RATE_LIMIT_BUCKETS: Dict[str, List[float]] = {}
-_RATE_LIMIT_WINDOW = 60.0  # 1 minute
+_RATE_LIMIT_WINDOW = 60.0  # 1 minute sliding window
 _RATE_LIMIT_MAX_REQ = 120  # Max requests per window
+_RATE_LIMIT_MAX_BUCKETS = 10000  # Hard memory cap on tracked IP buckets to prevent OOM
+_RATE_LIMIT_LOCK = threading.Lock()
+_RATE_LIMIT_LAST_PRUNE = 0.0
+_RATE_LIMIT_PRUNE_INTERVAL = 60.0  # Prune expired keys every 60 seconds
+
+def _prune_rate_limit_buckets(now: float) -> None:
+    """Evicts expired IP buckets to prevent memory accumulation and memory exhaustion attacks."""
+    global _RATE_LIMIT_LAST_PRUNE
+    _RATE_LIMIT_LAST_PRUNE = now
+
+    # Remove buckets where all timestamps are older than the sliding window
+    expired_ips = [
+        ip for ip, timestamps in _RATE_LIMIT_BUCKETS.items()
+        if not timestamps or (now - timestamps[-1] >= _RATE_LIMIT_WINDOW)
+    ]
+    for ip in expired_ips:
+        _RATE_LIMIT_BUCKETS.pop(ip, None)
+
+    # Hard cap emergency eviction if adversary floods millions of random spoofed IPs
+    if len(_RATE_LIMIT_BUCKETS) > _RATE_LIMIT_MAX_BUCKETS:
+        keys_to_evict = list(_RATE_LIMIT_BUCKETS.keys())[:len(_RATE_LIMIT_BUCKETS) // 4]
+        for ip in keys_to_evict:
+            _RATE_LIMIT_BUCKETS.pop(ip, None)
+
+def _extract_client_ip(request: Request) -> str:
+    """
+    Extracts the genuine client IP, taking into account trusted reverse-proxy headers
+    (Cloud Run, Cloudflare, Render, AWS ALB, Nginx) before falling back to request.client.host.
+    """
+    # 1. Check Cloudflare connecting IP
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
+    # 2. Check X-Forwarded-For (first IP is the originating client IP)
+    x_forwarded = request.headers.get("x-forwarded-for")
+    if x_forwarded and x_forwarded.strip():
+        client_ip = x_forwarded.split(",")[0].strip()
+        if client_ip:
+            return client_ip
+
+    # 3. Check X-Real-IP
+    x_real = request.headers.get("x-real-ip")
+    if x_real and x_real.strip():
+        return x_real.strip()
+
+    # 4. Fallback to direct connection host
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 def check_rate_limit(request: Request):
-    """Protects public search and quote APIs from abuse, scraping, and DoS attacks."""
-    client_ip = request.client.host if request.client else "unknown"
+    """
+    Protects public search and quote APIs from abuse, scraping, and DoS attacks.
+    Thread-safe, proxy-aware, with auto-pruning to eliminate memory leaks.
+    """
+    client_ip = _extract_client_ip(request)
     if client_ip in ["127.0.0.1", "localhost", "unknown"]:
         return
+
     now = time.time()
-    timestamps = _RATE_LIMIT_BUCKETS.get(client_ip, [])
-    valid_ts = [ts for ts in timestamps if now - ts < _RATE_LIMIT_WINDOW]
-    if len(valid_ts) >= _RATE_LIMIT_MAX_REQ:
-        logger.warning(f"Rate limit exceeded for IP: {client_ip}")
-        raise HTTPException(
-            status_code=429,
-            detail="Too many requests. Please slow down and try again in a minute."
-        )
-    valid_ts.append(now)
-    _RATE_LIMIT_BUCKETS[client_ip] = valid_ts
+    with _RATE_LIMIT_LOCK:
+        # Periodic or capacity-triggered cleanup
+        if (now - _RATE_LIMIT_LAST_PRUNE > _RATE_LIMIT_PRUNE_INTERVAL) or (len(_RATE_LIMIT_BUCKETS) > _RATE_LIMIT_MAX_BUCKETS):
+            _prune_rate_limit_buckets(now)
+
+        timestamps = _RATE_LIMIT_BUCKETS.get(client_ip, [])
+        valid_ts = [ts for ts in timestamps if now - ts < _RATE_LIMIT_WINDOW]
+        if len(valid_ts) >= _RATE_LIMIT_MAX_REQ:
+            logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please slow down and try again in a minute."
+            )
+        valid_ts.append(now)
+        _RATE_LIMIT_BUCKETS[client_ip] = valid_ts
 
 app = FastAPI(
     title="StokVigil AI Engine API",
@@ -111,15 +170,15 @@ async def get_db_health():
     Health check verifying the status of the Supabase Connection Pool (PgBouncer Port 6543)
     and underlying database connectivity.
     """
-    pool = await get_db_pool()
-    if pool is None:
-        return {
-            "status": "ready",
-            "pooler_active": False,
-            "driver": "supabase-rest",
-            "message": "Operating via Supabase REST API (DATABASE_URL unconfigured or using fallback)."
-        }
     try:
+        pool = await get_db_pool()
+        if pool is None:
+            return {
+                "status": "ready",
+                "pooler_active": False,
+                "driver": "supabase-rest",
+                "message": "Operating via Supabase REST API (DATABASE_URL unconfigured or using fallback)."
+            }
         async with pool.acquire() as conn:
             val = await conn.fetchval("SELECT 1")
         return {
@@ -136,7 +195,7 @@ async def get_db_health():
         return {
             "status": "degraded",
             "pooler_active": False,
-            "error": str(e),
+            "error": "Database connectivity degraded." if settings.ENVIRONMENT == "production" else str(e),
             "fallback": "supabase-rest"
         }
 
@@ -158,9 +217,8 @@ class RegisterDeviceRequest(BaseModel):
 
 class SaveCredentialsRequest(BaseModel):
     user_id: str
-    app_key: str
-    secret_key: str
     session_token: str
+    broker: str = "icici"
 
 class PlaceOrderRequest(BaseModel):
     user_id: str
@@ -346,52 +404,77 @@ def register_device(
         return {"status": "success", "profile": update_data}
 
 
+@app.get("/api/brokers")
+def get_brokers_catalog():
+    """
+    Returns the catalog of supported and upcoming broker integrations for dynamic UI discovery.
+    """
+    return {
+        "brokers": list_supported_brokers(),
+        "default_broker": "icici"
+    }
+
+
+@app.get("/api/brokers/{broker_id}/login-url")
+def get_broker_login_url(broker_id: str):
+    """
+    Returns the official broker login URL configured with institutional Master Keys.
+    """
+    adapter = get_broker(broker_id)
+    return {
+        "broker": adapter.broker_id,
+        "login_url": adapter.get_login_url()
+    }
+
+
+@app.get("/api/broker/icici/login-url")
+def get_icici_login_url_alias():
+    """
+    Backward-compatible alias for 1-Click ICICI Direct login URL.
+    """
+    adapter = get_broker("icici")
+    return {
+        "broker": "icici",
+        "login_url": adapter.get_login_url()
+    }
+
+
 @app.get("/api/user/credentials")
 def get_user_credentials(
     user_id: str,
+    broker: str = "icici",
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
 ):
     """
-    Retrieves decrypted App Key and Secret Key for pre-filling in the client UI.
+    Retrieves user credential status (has_credentials, token_date, is_expired, login_url).
+    Follows pure Master App Publisher model: zero manual API/Secret keys leaked.
     Guarded by Supabase JWT verify_user_access (Zero IDOR).
     """
     verify_user_access(user_id, auth_user_id)
+    adapter = get_broker(broker)
+    login_url = adapter.get_login_url()
+
     cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if not cred_res.data:
-        return {"has_credentials": False, "app_key": "", "secret_key": "", "token_date": ""}
+        return {
+            "has_credentials": False,
+            "token_date": "",
+            "is_expired": False,
+            "login_url": login_url,
+            "broker": adapter.broker_id
+        }
 
     cred = cred_res.data[0]
-    app_key = ""
-    secret_key = ""
-
-    # Decrypt App Key
-    raw_app_key = cred.get("encrypted_app_key", "")
-    if raw_app_key:
-        try:
-            app_key = vault.decrypt(raw_app_key)
-        except Exception:
-            try:
-                app_key = base64.b64decode(raw_app_key).decode('utf-8')
-            except Exception:
-                app_key = raw_app_key
-
-    # Decrypt Secret Key
-    raw_secret_key = cred.get("encrypted_secret_key", "")
-    if raw_secret_key:
-        try:
-            secret_key = vault.decrypt(raw_secret_key)
-        except Exception:
-            try:
-                secret_key = base64.b64decode(raw_secret_key).decode('utf-8')
-            except Exception:
-                secret_key = raw_secret_key
+    token_date = str(cred.get("token_date", ""))
+    is_expired = not adapter.validate_session(token_date)
 
     return {
         "has_credentials": True,
-        "app_key": app_key,
-        "secret_key": secret_key,
-        "token_date": cred.get("token_date", "")
+        "token_date": token_date,
+        "is_expired": is_expired,
+        "login_url": login_url,
+        "broker": adapter.broker_id
     }
 
 
@@ -402,35 +485,17 @@ def save_user_credentials(
     db: Client = Depends(get_supabase)
 ):
     """
-    Encrypts user ICICI Breeze credentials (AES-256 Fernet) and stores them securely in Supabase.
-    Properly updates/upserts the record if it already exists for the user.
+    Encrypts user broker session token (AES-256 Fernet) with institutional Master Keys and stores in vault.
+    Delegates to the requested broker adapter in the pluggable broker registry.
     """
     verify_user_access(req.user_id, auth_user_id)
-    encrypted_app_key = vault.encrypt(req.app_key)
-    encrypted_secret_key = vault.encrypt(req.secret_key)
-    encrypted_session_token = vault.encrypt(req.session_token)
-    today_str = str(date.today())
-
-    payload = {
-        "user_id": req.user_id,
-        "encrypted_app_key": encrypted_app_key,
-        "encrypted_secret_key": encrypted_secret_key,
-        "encrypted_session_token": encrypted_session_token,
-        "token_date": today_str,
-        "updated_at": "now()"
-    }
-
-    try:
-        res = db.table("user_credentials").upsert(payload, on_conflict="user_id").execute()
-    except Exception as e:
-        logger.error(f"Error upserting credentials for user {mask_id(req.user_id)}: {e}")
-        res = db.table("user_credentials").update(payload).eq("user_id", req.user_id).execute()
-
-    return {
-        "status": "success",
-        "message": "ICICI Breeze Session Token saved & encrypted successfully.",
-        "token_date": today_str
-    }
+    adapter = get_broker(req.broker)
+    return adapter.save_credentials(
+        db=db,
+        vault=vault,
+        user_id=req.user_id,
+        session_token=req.session_token
+    )
 
 
 @app.get("/api/stocks/search", dependencies=[Depends(check_rate_limit)])
@@ -1226,7 +1291,10 @@ def delete_user_account(
         }
     except Exception as e:
         logger.error(f"Error deleting account for user {mask_id(req.user_id)}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete account due to an internal error. Please try again or contact support."
+        )
 
 
 # In-Memory RAM Portfolio Cache (15s TTL for lightning-fast tab switching)
@@ -1386,11 +1454,21 @@ def get_user_portfolio(
             "holdings": []
         }
 
-    app_key = vault.decrypt(cred.get("encrypted_app_key"))
-    secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-    session_token = vault.decrypt(cred.get("encrypted_session_token"))
+    raw_app_key = cred.get("encrypted_app_key")
+    raw_secret_key = cred.get("encrypted_secret_key")
+    raw_session_token = cred.get("encrypted_session_token")
 
-    raw_holdings = fetch_user_portfolio(app_key, secret_key, session_token)
+    app_key = (vault.decrypt(raw_app_key) if raw_app_key else None) or (settings.ICICI_MASTER_APP_KEY or "")
+    secret_key = (vault.decrypt(raw_secret_key) if raw_secret_key else None) or (settings.ICICI_MASTER_SECRET_KEY or "")
+    session_token = vault.decrypt(raw_session_token) if raw_session_token else ""
+
+    broker_id = cred.get("broker_id") or "icici"
+    adapter = get_broker(broker_id)
+    raw_holdings = adapter.fetch_holdings({
+        "app_key": app_key,
+        "secret_key": secret_key,
+        "session_token": session_token
+    })
     
     # High-Speed Parallel Financials & Market Pricing for 100+ stocks
     def _price_single_holding(h: Dict[str, Any]) -> Dict[str, Any]:
@@ -1630,7 +1708,7 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
         logger.error(f"❌ Error in background market scan: {e}", exc_info=True)
         return {
             "status": "error",
-            "error": str(e),
+            "error": "Market intelligence scan failed." if settings.ENVIRONMENT == "production" else str(e),
             "timestamp": today_str
         }
     finally:
@@ -1984,15 +2062,18 @@ def place_trade_order(
             raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
 
         cred = cred_res.data[0]
-        app_key = vault.decrypt(cred.get("encrypted_app_key"))
-        secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-        session_token = vault.decrypt(cred.get("encrypted_session_token"))
+        raw_app = cred.get("encrypted_app_key")
+        raw_sec = cred.get("encrypted_secret_key")
+        raw_tok = cred.get("encrypted_session_token")
+
+        app_key = (vault.decrypt(raw_app) if raw_app else None) or (settings.ICICI_MASTER_APP_KEY or "")
+        secret_key = (vault.decrypt(raw_sec) if raw_sec else None) or (settings.ICICI_MASTER_SECRET_KEY or "")
+        session_token = vault.decrypt(raw_tok) if raw_tok else ""
+
+        broker_id = cred.get("broker_id") or "icici"
+        adapter = get_broker(broker_id)
 
         try:
-            from breeze_connect import BreezeConnect
-            breeze = BreezeConnect(api_key=app_key)
-            breeze.generate_session(api_secret=secret_key, session_token=session_token)
-
             action_type = "buy" if req.action.upper() == "BUY" else "sell"
             ot_upper = req.order_type.upper()
             if ot_upper in ["STOPLOSS_LIMIT", "STOPLOSS", "SL", "SL-L"]:
@@ -2021,7 +2102,11 @@ def place_trade_order(
             if not product_type:
                 if action_type == "sell":
                     # Check if user holds sufficient quantity in Demat holdings
-                    user_holdings = fetch_user_portfolio(app_key, secret_key, session_token)
+                    user_holdings = adapter.fetch_holdings({
+                        "app_key": app_key,
+                        "secret_key": secret_key,
+                        "session_token": session_token
+                    })
                     req_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "")
                     has_holding = any(
                         (str(h.get("symbol", "")).upper().replace(".NS", "").replace(".BO", "") == req_sym or
@@ -2049,16 +2134,23 @@ def place_trade_order(
             is_bse = req.symbol.upper().endswith(".BO") or (clean_stock_code.isdigit() and len(clean_stock_code) == 6)
             exchange_code = "BSE" if is_bse else "NSE"
 
-            order_res = breeze.place_order(
-                stock_code=clean_stock_code,
-                exchange_code=exchange_code,
-                product=product_type,
-                action=action_type,
-                order_type=order_type,
-                stoploss=str(snapped_stoploss) if order_type == "stoploss" else "0",
-                quantity=str(req.quantity),
-                price=str(snapped_price) if order_type in ["limit", "stoploss"] else "0",
-                validity="day"
+            order_res = adapter.place_order(
+                decrypted_creds={
+                    "app_key": app_key,
+                    "secret_key": secret_key,
+                    "session_token": session_token
+                },
+                order_params={
+                    "stock_code": clean_stock_code,
+                    "exchange_code": exchange_code,
+                    "product": product_type,
+                    "action": action_type,
+                    "order_type": order_type,
+                    "stoploss": snapped_stoploss,
+                    "quantity": req.quantity,
+                    "price": snapped_price,
+                    "validity": "day"
+                }
             )
 
             # Detect ICICI Breeze Silent RMS Rejection (Status 500 / Error without Python exception)
@@ -2116,7 +2208,7 @@ def place_trade_order(
             else:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"Broker order placement failed: {str(e)}"
+                    detail="Broker order placement failed due to an upstream broker error. Please check your credentials or try again."
                 )
 
         # Store completed execution in idempotency cache

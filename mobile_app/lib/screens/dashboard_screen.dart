@@ -160,10 +160,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text("🔑", style: TextStyle(fontSize: 12)),
+                        Text(
+                          _hasCredentials ? "●" : "⚡",
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: _hasCredentials ? AppTheme.cyan : AppTheme.dangerRose,
+                          ),
+                        ),
                         const SizedBox(width: 6),
                         Text(
-                          _hasCredentials ? "Key Active" : "Needs Key",
+                          _hasCredentials ? "Demat Linked" : "Connect Demat",
                           style: TextStyle(
                             color: _hasCredentials ? AppTheme.cyan : AppTheme.dangerRose,
                             fontWeight: FontWeight.w900,
@@ -622,7 +628,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                           onPressed: widget.onOpenCredentials,
                           child: const Text(
-                            "🔑 Setup Session Key →",
+                            "⚡ Connect Demat Broker →",
                             style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w900,

@@ -45,11 +45,9 @@ export default function App() {
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger">("home");
   const [showKeyModal, setShowKeyModal] = useState(false);
-  const [appKey, setAppKey] = useState<string>("");
-  const [secretKey, setSecretKey] = useState<string>("");
+  const [selectedBroker, setSelectedBroker] = useState<string>("icici");
+  const [brokerLoginUrl, setBrokerLoginUrl] = useState<string>("");
   const [sessionTok, setSessionTok] = useState("");
-  const [showAppKey, setShowAppKey] = useState(false);
-  const [showSecretKey, setShowSecretKey] = useState(false);
   const [keySaved, setKeySaved]   = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [hasCredentials, setHasCredentials] = useState(false);
@@ -129,8 +127,9 @@ export default function App() {
         if (credData.has_credentials) {
           const isTokenValidToday = Boolean(credData.token_date === todayStr);
           if (isTokenValidToday) setHasCredentials(true);
-          if (credData.app_key) setAppKey(credData.app_key);
-          if (credData.secret_key) setSecretKey(credData.secret_key);
+        }
+        if (credData.login_url) {
+          setBrokerLoginUrl(credData.login_url);
         }
       }
 
@@ -475,6 +474,14 @@ export default function App() {
     if (uid) {
       loadPortfolioData(uid);
     }
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/broker/icici/login-url`, { headers });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.login_url) setBrokerLoginUrl(d.login_url);
+      }
+    } catch (_) {}
   }, [user?.id, loadPortfolioData]);
 
   useEffect(() => {
@@ -614,8 +621,6 @@ export default function App() {
 
   const saveKey = async () => {
     setKeySaving(true);
-    const cleanAppKey = appKey.trim();
-    const cleanSecretKey = secretKey.trim();
     const cleanSessionTok = sessionTok.trim();
 
     let currentUserId = user?.id;
@@ -634,9 +639,8 @@ export default function App() {
           headers,
           body: JSON.stringify({
             user_id: currentUserId,
-            app_key: cleanAppKey,
-            secret_key: cleanSecretKey,
-            session_token: cleanSessionTok
+            session_token: cleanSessionTok,
+            broker: selectedBroker || "icici"
           })
         });
         if (res.ok) {
@@ -1173,19 +1177,14 @@ export default function App() {
         {showKeyModal && (
           <IciciKeyModal
             onClose={() => setShowKeyModal(false)}
-            appKey={appKey}
-            setAppKey={setAppKey}
-            secretKey={secretKey}
-            setSecretKey={setSecretKey}
             sessionTok={sessionTok}
             setSessionTok={setSessionTok}
-            showAppKey={showAppKey}
-            setShowAppKey={setShowAppKey}
-            showSecretKey={showSecretKey}
-            setShowSecretKey={setShowSecretKey}
             keySaved={keySaved}
             keySaving={keySaving}
             saveKey={saveKey}
+            loginUrl={brokerLoginUrl}
+            selectedBroker={selectedBroker}
+            setSelectedBroker={setSelectedBroker}
           />
         )}
 

@@ -43,9 +43,8 @@ class ApiService {
 
   Future<bool> saveIciciCredentials({
     required String userId,
-    required String appKey,
-    required String secretKey,
     required String sessionToken,
+    String broker = 'icici',
   }) async {
     try {
       final res = await http.post(
@@ -53,9 +52,8 @@ class ApiService {
         headers: _getAuthHeaders(),
         body: jsonEncode({
           'user_id': userId,
-          'app_key': appKey,
-          'secret_key': secretKey,
           'session_token': sessionToken,
+          'broker': broker,
         }),
       ).timeout(const Duration(seconds: 30));
       return res.statusCode == 200;
@@ -63,6 +61,26 @@ class ApiService {
       debugPrint("API Error saving credentials: $e");
       return false;
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchSupportedBrokers() async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/api/brokers'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['brokers'] is List) {
+          return List<Map<String, dynamic>>.from(data['brokers']);
+        }
+      }
+    } catch (e) {
+      debugPrint("API Error fetching brokers: $e");
+    }
+    return [];
   }
 
   Future<Map<String, dynamic>?> fetchUserCredentials(String userId) async {

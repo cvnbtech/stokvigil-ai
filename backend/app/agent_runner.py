@@ -1736,10 +1736,23 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
             if cached_holdings is not None:
                 holdings = cached_holdings
             else:
-                app_key = vault.decrypt(cred.get("encrypted_app_key"))
-                secret_key = vault.decrypt(cred.get("encrypted_secret_key"))
-                session_token = vault.decrypt(cred.get("encrypted_session_token"))
-                holdings = await asyncio.to_thread(fetch_user_portfolio, app_key, secret_key, session_token)
+                raw_app = cred.get("encrypted_app_key")
+                raw_sec = cred.get("encrypted_secret_key")
+                raw_tok = cred.get("encrypted_session_token")
+                app_key = vault.decrypt(raw_app) if raw_app else ""
+                secret_key = vault.decrypt(raw_sec) if raw_sec else ""
+                session_token = vault.decrypt(raw_tok) if raw_tok else ""
+
+                app_key = app_key or (settings.ICICI_MASTER_APP_KEY or "")
+                secret_key = secret_key or (settings.ICICI_MASTER_SECRET_KEY or "")
+
+                from app.brokers import get_broker
+                broker_id = cred.get("broker_id") or "icici"
+                adapter = get_broker(broker_id)
+                holdings = await asyncio.to_thread(
+                    adapter.fetch_holdings,
+                    {"app_key": app_key, "secret_key": secret_key, "session_token": session_token}
+                )
                 _DEMAT_PORTFOLIO_CACHE[user_id] = {"timestamp": now, "holdings": holdings}
             
             watchlist_upserts = []

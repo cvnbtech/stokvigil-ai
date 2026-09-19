@@ -1,11 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../config/theme.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
+import '../widgets/broker_icons.dart';
 
 class IciciCredentialsScreen extends StatefulWidget {
   final VoidCallback onSaved;
@@ -17,117 +18,74 @@ class IciciCredentialsScreen extends StatefulWidget {
 }
 
 class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
-  final _appKeyController = TextEditingController();
-  final _secretKeyController = TextEditingController();
   final _sessionTokenController = TextEditingController();
-  bool _showAppKey = false;
-  bool _showSecretKey = false;
+  String _selectedBroker = 'icici';
+  String _loginUrl = 'https://api.icicidirect.com/apiuser/login';
   bool _isLoading = false;
   bool _isSuccess = false;
+  bool _hasExistingValidSession = false;
+  String? _lastTokenDate;
 
   @override
   void initState() {
     super.initState();
-    _appKeyController.addListener(_onFieldChanged);
-    _secretKeyController.addListener(_onFieldChanged);
     _sessionTokenController.addListener(_onFieldChanged);
-    _loadExistingCredentials();
+    _loadBrokerAndCredentials();
   }
 
   void _onFieldChanged() {
     if (mounted) setState(() {});
   }
 
-  bool get _isFormValid =>
-      _appKeyController.text.trim().isNotEmpty &&
-      _secretKeyController.text.trim().isNotEmpty &&
-      _sessionTokenController.text.trim().isNotEmpty;
+  bool get _isFormValid => _sessionTokenController.text.trim().isNotEmpty;
 
-  bool _isEncryptedBlob(String val) {
-    if (val.isEmpty) return false;
-    // Fernet AES-256 tokens start with "gAAAAA" and are over 50 chars
-    if (val.startsWith("gAAAAA") && val.length > 50) return true;
-    return false;
-  }
-
-  String _decodeDatabaseValue(String raw) {
-    if (raw.isEmpty) return "";
-    final trimmed = raw.trim();
-
-    if (_isEncryptedBlob(trimmed)) {
-      // Fernet ciphertext blob cannot be decoded without backend decryption key
-      return "";
-    }
-
-    // 1. Try URL-Safe Base64 Decode
-    try {
-      String normalized = trimmed.replaceAll('-', '+').replaceAll('_', '/');
-      while (normalized.length % 4 != 0) {
-        normalized += '=';
-      }
-      final decoded = utf8.decode(base64.decode(normalized));
-      if (decoded.isNotEmpty && RegExp(r'^[\x20-\x7E]+$').hasMatch(decoded) && !_isEncryptedBlob(decoded)) {
-        return decoded;
-      }
-    } catch (_) {}
-
-    // 2. Try Standard Base64 Decode
-    try {
-      final decoded = utf8.decode(base64.decode(base64.normalize(trimmed)));
-      if (decoded.isNotEmpty && RegExp(r'^[\x20-\x7E]+$').hasMatch(decoded) && !_isEncryptedBlob(decoded)) {
-        return decoded;
-      }
-    } catch (_) {}
-
-    // 3. If raw string is already plain text (alphanumeric ICICI key)
-    if (!_isEncryptedBlob(trimmed) && RegExp(r'^[a-zA-Z0-9_\-~^@#*!]+$').hasMatch(trimmed) && trimmed.length <= 64) {
-      return trimmed;
-    }
-
-    return "";
-  }
-
-  Future<void> _loadExistingCredentials() async {
+  Future<void> _loadBrokerAndCredentials() async {
     final user = SupabaseService().currentUser;
     if (user == null) return;
     try {
-      // Get decrypted keys securely from backend API (Backend Fernet Vault)
       final creds = await ApiService().fetchUserCredentials(user.id);
-      if (creds != null && creds['has_credentials'] == true && mounted) {
-        final appKeyVal = creds['app_key']?.toString() ?? '';
-        final secretKeyVal = creds['secret_key']?.toString() ?? '';
+      if (creds != null && mounted) {
+        final url = creds['login_url']?.toString();
+        if (url != null && url.isNotEmpty) {
+          _loginUrl = url;
+        }
 
-        if (appKeyVal.isNotEmpty) _appKeyController.text = appKeyVal;
-        if (secretKeyVal.isNotEmpty) _secretKeyController.text = secretKeyVal;
+        final todayStr = DateTime.now().toIso8601String().split('T')[0];
+        final tokenDate = creds['token_date']?.toString();
+        final hasCreds = creds['has_credentials'] == true;
+
+        setState(() {
+          _lastTokenDate = tokenDate;
+          _hasExistingValidSession = hasCreds && (tokenDate == todayStr);
+        });
       }
     } catch (e) {
-      debugPrint("Could not pre-fill saved keys: $e");
+      debugPrint("Could not load broker credentials status: $e");
     }
   }
 
   @override
   void dispose() {
-    _appKeyController.removeListener(_onFieldChanged);
-    _secretKeyController.removeListener(_onFieldChanged);
     _sessionTokenController.removeListener(_onFieldChanged);
-    _appKeyController.dispose();
-    _secretKeyController.dispose();
     _sessionTokenController.dispose();
     super.dispose();
   }
 
-  void _openIciciLogin() async {
-    final appKey = _appKeyController.text.trim();
-    if (appKey.isEmpty) {
-      ErrorHandler.showErrorSnackBar(context, "Please enter your ICICI App Key above first before opening login.");
-      return;
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null && mounted) {
+      String clean = data!.text!.trim();
+      if (clean.contains("apisession=")) {
+        clean = clean.split("apisession=")[1].split("&")[0];
+      }
+      clean = Uri.decodeComponent(clean).trim();
+      _sessionTokenController.text = clean;
+      ErrorHandler.showSuccessSnackBar(context, "Session token pasted from clipboard!");
     }
-    if (_isEncryptedBlob(appKey)) {
-      ErrorHandler.showErrorSnackBar(context, "Encrypted key detected. Please paste your plain ICICI Breeze App Key from api.icicidirect.com");
-      return;
-    }
-    final urlStr = "https://api.icicidirect.com/apiuser/login?api_key=${Uri.encodeComponent(appKey)}";
-    final url = Uri.parse(urlStr);
+  }
+
+  void _openBrokerLogin() async {
+    final url = Uri.parse(_loginUrl);
     try {
       final success = await launchUrl(url, mode: LaunchMode.externalApplication);
       if (!success) {
@@ -145,36 +103,31 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   }
 
   Future<void> _saveCredentials() async {
-    final appKey = _appKeyController.text.trim();
-    final secretKey = _secretKeyController.text.trim();
-    final sessionToken = _sessionTokenController.text.trim();
-
-    if (appKey.isEmpty || secretKey.isEmpty || sessionToken.isEmpty) {
-      ErrorHandler.showErrorSnackBar(context, "Please fill in all 3 credentials fields (App Key, Secret Key, Session Token).");
+    String sessionToken = _sessionTokenController.text.trim();
+    if (sessionToken.isEmpty) {
+      ErrorHandler.showErrorSnackBar(context, "Please enter or paste your session token.");
       return;
     }
 
-    if (_isEncryptedBlob(appKey) || _isEncryptedBlob(secretKey)) {
-      ErrorHandler.showErrorSnackBar(context, "Please enter your plain API keys, not encrypted strings.");
-      return;
+    if (sessionToken.contains("apisession=")) {
+      sessionToken = sessionToken.split("apisession=")[1].split("&")[0];
+      sessionToken = Uri.decodeComponent(sessionToken).trim();
     }
 
     final user = SupabaseService().currentUser;
     if (user == null) {
       setState(() => _isSuccess = true);
-      ErrorHandler.showSuccessSnackBar(context, "Credentials encrypted and saved successfully!");
+      ErrorHandler.showSuccessSnackBar(context, "Demat connected successfully!");
       Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      // Save credentials exclusively via Backend API (Fernet AES-256 Vault)
       bool success = await ApiService().saveIciciCredentials(
         userId: user.id,
-        appKey: appKey,
-        secretKey: secretKey,
         sessionToken: sessionToken,
+        broker: _selectedBroker,
       );
 
       setState(() {
@@ -184,12 +137,12 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
       if (success) {
         if (mounted) {
-          ErrorHandler.showSuccessSnackBar(context, "✅ ICICI Breeze Session Key encrypted & saved!");
+          ErrorHandler.showSuccessSnackBar(context, "✅ Demat Connected & Synced (AES-256 Vault)");
         }
         Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
       } else {
         if (mounted) {
-          ErrorHandler.showErrorSnackBar(context, "Failed to save credentials. Please check your internet connection.");
+          ErrorHandler.showErrorSnackBar(context, "Failed to save session token. Please try again.");
         }
       }
     } catch (e) {
@@ -206,15 +159,33 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
       appBar: AppBar(
         title: Row(
           children: const [
-            Icon(Icons.vpn_key_outlined, color: AppTheme.cyan, size: 22),
+            Icon(Icons.link_rounded, color: AppTheme.cyan, size: 22),
             SizedBox(width: 8),
-            Text("ICICI Breeze Key Setup", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
+            Text(
+              "Connect Demat Broker",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
+            ),
           ],
         ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(20.0),
         children: [
+          // Multi-Broker Selection Tabs
+          const Text(
+            "SELECT BROKER",
+            style: TextStyle(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.0,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildBrokerSelector(),
+          const SizedBox(height: 18),
+
+          // Active Session Status or Success Banner
           if (_isSuccess) ...[
             Container(
               padding: const EdgeInsets.all(16),
@@ -229,88 +200,165 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                   SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      "✅ Credentials encrypted (AES-256) & saved successfully!",
+                      "✅ Demat Account Connected! Vault secured with AES-256 encryption.",
                       style: TextStyle(color: AppTheme.primaryEmerald, fontWeight: FontWeight.w900, fontSize: 13),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
+          ] else if (_hasExistingValidSession) ...[
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppTheme.primaryEmerald.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.4)),
+              ),
+              child: Row(
+                children: const [
+                  Icon(Icons.verified, color: AppTheme.primaryEmerald, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      "● ICICI Direct Connected for today's market session",
+                      style: TextStyle(color: AppTheme.primaryEmerald, fontWeight: FontWeight.w800, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
           ],
 
+          // Main 1-Click Connect Card
           GlassCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text("🔐 Client-Side AES-256 Vault Encryption", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14)),
-                const SizedBox(height: 6),
-                const Text(
-                  "Session tokens expire daily at midnight. Paste your morning ICICI Breeze token below.",
-                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, height: 1.4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cyan.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.flash_on, color: AppTheme.cyan, size: 20),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Institutional 1-Click Onboarding",
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                          ),
+                          Text(
+                            "Log in with standard User ID & OTP • Zero API Keys",
+                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 20),
 
-                // App Key Input with View Toggle
-                _buildInput(
-                  label: "APP KEY",
-                  controller: _appKeyController,
-                  hint: "Enter ICICI Breeze App Key",
-                  isObscure: !_showAppKey,
-                  onToggleVisibility: () => setState(() => _showAppKey = !_showAppKey),
+                // Step 1: Login CTA
+                const Text(
+                  "STEP 1: AUTHENTICATE WITH BROKER",
+                  style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.5),
                 ),
-                const SizedBox(height: 14),
-
-                // Secret Key Input with View Toggle
-                _buildInput(
-                  label: "SECRET KEY",
-                  controller: _secretKeyController,
-                  hint: "Enter Secret Key",
-                  isObscure: !_showSecretKey,
-                  onToggleVisibility: () => setState(() => _showSecretKey = !_showSecretKey),
+                const SizedBox(height: 6),
+                const Text(
+                  "Opens the official, secure ICICI Direct authentication portal in your browser.",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.4),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
 
-                // 1-Tap ICICI Web Login Button
                 Container(
                   width: double.infinity,
+                  height: 48,
                   decoration: BoxDecoration(
                     color: AppTheme.cyan.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppTheme.cyan.withOpacity(0.35)),
+                    border: Border.all(color: AppTheme.cyan.withOpacity(0.4)),
                   ),
                   child: Material(
                     color: Colors.transparent,
                     child: InkWell(
-                      onTap: _openIciciLogin,
+                      onTap: _openBrokerLogin,
                       borderRadius: BorderRadius.circular(14),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      child: Center(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
+                          children: const [
+                            IciciDirectLogo(size: 18),
+                            SizedBox(width: 8),
                             Text(
-                              "🌐 1-Tap ICICI Web Login",
+                              "1-Tap ICICI Direct Login",
                               style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 13),
                             ),
+                            SizedBox(width: 6),
+                            Icon(Icons.open_in_new, color: AppTheme.cyan, size: 16),
                           ],
                         ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 22),
 
-                // Session Token Input
-                _buildInput(
-                  label: "SESSION TOKEN (AUTO-POPULATED)",
-                  controller: _sessionTokenController,
-                  hint: "Tap button above or paste token here",
-                  isObscure: false,
+                // Step 2: Session Token
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.between,
+                  children: [
+                    const Text(
+                      "STEP 2: SESSION TOKEN",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 0.5),
+                    ),
+                    GestureDetector(
+                      onTap: _pasteFromClipboard,
+                      child: Row(
+                        children: const [
+                          Icon(Icons.content_paste, color: AppTheme.cyan, size: 14),
+                          SizedBox(width: 4),
+                          Text(
+                            "Paste",
+                            style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 8),
 
-                // Encrypt & Save CTA Button (Enabled ONLY when form is valid)
+                TextField(
+                  controller: _sessionTokenController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: "Paste session token (apisession) here",
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 12),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.04),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: AppTheme.cyan),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
+
+                // Primary Connect CTA Button
                 Container(
                   width: double.infinity,
                   height: 52,
@@ -318,10 +366,9 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                     gradient: _isFormValid
                         ? const LinearGradient(
                             colors: [
-                              Color(0xFF00B4D8), // Vibrant Cyan
-                              Color(0xFF0284C7), // Sky Blue
-                              Color(0xFF6366F1), // Indigo
-                              Color(0xFF8B5CF6), // Violet Purple
+                              Color(0xFF00B4D8),
+                              Color(0xFF0284C7),
+                              Color(0xFF6366F1),
                             ],
                             begin: Alignment.centerLeft,
                             end: Alignment.centerRight,
@@ -351,20 +398,48 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                     onPressed: (_isFormValid && !_isLoading) ? _saveCredentials : null,
                     child: _isLoading
                         ? const SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.2),
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : Text(
-                            "🔐 Encrypt & Save Key",
-                            style: TextStyle(
-                              color: _isFormValid ? Colors.white : const Color(0xFF64748B),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 15,
-                              letterSpacing: -0.2,
-                            ),
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.lock_outline, size: 18, color: Colors.white),
+                              SizedBox(width: 8),
+                              Text(
+                                "Connect Demat & Sync Holdings",
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                              ),
+                            ],
                           ),
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          // Security & Compliance Disclaimer
+          Center(
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: const [
+                    Icon(Icons.shield_outlined, color: AppTheme.textSecondary, size: 14),
+                    SizedBox(width: 6),
+                    Text(
+                      "AES-256 Vault Encrypted • Zero Plaintext Storage",
+                      style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Regulated broker API session • Automatically refreshed daily per SEBI norms.",
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
@@ -374,65 +449,130 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
     );
   }
 
-  Widget _buildInput({
-    required String label,
-    required TextEditingController controller,
-    required String hint,
-    required bool isObscure,
-    VoidCallback? onToggleVisibility,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildBrokerSelector() {
+    return Row(
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
-            if (onToggleVisibility != null)
-              GestureDetector(
-                onTap: onToggleVisibility,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isObscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        color: AppTheme.cyan,
-                        size: 14,
+        // ICICI Direct (Active)
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+            decoration: BoxDecoration(
+              color: AppTheme.cyan.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppTheme.cyan),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: const [
+                        IciciDirectLogo(size: 16),
+                        SizedBox(width: 6),
+                        Text("ICICI Direct", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12)),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryEmerald,
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        isObscure ? "Show" : "Hide",
-                        style: const TextStyle(
-                          color: AppTheme.cyan,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
+                      child: const Text("ACTIVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 8)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text("1-Click Demat Connect", style: TextStyle(color: AppTheme.cyan, fontSize: 10, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+
+        // Zerodha (Coming Soon)
+        Expanded(
+          child: Opacity(
+            opacity: 0.5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: const [
+                          ZerodhaLogo(size: 16),
+                          SizedBox(width: 6),
+                          Text("Zerodha", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
                         ),
+                        child: const Text("SOON", style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 8)),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 4),
+                  const Text("Kite Connect", style: TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+                ],
               ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFF080B16),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppTheme.cardBorder),
+            ),
           ),
-          child: TextField(
-            controller: controller,
-            obscureText: isObscure,
-            style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-              border: InputBorder.none,
+        ),
+        const SizedBox(width: 8),
+
+        // Angel One (Coming Soon)
+        Expanded(
+          child: Opacity(
+            opacity: 0.5,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: const [
+                          AngelOneLogo(size: 16),
+                          SizedBox(width: 6),
+                          Text("Angel One", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12)),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text("SOON", style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 8)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text("SmartAPI", style: TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+                ],
+              ),
             ),
           ),
         ),

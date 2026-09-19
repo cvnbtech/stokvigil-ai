@@ -1,7 +1,7 @@
 import sys
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 # Set UTF-8 encoding for Windows stdout
@@ -193,27 +193,27 @@ class TestApiEndpoints(unittest.TestCase):
         data = res.json()
         self.assertEqual(data["status"], "success")
 
-    # 9. Get User Credentials - Authorized with Vault Decryption
+    # 9. Get User Credentials - Authorized with Master App Publisher Model
     def test_09_get_user_credentials(self):
         res = self.client.get("/api/user/credentials?user_id=test-user-123")
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertTrue(data["has_credentials"])
-        self.assertEqual(data["app_key"], "TEST_APP_KEY")
-        self.assertEqual(data["secret_key"], "TEST_SECRET_KEY")
+        self.assertIn("login_url", data)
+        self.assertEqual(data.get("broker"), "icici")
 
-    # 10. Save User Credentials - Authorized with Vault Encryption
+    # 10. Save User Credentials - Authorized with Vault Encryption (Pure Master Model)
     def test_10_save_user_credentials(self):
         payload = {
             "user_id": "test-user-123",
-            "app_key": "NEW_APP_KEY",
-            "secret_key": "NEW_SECRET_KEY",
-            "session_token": "NEW_SESSION_TOKEN"
+            "session_token": "NEW_SESSION_TOKEN",
+            "broker": "icici"
         }
         res = self.client.post("/api/user/credentials", json=payload)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data["status"], "success")
+        self.assertEqual(data.get("broker"), "icici")
 
     # 11. 5-Minute Cron - Missing X-Cron-Secret Blocked
     def test_11_cron_multi_user_scan_missing_secret(self):
@@ -600,6 +600,75 @@ class TestApiEndpoints(unittest.TestCase):
         finally:
             settings.ENVIRONMENT = orig_env
             settings.ENCRYPTION_KEY = orig_key
+
+
+    # 31. Security: Rate Limiter Proxy IP Extraction & Pruning
+    def test_31_rate_limiter_proxy_ip_extraction_and_pruning(self):
+        from app.main import _extract_client_ip, _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
+        from unittest.mock import MagicMock
+        import time
+
+        # 1. Cloudflare header precedence
+        req_cf = MagicMock()
+        req_cf.headers = {"cf-connecting-ip": "203.0.113.195", "x-forwarded-for": "198.51.100.10"}
+        req_cf.client.host = "10.0.0.1"
+        self.assertEqual(_extract_client_ip(req_cf), "203.0.113.195")
+
+        # 2. X-Forwarded-For multi-proxy chain extraction (first IP is client)
+        req_xff = MagicMock()
+        req_xff.headers = {"x-forwarded-for": "198.51.100.10, 10.0.0.2, 10.0.0.3"}
+        req_xff.client.host = "10.0.0.1"
+        self.assertEqual(_extract_client_ip(req_xff), "198.51.100.10")
+
+        # 3. Direct host fallback
+        req_direct = MagicMock()
+        req_direct.headers = {}
+        req_direct.client.host = "192.0.2.1"
+        self.assertEqual(_extract_client_ip(req_direct), "192.0.2.1")
+
+        # 4. Pruning expired keys
+        now = time.time()
+        _RATE_LIMIT_BUCKETS["expired_ip"] = [now - 120.0, now - 90.0]
+        _RATE_LIMIT_BUCKETS["active_ip"] = [now - 10.0]
+        _prune_rate_limit_buckets(now)
+        self.assertNotIn("expired_ip", _RATE_LIMIT_BUCKETS)
+        self.assertIn("active_ip", _RATE_LIMIT_BUCKETS)
+        _RATE_LIMIT_BUCKETS.pop("active_ip", None)
+
+    # 32. Security: Rate Limiter Memory Cap / Hard Capacity Eviction
+    def test_32_rate_limiter_max_capacity_eviction(self):
+        from app.main import _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
+        import time
+        now = time.time()
+        # Seed 1050 buckets with active timestamps
+        for i in range(1050):
+            _RATE_LIMIT_BUCKETS[f"flood_ip_{i}"] = [now]
+
+        with patch("app.main._RATE_LIMIT_MAX_BUCKETS", 1000):
+            _prune_rate_limit_buckets(now)
+            # Eviction should have reduced the count below 1000
+            self.assertLessEqual(len(_RATE_LIMIT_BUCKETS), 1000)
+
+        # Cleanup
+        _RATE_LIMIT_BUCKETS.clear()
+
+    # 33. Security: Information Disclosure Sanitization in Production Mode
+    def test_33_exception_sanitization_in_production(self):
+        orig_env = settings.ENVIRONMENT
+        try:
+            settings.ENVIRONMENT = "production"
+            # Simulate broken database connection on /api/health/db
+            with patch("app.main.get_db_pool", side_effect=Exception("FATAL: password authentication failed for user postgres at internal-db.internal:5432")):
+                res = self.client.get("/api/health/db")
+                self.assertEqual(res.status_code, 200)
+                data = res.json()
+                self.assertEqual(data["status"], "degraded")
+                self.assertEqual(data["error"], "Database connectivity degraded.")
+                # Must not contain internal connection or host details
+                self.assertNotIn("internal-db", data["error"])
+                self.assertNotIn("password authentication failed", data["error"])
+        finally:
+            settings.ENVIRONMENT = orig_env
 
 
 if __name__ == "__main__":

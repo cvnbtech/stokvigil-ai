@@ -200,7 +200,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         builder: (context) => IciciCredentialsScreen(
           onSaved: () {
             if (mounted) {
-              ErrorHandler.showSuccessSnackBar(context, "ICICI Breeze Session Key configured!");
+              ErrorHandler.showSuccessSnackBar(context, "✅ Demat Broker connected & synced successfully!");
             }
           },
         ),
@@ -747,7 +747,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                         ),
                         onPressed: _navigateToIciciConfig,
-                        child: const Text("Setup Key →", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)),
+                        child: const Text("Connect Broker →", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)),
                       ),
                     ),
                   ],

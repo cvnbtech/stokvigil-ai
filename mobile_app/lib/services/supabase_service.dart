@@ -289,21 +289,19 @@ class SupabaseService {
     }
   }
 
-  // Secure Vault Save for ICICI Credentials (Delegated to Backend AES-256 Vault)
+  // Secure Vault Save for Broker Credentials (Delegated to Backend AES-256 Vault)
   Future<bool> saveIciciCredentials({
     required String userId,
-    required String appKey,
-    required String secretKey,
     required String sessionToken,
+    String broker = 'icici',
   }) async {
     if (!isConfigured) return true; // Offline test mode returns true
     try {
       // Delegate to backend API to ensure server-side Fernet AES-256 encryption
       return await ApiService().saveIciciCredentials(
         userId: userId,
-        appKey: appKey,
-        secretKey: secretKey,
         sessionToken: sessionToken,
+        broker: broker,
       );
     } catch (e) {
       debugPrint("Credential save error: $e");

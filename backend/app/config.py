@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Market Scanner Gemini AI Call Limit per 5-Minute Cycle
     MAX_AI_CALLS_PER_SCAN: int = 15
 
+    # Institutional Master App Broker Credentials (Zero-Manual-Key Publisher Model)
+    ICICI_MASTER_APP_KEY: Optional[str] = None
+    ICICI_MASTER_SECRET_KEY: Optional[str] = None
+    ZERODHA_MASTER_API_KEY: Optional[str] = None
+    ANGELONE_MASTER_API_KEY: Optional[str] = None
+
     @property
     def active_cron_secret(self) -> str:
         secret = self.CRON_SECRET if (self.CRON_SECRET and self.CRON_SECRET.strip()) else self.CRON_SECRET_KEY
