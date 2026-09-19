@@ -81,8 +81,6 @@ class TestPortfolioOptimization(unittest.TestCase):
         mock_cred_data = [{
             "user_id": "test_user_1",
             "token_date": str(time.strftime("%Y-%m-%d")),
-            "encrypted_app_key": "enc_app",
-            "encrypted_secret_key": "enc_sec",
             "encrypted_session_token": "enc_sess"
         }]
         mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value.data = mock_cred_data
@@ -109,6 +107,8 @@ class TestPortfolioOptimization(unittest.TestCase):
             return mock_fin_map.get(sym, {})
 
         with patch("app.main.verify_user_access"), \
+             patch("app.main.settings.ICICI_MASTER_APP_KEY", "TEST_MASTER_APP_KEY"), \
+             patch("app.main.settings.ICICI_MASTER_SECRET_KEY", "TEST_MASTER_SECRET_KEY"), \
              patch("app.main.vault.decrypt", return_value="decrypted_val"), \
              patch("app.main.fetch_user_portfolio", return_value=mock_holdings), \
              patch("app.main._fetch_single_stock_quote", side_effect=mock_quote_fn), \

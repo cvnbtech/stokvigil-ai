@@ -1454,17 +1454,12 @@ def get_user_portfolio(
             "holdings": []
         }
 
-    raw_app_key = cred.get("encrypted_app_key")
-    raw_secret_key = cred.get("encrypted_secret_key")
     raw_session_token = cred.get("encrypted_session_token")
-
-    db_app_key = vault.decrypt(raw_app_key) if raw_app_key else ""
-    db_secret_key = vault.decrypt(raw_secret_key) if raw_secret_key else ""
     session_token = (vault.decrypt(raw_session_token) if raw_session_token else "").strip().strip('"').strip("'")
 
-    # Master App Publisher Model: Server master keys take precedence over legacy DB keys
-    app_key = (settings.ICICI_MASTER_APP_KEY or db_app_key or "").strip().strip('"').strip("'")
-    secret_key = (settings.ICICI_MASTER_SECRET_KEY or db_secret_key or "").strip().strip('"').strip("'")
+    # Pure Institutional Master App Model: Master keys reside exclusively in server configuration
+    app_key = (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
+    secret_key = (settings.ICICI_MASTER_SECRET_KEY or "").strip().strip('"').strip("'")
 
     broker_id = cred.get("broker_id") or "icici"
     adapter = get_broker(broker_id)
@@ -2066,17 +2061,12 @@ def place_trade_order(
             raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
 
         cred = cred_res.data[0]
-        raw_app = cred.get("encrypted_app_key")
-        raw_sec = cred.get("encrypted_secret_key")
         raw_tok = cred.get("encrypted_session_token")
-
-        db_app_key = vault.decrypt(raw_app) if raw_app else ""
-        db_secret_key = vault.decrypt(raw_sec) if raw_sec else ""
         session_token = (vault.decrypt(raw_tok) if raw_tok else "").strip().strip('"').strip("'")
 
-        # Master App Publisher Model: Server master keys take precedence over legacy DB keys
-        app_key = (settings.ICICI_MASTER_APP_KEY or db_app_key or "").strip().strip('"').strip("'")
-        secret_key = (settings.ICICI_MASTER_SECRET_KEY or db_secret_key or "").strip().strip('"').strip("'")
+        # Pure Institutional Master App Model: Master keys reside exclusively in server configuration
+        app_key = (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
+        secret_key = (settings.ICICI_MASTER_SECRET_KEY or "").strip().strip('"').strip("'")
 
         broker_id = cred.get("broker_id") or "icici"
         adapter = get_broker(broker_id)
