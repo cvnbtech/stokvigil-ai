@@ -1,6 +1,7 @@
 import os
 import json
 from typing import List, Union, Any, Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -45,6 +46,14 @@ class Settings(BaseSettings):
     ICICI_MASTER_SECRET_KEY: Optional[str] = None
     ZERODHA_MASTER_API_KEY: Optional[str] = None
     ANGELONE_MASTER_API_KEY: Optional[str] = None
+
+    @field_validator("ICICI_MASTER_APP_KEY", "ICICI_MASTER_SECRET_KEY", "ZERODHA_MASTER_API_KEY", "ANGELONE_MASTER_API_KEY", mode="before")
+    @classmethod
+    def clean_broker_keys(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        cleaned = str(v).strip().strip('"').strip("'")
+        return cleaned if cleaned else None
 
     @property
     def active_cron_secret(self) -> str:

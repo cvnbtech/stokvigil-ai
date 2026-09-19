@@ -114,15 +114,15 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
         from breeze_connect import BreezeConnect
         import urllib.parse
 
-        clean_app = str(app_key).strip()
-        clean_sec = str(secret_key).strip()
-        clean_tok = str(session_token).strip()
+        clean_app = str(app_key or "").strip().strip('"').strip("'")
+        clean_sec = str(secret_key or "").strip().strip('"').strip("'")
+        clean_tok = str(session_token or "").strip().strip('"').strip("'")
 
         # If user pasted whole redirect URL
         if "apisession=" in clean_tok:
             clean_tok = clean_tok.split("apisession=")[1].split("&")[0]
 
-        clean_tok = urllib.parse.unquote(clean_tok).strip()
+        clean_tok = urllib.parse.unquote(clean_tok).strip().strip('"').strip("'")
 
         # Masked verification log
         app_preview = f"{clean_app[:3]}...{clean_app[-3:]}" if len(clean_app) >= 6 else "***"
@@ -1739,12 +1739,13 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
                 raw_app = cred.get("encrypted_app_key")
                 raw_sec = cred.get("encrypted_secret_key")
                 raw_tok = cred.get("encrypted_session_token")
-                app_key = vault.decrypt(raw_app) if raw_app else ""
-                secret_key = vault.decrypt(raw_sec) if raw_sec else ""
-                session_token = vault.decrypt(raw_tok) if raw_tok else ""
+                db_app_key = vault.decrypt(raw_app) if raw_app else ""
+                db_secret_key = vault.decrypt(raw_sec) if raw_sec else ""
+                session_token = (vault.decrypt(raw_tok) if raw_tok else "").strip().strip('"').strip("'")
 
-                app_key = app_key or (settings.ICICI_MASTER_APP_KEY or "")
-                secret_key = secret_key or (settings.ICICI_MASTER_SECRET_KEY or "")
+                # Institutional Master App Model: Server-configured master keys take precedence over stale DB keys
+                app_key = (settings.ICICI_MASTER_APP_KEY or db_app_key or "").strip().strip('"').strip("'")
+                secret_key = (settings.ICICI_MASTER_SECRET_KEY or db_secret_key or "").strip().strip('"').strip("'")
 
                 from app.brokers import get_broker
                 broker_id = cred.get("broker_id") or "icici"

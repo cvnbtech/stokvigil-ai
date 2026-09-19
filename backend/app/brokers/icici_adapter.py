@@ -79,9 +79,10 @@ class IciciBrokerAdapter(BaseBrokerAdapter):
         }
 
     def fetch_holdings(self, decrypted_creds: Dict[str, str]) -> List[Dict[str, Any]]:
-        app_key = (decrypted_creds.get("app_key") or settings.ICICI_MASTER_APP_KEY or "").strip()
-        secret_key = (decrypted_creds.get("secret_key") or settings.ICICI_MASTER_SECRET_KEY or "").strip()
-        session_token = (decrypted_creds.get("session_token") or "").strip()
+        # Master App Publisher Model: server-configured master credentials take precedence over stale legacy keys
+        app_key = (settings.ICICI_MASTER_APP_KEY or decrypted_creds.get("app_key") or "").strip().strip('"').strip("'")
+        secret_key = (settings.ICICI_MASTER_SECRET_KEY or decrypted_creds.get("secret_key") or "").strip().strip('"').strip("'")
+        session_token = (decrypted_creds.get("session_token") or "").strip().strip('"').strip("'")
 
         if not app_key or not secret_key or not session_token:
             logger.warning("Missing ICICI credentials for portfolio fetch.")
@@ -101,9 +102,9 @@ class IciciBrokerAdapter(BaseBrokerAdapter):
         decrypted_creds: Dict[str, str],
         order_params: Dict[str, Any]
     ) -> Dict[str, Any]:
-        app_key = (decrypted_creds.get("app_key") or settings.ICICI_MASTER_APP_KEY or "").strip()
-        secret_key = (decrypted_creds.get("secret_key") or settings.ICICI_MASTER_SECRET_KEY or "").strip()
-        session_token = (decrypted_creds.get("session_token") or "").strip()
+        app_key = (settings.ICICI_MASTER_APP_KEY or decrypted_creds.get("app_key") or "").strip().strip('"').strip("'")
+        secret_key = (settings.ICICI_MASTER_SECRET_KEY or decrypted_creds.get("secret_key") or "").strip().strip('"').strip("'")
+        session_token = (decrypted_creds.get("session_token") or "").strip().strip('"').strip("'")
 
         from breeze_connect import BreezeConnect
         breeze = BreezeConnect(api_key=app_key)
