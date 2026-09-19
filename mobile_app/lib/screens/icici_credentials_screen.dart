@@ -314,7 +314,7 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
                 // Step 2: Session Token
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.between,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
                       "STEP 2: SESSION TOKEN",
