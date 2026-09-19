@@ -83,9 +83,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   Future<void> _loadWatchlist() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
       return;
     }
 
@@ -97,12 +99,67 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       }
     } catch (_) {}
 
-    // Auto-fetch Demat holdings from portfolio summary
+    // Step 1: Instantly load cached/persisted watchlist from Supabase (< 100ms)
+    final data = await SupabaseService().fetchWatchlist();
+    if (mounted) {
+      setState(() {
+        _watchlist = data;
+        _isLoading = false; // Screen is immediately interactive and visible!
+      });
+    }
+
+    // Step 2: Fetch real-time live quotes in background and update smoothly
+    final symbols = data
+        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (symbols.isNotEmpty) {
+      try {
+        final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
+        for (var item in data) {
+          final sym = (item['symbol']?.toString() ?? '').toUpperCase();
+          if (liveQuotes.containsKey(sym)) {
+            final q = liveQuotes[sym] as Map<String, dynamic>;
+            final price = (q['price'] as num? ?? 0.0).toDouble();
+            item['price'] = price;
+            final num? chgVal = q['change_pct'] as num?;
+            final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
+            final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
+            item['is_positive'] = isPos;
+            item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
+            if (q['name'] != null && q['name'].toString().isNotEmpty) {
+              item['name'] = q['name'];
+            }
+            if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
+              item['exchange'] = q['exchange'];
+            }
+            item['signal'] = q['signal'];
+            item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0') ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}") : null;
+            item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0') ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}") : null;
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _watchlist = List.from(data);
+          });
+        }
+      } catch (e) {
+        debugPrint("Error fetching live quotes for watchlist: $e");
+      }
+    }
+
+    // Step 3: Run Demat portfolio sync in background without blocking UI
+    if (_autoSync) {
+      _syncDematHoldings(user.id);
+    }
+  }
+
+  Future<void> _syncDematHoldings(String userId) async {
     try {
-      final portfolioData = await ApiService().fetchPortfolioSummary(user.id);
+      final portfolioData = await ApiService().fetchPortfolioSummary(userId);
       if (portfolioData != null && portfolioData['holdings'] is List) {
         final list = portfolioData['holdings'] as List;
-        _dematHoldings = list.map((h) {
+        final demat = list.map((h) {
           final rawSym = (h['symbol'] ?? '').toString().toUpperCase();
           final cleanSym = (h['clean_symbol'] ?? rawSym.replaceAll('.BO', '').replaceAll('.NS', '')).toString().toUpperCase();
           final companyName = (h['name'] ?? h['stock_name'] ?? cleanSym).toString();
@@ -110,72 +167,38 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           final pnlPct = (h['pnl_percent'] as num? ?? 0).toDouble();
           final pnl = (h['pnl'] as num? ?? 0).toDouble();
           final price = (h['current_price'] as num? ?? 0.0).toDouble();
+          final hasDematPrice = price > 0;
           return {
             'symbol': cleanSym,
             'full_symbol': rawSym,
             'exchange': exchange,
             'name': companyName,
             'price': price,
-            'chg': pnlPct >= 0 ? '+${pnlPct.toStringAsFixed(2)}%' : '${pnlPct.toStringAsFixed(2)}%',
+            'chg': (hasDematPrice && pnlPct != 0) ? (pnlPct >= 0 ? '+${pnlPct.toStringAsFixed(2)}%' : '${pnlPct.toStringAsFixed(2)}%') : '--',
             'is_positive': pnlPct >= 0,
             'is_auto_synced': true,
-            'signal': (h['signal'] as String?) ?? 'MONITORING',
-            'target': (h['target'] as String?) ?? '--',
-            'stop_loss': (h['stop_loss'] as String?) ?? '--',
+            'signal': (hasDematPrice && h['signal'] != null && h['signal'] != '--') ? h['signal'].toString() : '--',
+            'target': (hasDematPrice && h['target'] != null) ? h['target'].toString() : '--',
+            'stop_loss': (hasDematPrice && h['stop_loss'] != null) ? h['stop_loss'].toString() : '--',
           };
         }).toList();
 
-        // Background auto-sync into Supabase user_watchlists table via batch upsert
-        final symbolsToSync = _dematHoldings
+        final symbolsToSync = demat
             .map((dh) => (dh['symbol'] as String? ?? '').trim())
             .where((s) => s.isNotEmpty)
             .toList();
         if (symbolsToSync.isNotEmpty) {
           SupabaseService().batchAddToWatchlist(symbolsToSync, isAutoSynced: true);
         }
-      }
-    } catch (e) {
-      debugPrint("Error fetching demat holdings for watchlist: $e");
-    }
 
-    final data = await SupabaseService().fetchWatchlist();
-    
-    // Fetch real-time live quotes from exchange for all watchlist stocks
-    final symbols = data
-        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (symbols.isNotEmpty) {
-      final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
-      for (var item in data) {
-        final sym = (item['symbol']?.toString() ?? '').toUpperCase();
-        if (liveQuotes.containsKey(sym)) {
-          final q = liveQuotes[sym] as Map<String, dynamic>;
-          final price = (q['price'] as num? ?? 0.0).toDouble();
-          item['price'] = price;
-          final num? chgVal = q['change_pct'] as num?;
-          final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
-          final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
-          item['is_positive'] = isPos;
-          item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
-          if (q['name'] != null && q['name'].toString().isNotEmpty) {
-            item['name'] = q['name'];
-          }
-          if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
-            item['exchange'] = q['exchange'];
-          }
-          item['signal'] = q['signal'];
-          item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0') ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}") : null;
-          item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0') ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}") : null;
+        if (mounted) {
+          setState(() {
+            _dematHoldings = demat;
+          });
         }
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _watchlist = data;
-        _isLoading = false;
-      });
+    } catch (e) {
+      debugPrint("Error in background demat sync: $e");
     }
   }
 
@@ -252,7 +275,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             'price': livePrice,
             'is_positive': true,
             'chg': livePrice > 0 ? "+0.00%" : "--",
-            'signal': 'MONITORING',
+            'signal': '--',
             'target': '--',
             'stop_loss': '--'
           });
@@ -640,20 +663,46 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           )
                         : ListView.builder(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            itemCount: displayedList.length,
+                            itemCount: displayedList.length + 1,
                             itemBuilder: (context, index) {
+                              if (index == displayedList.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(Icons.info_outline, size: 13, color: AppTheme.textSecondary.withOpacity(0.6)),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          "All targets & stop-losses are algorithmic volatility benchmarks (1.5x ATR / Camarilla Pivots) for surveillance. Not an investment advisory or price guarantee.",
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: AppTheme.textSecondary.withOpacity(0.6),
+                                            height: 1.3,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
                               final item = displayedList[index];
                           final rawSymbol = (item['symbol'] as String? ?? '').toUpperCase();
                           final symbol = rawSymbol.replaceAll('.BO', '').replaceAll('.NS', '').trim();
                           final exchange = (item['exchange'] as String?) ?? (rawSymbol.endsWith('.BO') ? 'BSE' : 'NSE');
                           final isAuto = item['is_auto_synced'] == true;
                           final priceNum = (item['price'] as num? ?? 0.0).toDouble();
-                          final chg = item['chg']?.toString() ?? (priceNum > 0 ? "+0.00%" : "--");
+                          final hasRealPrice = priceNum > 0;
+                          final chg = hasRealPrice ? (item['chg']?.toString() ?? "+0.00%") : "--";
                           final isNegative = chg.startsWith('-') || item['is_positive'] == false;
                           final isPos = !isNegative && (item['is_positive'] == true);
-                          final signal = item['signal'] ?? 'MONITORING';
-                          final target = item['target'] ?? '--';
-                          final stopLoss = item['stop_loss'] ?? '--';
+                          final rawSignal = item['signal']?.toString();
+                          final signal = (hasRealPrice && rawSignal != null && rawSignal != '--' && rawSignal != 'MONITORING') ? rawSignal : (hasRealPrice ? (rawSignal ?? '--') : '--');
+                          final rawTarget = item['target']?.toString();
+                          final target = (hasRealPrice && rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0') ? rawTarget : '--';
+                          final rawSl = item['stop_loss']?.toString();
+                          final stopLoss = (hasRealPrice && rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl != '0') ? rawSl : '--';
                           final rawName = (item['name'] as String? ?? '').trim();
                           final name = (rawName.isNotEmpty && !rawName.contains('(Demat Holding)')) ? rawName : symbol;
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
@@ -808,33 +857,49 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                         spacing: 6,
                                         runSpacing: 4,
                                         children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                            decoration: BoxDecoration(
-                                              color: signalColor.withOpacity(0.12),
-                                              borderRadius: BorderRadius.circular(20),
-                                              border: Border.all(color: signalColor.withOpacity(0.4)),
+                                          if (!hasRealPrice || signal == '--')
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white.withOpacity(0.04),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: AppTheme.cardBorder),
+                                              ),
+                                              child: const Text(
+                                                "--",
+                                                style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w700),
+                                              ),
+                                            )
+                                          else
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: signalColor.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(20),
+                                                border: Border.all(color: signalColor.withOpacity(0.4)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Container(
+                                                    width: 6,
+                                                    height: 6,
+                                                    decoration: BoxDecoration(color: signalColor, shape: BoxShape.circle),
+                                                  ),
+                                                  const SizedBox(width: 5),
+                                                  Text(
+                                                    signal,
+                                                    style: TextStyle(color: signalColor, fontSize: 10, fontWeight: FontWeight.w900),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Container(
-                                                  width: 6,
-                                                  height: 6,
-                                                  decoration: BoxDecoration(color: signalColor, shape: BoxShape.circle),
-                                                ),
-                                                const SizedBox(width: 5),
-                                                Text(
-                                                  signal,
-                                                  style: TextStyle(color: signalColor, fontSize: 10, fontWeight: FontWeight.w900),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
                                           Builder(
                                             builder: (context) {
-                                              final isUnset = target == '--' || target == '-' || target == '₹0' || target == '0';
-                                              final targetText = isUnset ? '--' : (target.toString().startsWith('₹') ? target.toString() : '₹$target');
+                                              final isTargetUnset = !hasRealPrice || target == '--' || target == '-' || target == '₹0' || target == '0';
+                                              final isSlUnset = !hasRealPrice || stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0';
+                                              final targetText = isTargetUnset ? '--' : (target.startsWith('₹') ? target : '₹$target');
+                                              final slText = isSlUnset ? '--' : (stopLoss.startsWith('₹') ? stopLoss : '₹$stopLoss');
                                               return RichText(
                                                 text: TextSpan(
                                                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
@@ -843,7 +908,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                     TextSpan(
                                                       text: targetText,
                                                       style: TextStyle(
-                                                        color: isUnset ? AppTheme.textSecondary : AppTheme.primaryEmerald,
+                                                        color: isTargetUnset ? AppTheme.textSecondary : AppTheme.primaryEmerald,
+                                                        fontWeight: FontWeight.w900,
+                                                      ),
+                                                    ),
+                                                    const TextSpan(text: "  •  SL: "),
+                                                    TextSpan(
+                                                      text: slText,
+                                                      style: TextStyle(
+                                                        color: isSlUnset ? AppTheme.textSecondary : AppTheme.dangerRose,
                                                         fontWeight: FontWeight.w900,
                                                       ),
                                                     ),

@@ -25,7 +25,7 @@ import pandas as pd
 from app.config import settings
 from app.vault import vault
 from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
-from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter
+from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter, compute_tactical_levels
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
@@ -772,9 +772,19 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 bias = cached_stock.get("action_bias")
                 signal = None
                 signal_type = None
-                if bias and bias != "HOLD_NEUTRAL":
-                    signal = bias.replace("_", " ")
-                    signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+                if bias:
+                    if bias == "HOLD_NEUTRAL":
+                        signal = "HOLD"
+                        signal_type = "hold"
+                    elif "BUY" in bias:
+                        signal = bias.replace("_", " ")
+                        signal_type = "strong_buy"
+                    elif "SELL" in bias or "EXIT" in bias:
+                        signal = bias.replace("_", " ")
+                        signal_type = "sell"
+                    else:
+                        signal = bias.replace("_", " ")
+                        signal_type = "hold"
 
                 exch = "BSE" if is_explicit_bse else "NSE"
                 cached_name = cached_stock.get("name") or (f"{clean_sym} (BSE)" if is_explicit_bse else f"{clean_sym} (NSE)")
@@ -793,7 +803,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "target": target_val,
                     "stop_loss": sl_val,
                     "signal": signal,
-                    "signal_type": signal_type
+                    "signal_type": signal_type,
+                    "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                 }
 
     # Step 2: Fetch via Yahoo Finance Chart API with pooled Keep-Alive session & dual-host fallbacks
@@ -801,7 +812,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
         for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
             try:
                 url = f"https://{host}/v8/finance/chart/{clean_sym}{suffix}?range=1d&interval=1d"
-                res = _QUOTE_HTTP_SESSION.get(url, timeout=2.5)
+                res = _QUOTE_HTTP_SESSION.get(url, timeout=2.0)
+                if res.status_code == 404:
+                    # Symbol not listed under this suffix on exchange; skip to next suffix immediately
+                    break
                 if res.status_code == 200:
                     data = res.json()
                     res_list = data.get("chart", {}).get("result")
@@ -817,6 +831,17 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             day_high = round(float(raw_high), 2) if raw_high is not None else None
                             day_low = round(float(raw_low), 2) if raw_low is not None else None
 
+                            # Calculate real True Range & Camarilla Equation Pivots from actual market session
+                            h_val = float(raw_high) if raw_high is not None else float(p)
+                            l_val = float(raw_low) if raw_low is not None else float(p)
+                            c_prev = float(prev) if prev is not None else float(p)
+                            true_range = max(h_val - l_val, abs(h_val - c_prev), abs(l_val - c_prev)) if (float(p) > 0) else 0.0
+
+                            h4 = round(c_prev + (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
+                            h3 = round(c_prev + (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
+                            l3 = round(c_prev - (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
+                            l4 = round(c_prev - (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
+
                             cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
                             target_val = None
                             sl_val = None
@@ -829,11 +854,39 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
                                 sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
                                 bias = cached_stock.get("action_bias")
-                                if bias and bias != "HOLD_NEUTRAL":
-                                    signal = bias.replace("_", " ")
-                                    signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+                                if bias:
+                                    if bias == "HOLD_NEUTRAL":
+                                        signal = "HOLD"
+                                        signal_type = "hold"
+                                    elif "BUY" in bias:
+                                        signal = bias.replace("_", " ")
+                                        signal_type = "strong_buy"
+                                    elif "SELL" in bias or "EXIT" in bias:
+                                        signal = bias.replace("_", " ")
+                                        signal_type = "sell"
+                                    else:
+                                        signal = bias.replace("_", " ")
+                                        signal_type = "hold"
 
-                            return {
+                            # If market_cache has not pre-computed tactical levels yet, compute real Camarilla levels only if valid real-time volatility exists
+                            if (not target_val or not sl_val) and true_range > 0 and float(p) > 0 and h3 and l4:
+                                tactical = compute_tactical_levels(
+                                    current_price=float(p),
+                                    atr_val=true_range,
+                                    h3=h3,
+                                    h4=h4,
+                                    l3=l3,
+                                    l4=l4,
+                                    action_bias="HOLD_NEUTRAL"
+                                )
+                                if tactical:
+                                    target_val = tactical.get("target_1")
+                                    sl_val = tactical.get("protective_stop_loss")
+                                if not signal:
+                                    signal = "HOLD"
+                                    signal_type = "hold"
+
+                            quote_result = {
                                 "symbol": clean_sym,
                                 "full_symbol": f"{clean_sym}{suffix}",
                                 "clean_symbol": clean_sym,
@@ -847,8 +900,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 "target": target_val,
                                 "stop_loss": sl_val,
                                 "signal": signal,
-                                "signal_type": signal_type
+                                "signal_type": signal_type,
+                                "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                             }
+
+                            if not cached_stock:
+                                market_cache.update_live_tick(clean_sym, ltp=float(p), high=day_high, low=day_low)
+
+                            return quote_result
             except Exception:
                 continue
 
@@ -871,6 +930,16 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 except Exception:
                     pass
 
+                h_val = float(day_high) if day_high is not None else float(p)
+                l_val = float(day_low) if day_low is not None else float(p)
+                c_prev = float(prev) if prev is not None else float(p)
+                true_range = max(h_val - l_val, abs(h_val - c_prev), abs(l_val - c_prev)) if (float(p) > 0) else 0.0
+
+                h4 = round(c_prev + (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
+                h3 = round(c_prev + (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
+                l3 = round(c_prev - (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
+                l4 = round(c_prev - (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
+
                 cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
                 target_val = None
                 sl_val = None
@@ -883,11 +952,38 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
                     sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
                     bias = cached_stock.get("action_bias")
-                    if bias and bias != "HOLD_NEUTRAL":
-                        signal = bias.replace("_", " ")
-                        signal_type = "strong_buy" if "BUY" in bias else ("sell" if "SELL" in bias else "hold")
+                    if bias:
+                        if bias == "HOLD_NEUTRAL":
+                            signal = "HOLD"
+                            signal_type = "hold"
+                        elif "BUY" in bias:
+                            signal = bias.replace("_", " ")
+                            signal_type = "strong_buy"
+                        elif "SELL" in bias or "EXIT" in bias:
+                            signal = bias.replace("_", " ")
+                            signal_type = "sell"
+                        else:
+                            signal = bias.replace("_", " ")
+                            signal_type = "hold"
 
-                return {
+                if (not target_val or not sl_val) and true_range > 0 and float(p) > 0 and h3 and l4:
+                    tactical = compute_tactical_levels(
+                        current_price=float(p),
+                        atr_val=true_range,
+                        h3=h3,
+                        h4=h4,
+                        l3=l3,
+                        l4=l4,
+                        action_bias="HOLD_NEUTRAL"
+                    )
+                    if tactical:
+                        target_val = tactical.get("target_1")
+                        sl_val = tactical.get("protective_stop_loss")
+                    if not signal:
+                        signal = "HOLD"
+                        signal_type = "hold"
+
+                quote_result = {
                     "symbol": clean_sym,
                     "full_symbol": f"{clean_sym}{suffix}",
                     "clean_symbol": clean_sym,
@@ -901,8 +997,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "target": target_val,
                     "stop_loss": sl_val,
                     "signal": signal,
-                    "signal_type": signal_type
+                    "signal_type": signal_type,
+                    "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                 }
+
+                if not cached_stock:
+                    market_cache.update_live_tick(clean_sym, ltp=float(p), high=day_high, low=day_low)
+
+                return quote_result
         except Exception:
             continue
 

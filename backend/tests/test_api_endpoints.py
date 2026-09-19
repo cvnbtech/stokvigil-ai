@@ -160,7 +160,18 @@ class TestApiEndpoints(unittest.TestCase):
         data = res.json()
         self.assertIn("quotes", data)
         self.assertIn("RELIANCE", data["quotes"])
-        self.assertIn("price", data["quotes"]["RELIANCE"])
+        q = data["quotes"]["RELIANCE"]
+        self.assertIn("price", q)
+        self.assertIn("target", q)
+        self.assertIn("stop_loss", q)
+        self.assertIn("signal", q)
+        self.assertIn("signal_type", q)
+        self.assertIn("disclaimer", q)
+        if q.get("price") and q["price"] > 0:
+            self.assertIsNotNone(q["target"])
+            self.assertIsNotNone(q["stop_loss"])
+            self.assertIsNotNone(q["signal"])
+            self.assertIn(q["signal"], ["HOLD", "BUY", "STRONG BUY", "ACCUMULATE", "SELL", "PULLBACK WATCH"])
 
     # 6. User Profile - Authorized
     def test_06_user_profile_authorized(self):

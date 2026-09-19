@@ -214,7 +214,19 @@ export function Badge({ label, color = "cyan" }: { label: string; color?: "cyan"
   );
 }
 
-export function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | string }) {
+export function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | "none" | string }) {
+  if (!signal || signal === "--" || type === "none") {
+    return (
+      <div style={{
+        background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}`,
+        borderRadius: 8, padding: "2px 8px",
+        display: "inline-flex", alignItems: "center",
+      }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: C.gray2 }}>--</span>
+      </div>
+    );
+  }
+
   const isStrong = type === "strong_buy";
   const isBuy = type === "buy";
   const isSell = type === "sell";

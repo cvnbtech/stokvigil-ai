@@ -364,11 +364,11 @@ export default function App() {
             const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
             const isPos = chgPct >= 0;
             const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
-            const name = (q.name && q.name !== rawSym && !q.name.endsWith(".BO")) ? q.name : cleanSym;
-            const signal = price > 0 ? (q.signal || "MONITORING") : "MONITORING";
-            const signalType = price > 0 ? (q.signal_type || "monitoring") : "monitoring";
-            const target = (price > 0 && q.target) ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
-            const sl = (price > 0 && q.stop_loss) ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
+            const hasRealPrice = price > 0;
+            const signal = (hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING") ? q.signal : "--";
+            const signalType = (hasRealPrice && q.signal_type) ? q.signal_type : "none";
+            const target = (hasRealPrice && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
+            const sl = (hasRealPrice && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
 
             return {
               id: w.id,
@@ -378,7 +378,7 @@ export default function App() {
               name,
               auto: w.is_auto_synced || false,
               price,
-              chg: price > 0 ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
+              chg: hasRealPrice ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
               isPositive: isPos,
               signal,
               signalType,

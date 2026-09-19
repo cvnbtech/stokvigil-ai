@@ -239,10 +239,10 @@ export default function WatchlistTab({
               price: h.price || 0,
               chg: formattedChg,
               isPositive: isChgPos,
-              signal: h.signal || "MONITORING",
-              signalType: h.signalType || "monitoring",
-              target: h.target || "--",
-              sl: h.sl || "--"
+              signal: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "MONITORING") ? h.signal : "--",
+              signalType: (h.price && h.price > 0 && h.signalType) ? h.signalType : "none",
+              target: (h.price && h.price > 0 && h.target && h.target !== "--") ? h.target : "--",
+              sl: (h.price && h.price > 0 && h.sl && h.sl !== "--") ? h.sl : "--"
             };
           });
 
@@ -359,15 +359,19 @@ export default function WatchlistTab({
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <SignalBadge signal={item.signal || "MONITORING"} type={item.signalType || "monitoring"} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <SignalBadge signal={item.signal || "--"} type={item.signalType || "none"} />
                   <span style={{ fontSize: 10, color: C.gray2 }}>
                     Target: <b style={{ color: item.target && item.target !== "--" ? C.emerald : C.gray2 }}>{item.target || "--"}</b>
+                  </span>
+                  <span style={{ fontSize: 10, color: C.gray2 }}>
+                    SL: <b style={{ color: item.sl && item.sl !== "--" ? C.rose : C.gray2 }}>{item.sl || "--"}</b>
                   </span>
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <button
+                    disabled={!item.price || item.price <= 0}
                     onClick={() => onOpenTradeModal({
                       symbol: item.symbol,
                       price: item.price,
@@ -377,12 +381,12 @@ export default function WatchlistTab({
                       qty: 10
                     })}
                     style={{
-                      background: item.signalType === "sell" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
-                      border: `1px solid ${item.signalType === "sell" ? C.rose : C.emerald}`,
+                      background: (!item.price || item.price <= 0) ? "rgba(255,255,255,0.04)" : (item.signalType === "sell" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)"),
+                      border: `1px solid ${(!item.price || item.price <= 0) ? C.border : (item.signalType === "sell" ? C.rose : C.emerald)}`,
                       borderRadius: 8, padding: "5px 10px",
                       fontSize: 11, fontWeight: 800,
-                      color: item.signalType === "sell" ? C.rose : C.emerald,
-                      cursor: "pointer"
+                      color: (!item.price || item.price <= 0) ? C.gray2 : (item.signalType === "sell" ? C.rose : C.emerald),
+                      cursor: (!item.price || item.price <= 0) ? "not-allowed" : "pointer"
                     }}
                   >
                     ⚡ Trade Order
@@ -409,6 +413,23 @@ export default function WatchlistTab({
           );
         });
       })()}
+      </div>
+
+      {/* SEBI Compliance Footnote */}
+      <div style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 8,
+        padding: "10px 14px",
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${C.border}`,
+        borderRadius: 12,
+        marginTop: 4
+      }}>
+        <span style={{ fontSize: 12, color: C.gray2, lineHeight: 1 }}>ℹ️</span>
+        <div style={{ fontSize: 10.5, color: C.gray2, lineHeight: 1.4 }}>
+          All targets &amp; stop-losses are algorithmic volatility benchmarks (1.5x ATR / Camarilla Pivots) for surveillance. Not an investment advisory or price guarantee.
+        </div>
       </div>
     </div>
   );

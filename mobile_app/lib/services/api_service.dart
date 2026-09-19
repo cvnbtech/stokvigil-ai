@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
@@ -152,7 +153,7 @@ class ApiService {
       final q = Uri.encodeComponent(clean.join(','));
       final res = await http
           .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final bQuotes = Map<String, dynamic>.from(data['quotes'] ?? {});
@@ -196,7 +197,7 @@ class ApiService {
       for (final host in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
         try {
           final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(sym)}$suffix?range=1d&interval=1d');
-          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 5));
+          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 4));
           if (res.statusCode == 200) {
             final data = jsonDecode(res.body);
             final resList = data['chart']?['result'] as List?;
@@ -211,6 +212,18 @@ class ApiService {
                 final dayHigh = meta?['regularMarketDayHigh'] != null ? (meta!['regularMarketDayHigh'] as num).toDouble() : null;
                 final dayLow = meta?['regularMarketDayLow'] != null ? (meta!['regularMarketDayLow'] as num).toDouble() : null;
 
+                // Calculate real Camarilla Equation Pivots only if authentic market session volatility exists
+                final double hVal = dayHigh ?? price;
+                final double lVal = dayLow ?? price;
+                final double cPrev = prev.toDouble();
+                final double trueRange = math.max(hVal - lVal, math.max((hVal - cPrev).abs(), (lVal - cPrev).abs()));
+                final bool hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
+
+                final String? targetStr = hasRealVol ? '₹${(cPrev + (trueRange * 1.1 / 4.0)).toStringAsFixed(2)}' : null;
+                final String? slStr = hasRealVol ? '₹${(cPrev - (trueRange * 1.1 / 2.0)).toStringAsFixed(2)}' : null;
+                final String? signalStr = hasRealVol ? 'HOLD' : null;
+                final String? signalTypeStr = hasRealVol ? 'hold' : null;
+
                 return {
                   'symbol': sym,
                   'name': name,
@@ -220,10 +233,11 @@ class ApiService {
                   'is_positive': chgPct >= 0,
                   'day_high': dayHigh != null ? double.parse(dayHigh.toStringAsFixed(2)) : null,
                   'day_low': dayLow != null ? double.parse(dayLow.toStringAsFixed(2)) : null,
-                  'target': null,
-                  'stop_loss': null,
-                  'signal': 'MONITORING',
-                  'signal_type': 'monitoring',
+                  'target': targetStr,
+                  'stop_loss': slStr,
+                  'signal': signalStr,
+                  'signal_type': signalTypeStr,
+                  'disclaimer': 'Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise.',
                 };
               }
             }
