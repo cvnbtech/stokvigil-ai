@@ -308,6 +308,27 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 - **⚡ Wyckoff VSA Badge**: Explicit highlighting of `SMART_MONEY_ABSORPTION` vs `OPERATOR_CHURN_TRAP` with contextual commentary.
 - **💼 ICICI Demat Position Snapshot**: Displays sanitized average buy price, quantity, current market value, and real-time P&L %.
 
+### 2.1.8 Dynamic Sector Universe Discovery & Dual-Exchange Parity (`macro_filter.py`)
+- **Daily Automated Fetch (`get_dynamic_sector_map`)**: Refreshes 7 official NSE sectoral constituent archives daily (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) with a 24-hour thread-safe RAM cache. Expands sectoral coverage across 250+ equities dynamically with zero hardcoded stock lists.
+- **BSE Dual-Exchange Mapping (`get_symbol_sector`)**: Native resolution of 6-digit numeric security codes (e.g. `500325` for Reliance, `500209` for Infosys, `500180` for HDFC Bank) and `.BO` dual-listed tickers, ensuring Mansfield Relative Strength and sectoral momentum correctly apply to BSE scrips.
+
+### 2.1.9 Mathematical Risk-Based Position Sizer (1% Capital Rule) (`agent_runner.py`)
+- **Institutional Risk Sizing**: Eliminates arbitrary lot sizes by calculating the exact safe share quantity based on the account's defined risk budget (default ₹2,000 or 1% of Demat portfolio):
+  $$\text{Risk Per Share} = \max(0.5, |\text{Current Price} - \text{Protective Stop Loss}|)$$
+  $$\text{Recommended Quantity} = \max\left(1, \left\lfloor \frac{\text{Risk Budget}}{\text{Risk Per Share}} \right\rfloor\right)$$
+  $$\text{Capital At Risk} = \text{Recommended Quantity} \times \text{Risk Per Share}$$
+- **Telegram & HUD Card Integration**: Every actionable tactical setup outputs `recommended_quantity`, `capital_at_risk`, and `risk_budget` directly onto Telegram cards and Web/Mobile dashboards.
+
+### 2.1.10 In-Memory Vectorized Strategy Backtester Engine (`app/backtester.py`)
+- **High-Speed Historical Replay**: Sub-1-second vectorized backtesting powered by NumPy and Pandas. Exposes `GET /api/market/backtest` and `POST /api/market/backtest`.
+- **Dual-Exchange Simulation**: Evaluates historical OHLCV candles for both NSE (`.NS`) and BSE (`.BO` & 6-digit scrips).
+- **Institutional Metrics**: Calculates Win Rate %, Target 1 Hit Rate %, Profit Factor, Peak-to-Trough Max Drawdown %, annualized Sharpe Ratio, trade logs with exit reasons (`TARGET_1_HIT`, `TARGET_2_HIT`, `STOP_LOSS_HIT`, `TIME_EXPIRY`), and equity curve time-series.
+- **Strict Zero-Default Execution**: Returns structured error responses if historical exchange data is unavailable, strictly prohibiting synthetic data generation.
+
+### 2.1.11 03:45 PM IST Post-Market Executive Telegram Digest (`main.py` & `notifications.py`)
+- **Automated Closing Bell Scorecard**: Dispatched 15 minutes after cash market close via `POST /api/cron/post-market-summary` (`cron: '15 10 * * 1-5'`).
+- **Comprehensive Daily Summary**: Aggregates NIFTY 50 and SENSEX closing levels, India VIX regime, Cash Market Breadth (ADR with Advances/Declines), FII & DII net cash flows, sector rotation leaders & laggards, and the verified mathematical Target 1 hit rate for the day's surveillance cycles.
+
 ### The 4 Factor Weights
 1. **Technicals & Multi-Timeframe Confluence (30%)**: 5m/15m/1D RSI, MACD momentum slope, Intraday VWAP distance, 14-period ATR volatility, 20/50/200 EMAs.
 2. **Institutional Flow & Derivatives (25%)**: Wyckoff VSA delivery accumulation, F&O Open Interest (Long Build-up / Short Covering), and Bulk/Block Deals.

@@ -237,6 +237,10 @@ def format_telegram_alert(
                     html += f"• <b>Expansion Resistance 2 (2.5x ATR):</b> {t2}\n"
                 if sl and str(sl).strip() not in ("N/A", "None", "-", "") and "₹0.00" not in str(sl):
                     html += f"• <b>Stop-Loss:</b> {sl}{rr_str}\n"
+            rec_qty = tactical_levels.get("recommended_quantity")
+            cap_risk = tactical_levels.get("capital_at_risk")
+            if rec_qty and int(rec_qty) > 0 and cap_risk is not None:
+                html += f"• <b>Position Sizing (1% Risk Rule):</b> {int(rec_qty)} shares (Max Risk: ₹{float(cap_risk):,.2f})\n"
             html += "• <i>Note: Mathematical volatility benchmarks. Not an advisory price target.</i>\n\n"
 
     # Technical Metrics Snapshot (ZERO-DEFAULT RULE: Only render actual received metrics)
@@ -415,3 +419,116 @@ def format_pre_market_war_room_telegram(data: Dict[str, Any]) -> str:
     html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
     html += "⚡ <i>Automated 5-minute surveillance starts at 09:15 AM IST.</i>"
     return html
+
+
+def format_post_market_summary_telegram(data: Dict[str, Any]) -> str:
+    """
+    Formats the 03:45 PM IST Post-Market Executive Closing Bell Scorecard for Telegram.
+    ZERO-DEFAULT RULE: Never displays synthetic mock data if an exchange feed is offline.
+    """
+    date_str = data.get("date") or str(date.today())
+    nifty_p = data.get("nifty_price")
+    nifty_chg = data.get("nifty_change_pct")
+    sensex_p = data.get("sensex_price")
+    sensex_chg = data.get("sensex_change_pct")
+    vix = data.get("india_vix")
+    vix_regime = (data.get("vix_regime") or "").replace('_', ' ')
+
+    adr = data.get("adr_ratio")
+    advances = data.get("advances")
+    declines = data.get("declines")
+    breadth_regime = (data.get("breadth_regime") or "").replace('_', ' ')
+
+    fii_net = data.get("fii_net_cr")
+    dii_net = data.get("dii_net_cr")
+    fii_dii_bias = data.get("fii_dii_sentiment")
+
+    total_scans = data.get("total_scans_today", 0)
+    alerts_fired = data.get("alerts_fired_today", 0)
+    t1_hits = data.get("target_1_hit_rate_pct")
+
+    top_sectors = data.get("top_sectors", [])
+    laggard_sectors = data.get("laggard_sectors", [])
+    notable_movers = data.get("notable_movers", [])
+
+    html = "🔔 <b>STOKVIGIL AI: POST-MARKET EXECUTIVE SUMMARY</b> 🔔\n"
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += f"📅 <b>Date:</b> {date_str} | ⏰ <b>03:45 PM IST (Closing Bell)</b>\n\n"
+
+    # 1. Closing Domestic Benchmarks
+    b_lines = []
+    if nifty_p is not None:
+        chg_str = f" (<b>{nifty_chg:+.2f}%</b>)" if nifty_chg is not None else ""
+        b_lines.append(f"• <b>NIFTY 50:</b> ₹{nifty_p:,.2f}{chg_str}")
+    if sensex_p is not None:
+        chg_str = f" (<b>{sensex_chg:+.2f}%</b>)" if sensex_chg is not None else ""
+        b_lines.append(f"• <b>BSE SENSEX:</b> {sensex_p:,.2f}{chg_str}")
+    if vix is not None:
+        reg_str = f" — <i>{vix_regime}</i>" if vix_regime else ""
+        b_lines.append(f"• <b>India VIX:</b> {vix}{reg_str}")
+
+    if b_lines:
+        html += "🏛️ <b>CLOSING BENCHMARKS:</b>\n"
+        for line in b_lines:
+            html += f"{line}\n"
+        html += "\n"
+
+    # 2. Market Breadth
+    if advances is not None and declines is not None:
+        html += "⚖️ <b>CASH MARKET BREADTH:</b>\n"
+        adr_str = f" (ADR: {adr:.2f})" if adr is not None else ""
+        html += f"• <b>Advances:</b> {advances} | <b>Declines:</b> {declines}{adr_str}\n"
+        if breadth_regime and breadth_regime != "DATA UNAVAILABLE":
+            html += f"• <b>Regime:</b> <b>{breadth_regime}</b>\n"
+        html += "\n"
+
+    # 3. Institutional Cash Turnover (FII / DII)
+    if fii_net is not None or dii_net is not None:
+        html += "💼 <b>INSTITUTIONAL CASH FLOWS (FII / DII):</b>\n"
+        if fii_net is not None:
+            fii_sign = "+" if fii_net > 0 else ""
+            html += f"• <b>FII Net:</b> {fii_sign}₹{fii_net:,.2f} Cr\n"
+        if dii_net is not None:
+            dii_sign = "+" if dii_net > 0 else ""
+            html += f"• <b>DII Net:</b> {dii_sign}₹{dii_net:,.2f} Cr\n"
+        if fii_dii_bias:
+            html += f"• <b>Flow Sentiment:</b> <b>{fii_dii_bias.replace('_', ' ')}</b>\n"
+        html += "\n"
+
+    # 4. Sectoral Winners & Laggards
+    if top_sectors or laggard_sectors:
+        html += "📊 <b>SECTORAL ROTATION:</b>\n"
+        for s in top_sectors[:2]:
+            s_name = html_lib.escape(str(s.get('name', 'N/A')), quote=False)
+            chg = s.get('change_pct')
+            chg_str = f": {chg:+.2f}%" if chg is not None else ""
+            html += f"• 🟢 <b>Leader:</b> {s_name}{chg_str}\n"
+        for s in laggard_sectors[:2]:
+            s_name = html_lib.escape(str(s.get('name', 'N/A')), quote=False)
+            chg = s.get('change_pct')
+            chg_str = f": {chg:+.2f}%" if chg is not None else ""
+            html += f"• 🔴 <b>Laggard:</b> {s_name}{chg_str}\n"
+        html += "\n"
+
+    # 5. Algorithmic Surveillance & Performance Scorecard
+    html += "🎯 <b>ALGORITHMIC SURVEILLANCE SCORECARD:</b>\n"
+    html += f"• <b>Surveillance Cycles Today:</b> {total_scans}\n"
+    html += f"• <b>Catalyst Alerts Dispatched:</b> {alerts_fired}\n"
+    if t1_hits is not None and float(t1_hits) > 0:
+        html += f"• <b>Target 1 Mathematical Hit Rate:</b> <b>{t1_hits:.1f}%</b>\n"
+    html += "\n"
+
+    if notable_movers:
+        html += "⚡ <b>NOTABLE MOMENTUM CATALYSTS:</b>\n"
+        for m in notable_movers[:3]:
+            sym = html_lib.escape(str(m.get('symbol', 'N/A')), quote=False)
+            m_chg = m.get('change_pct')
+            chg_str = f" ({m_chg:+.2f}%)" if m_chg is not None else ""
+            bias_m = m.get('bias', 'BREAKOUT')
+            html += f"• <b>{sym}</b>{chg_str} — <i>{bias_m}</i>\n"
+        html += "\n"
+
+    html += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    html += "🛡️ <i>StokVigil AI surveillance closed for the session. Re-arming for tomorrow's pre-market at 09:00 AM IST.</i>"
+    return html
+

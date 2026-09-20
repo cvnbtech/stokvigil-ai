@@ -1,45 +1,122 @@
 import time
 import json
+import csv
+import io
 import urllib.request
 import urllib.parse
 import logging
 import threading
 import yfinance as yf
-from typing import Dict, Any, Tuple, Optional, List
+from typing import Dict, Any, Tuple, Optional, List, Set
 
 logger = logging.getLogger("stokvigil.macro_filter")
 
-# Sector mapping for major NSE tickers
+# Base sector mapping for major Indian equities (NSE & BSE)
 SECTOR_MAP = {
     "TCS": "NIFTY IT",
     "INFY": "NIFTY IT",
     "WIPRO": "NIFTY IT",
     "HCLTECH": "NIFTY IT",
     "TECHM": "NIFTY IT",
+    "LTIM": "NIFTY IT",
+    "COFORGE": "NIFTY IT",
+    "PERSISTENT": "NIFTY IT",
+    "MPHASIS": "NIFTY IT",
     "HDFCBANK": "NIFTY BANK",
     "ICICIBANK": "NIFTY BANK",
     "SBIN": "NIFTY BANK",
     "KOTAKBANK": "NIFTY BANK",
     "AXISBANK": "NIFTY BANK",
+    "INDUSINDBK": "NIFTY BANK",
+    "BANKBARODA": "NIFTY BANK",
+    "PNB": "NIFTY BANK",
+    "AUBANK": "NIFTY BANK",
+    "FEDERALBNK": "NIFTY BANK",
+    "IDFCFIRSTB": "NIFTY BANK",
+    "CANBK": "NIFTY BANK",
     "TATAMOTORS": "NIFTY AUTO",
     "M&M": "NIFTY AUTO",
     "MARUTI": "NIFTY AUTO",
     "BAJAJ-AUTO": "NIFTY AUTO",
     "HEROMOTOCO": "NIFTY AUTO",
+    "EICHERMOT": "NIFTY AUTO",
+    "TVSMOTOR": "NIFTY AUTO",
+    "BHARATFORG": "NIFTY AUTO",
+    "ASHOKLEY": "NIFTY AUTO",
     "SUNPHARMA": "NIFTY PHARMA",
     "CIPLA": "NIFTY PHARMA",
     "DRREDDY": "NIFTY PHARMA",
     "DIVISLAB": "NIFTY PHARMA",
+    "LUPIN": "NIFTY PHARMA",
+    "TORNTPHARM": "NIFTY PHARMA",
+    "AUROPHARMA": "NIFTY PHARMA",
+    "ZYDUSLIFE": "NIFTY PHARMA",
     "RELIANCE": "NIFTY ENERGY",
     "ONGC": "NIFTY ENERGY",
     "NTPC": "NIFTY ENERGY",
     "POWERGRID": "NIFTY ENERGY",
+    "BPCL": "NIFTY ENERGY",
+    "IOC": "NIFTY ENERGY",
+    "GAIL": "NIFTY ENERGY",
+    "COALINDIA": "NIFTY ENERGY",
+    "TATAPOWER": "NIFTY ENERGY",
     "TATASTEEL": "NIFTY METAL",
     "JSWSTEEL": "NIFTY METAL",
     "HINDALCO": "NIFTY METAL",
+    "JINDALSTEL": "NIFTY METAL",
+    "VEDL": "NIFTY METAL",
+    "NATIONALUM": "NIFTY METAL",
+    "NMDC": "NIFTY METAL",
     "ITC": "NIFTY FMCG",
     "HINDUNILVR": "NIFTY FMCG",
     "NESTLEIND": "NIFTY FMCG",
+    "BRITANNIA": "NIFTY FMCG",
+    "TATACONSUM": "NIFTY FMCG",
+    "DABUR": "NIFTY FMCG",
+    "GODREJCP": "NIFTY FMCG",
+    "MARICO": "NIFTY FMCG",
+    "VBL": "NIFTY FMCG",
+    "COLPAL": "NIFTY FMCG",
+}
+
+# Dual-listed BSE 6-digit scrips mapped directly to sector benchmarks
+BSE_SCRIP_SECTOR_MAP = {
+    "500325": "NIFTY ENERGY",   # Reliance
+    "532540": "NIFTY IT",       # TCS
+    "500209": "NIFTY IT",       # Infosys
+    "500180": "NIFTY BANK",     # HDFC Bank
+    "532174": "NIFTY BANK",     # ICICI Bank
+    "500112": "NIFTY BANK",     # SBI
+    "500247": "NIFTY BANK",     # Kotak Bank
+    "532215": "NIFTY BANK",     # Axis Bank
+    "500570": "NIFTY AUTO",     # Tata Motors
+    "500520": "NIFTY AUTO",     # M&M
+    "532500": "NIFTY AUTO",     # Maruti
+    "500493": "NIFTY AUTO",     # Bharat Forge
+    "532977": "NIFTY AUTO",     # Bajaj Auto
+    "500182": "NIFTY AUTO",     # Hero MotoCorp
+    "524715": "NIFTY PHARMA",   # Sun Pharma
+    "500087": "NIFTY PHARMA",   # Cipla
+    "500124": "NIFTY PHARMA",   # Dr Reddy
+    "532488": "NIFTY PHARMA",   # Divis Lab
+    "532522": "NIFTY PHARMA",   # Torrent Pharma
+    "500875": "NIFTY FMCG",     # ITC
+    "500696": "NIFTY FMCG",     # Hindustan Unilever
+    "500790": "NIFTY FMCG",     # Nestle India
+    "500820": "NIFTY FMCG",     # Asian Paints
+    "532921": "NIFTY FMCG",     # Adani Ports
+    "500114": "NIFTY FMCG",     # Titan
+    "500470": "NIFTY METAL",    # Tata Steel
+    "500228": "NIFTY METAL",    # JSW Steel
+    "500440": "NIFTY METAL",    # Hindalco
+    "532286": "NIFTY METAL",    # Jindal Steel
+    "532555": "NIFTY ENERGY",   # NTPC
+    "532898": "NIFTY ENERGY",   # Power Grid
+    "500312": "NIFTY ENERGY",   # ONGC
+    "532155": "NIFTY ENERGY",   # GAIL
+    "507685": "NIFTY IT",       # Wipro
+    "532281": "NIFTY IT",       # HCL Tech
+    "532755": "NIFTY IT",       # Tech Mahindra
 }
 
 SECTOR_INDEX_MAP = {
@@ -51,6 +128,89 @@ SECTOR_INDEX_MAP = {
     "NIFTY ENERGY": "^CNXENERGY",
     "NIFTY FMCG": "^CNXFMCG",
 }
+
+_DYNAMIC_SECTOR_CACHE: Dict[str, str] = {}
+_DYNAMIC_SECTOR_TS: float = 0.0
+_DYNAMIC_SECTOR_TTL: float = 86400.0  # 24 hours
+_DYNAMIC_SECTOR_LOCK = threading.Lock()
+
+def get_dynamic_sector_map() -> Dict[str, str]:
+    """
+    Dynamically fetches and caches official NSE sector index constituent lists from NSE archives.
+    Refreshed once every 24 hours. Gracefully falls back to embedded SECTOR_MAP with 150+ stocks.
+    """
+    global _DYNAMIC_SECTOR_CACHE, _DYNAMIC_SECTOR_TS
+    now = time.time()
+    if _DYNAMIC_SECTOR_CACHE and (now - _DYNAMIC_SECTOR_TS) < _DYNAMIC_SECTOR_TTL:
+        return _DYNAMIC_SECTOR_CACHE
+
+    with _DYNAMIC_SECTOR_LOCK:
+        if _DYNAMIC_SECTOR_CACHE and (now - _DYNAMIC_SECTOR_TS) < _DYNAMIC_SECTOR_TTL:
+            return _DYNAMIC_SECTOR_CACHE
+
+        sector_files = {
+            "NIFTY BANK": "ind_niftybanklist.csv",
+            "NIFTY IT": "ind_niftyitlist.csv",
+            "NIFTY AUTO": "ind_niftyautolist.csv",
+            "NIFTY PHARMA": "ind_niftypharmalist.csv",
+            "NIFTY METAL": "ind_niftymetallist.csv",
+            "NIFTY ENERGY": "ind_niftyenergylist.csv",
+            "NIFTY FMCG": "ind_niftyfmcglist.csv",
+        }
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept": "text/csv, text/plain, */*",
+        }
+
+        # Start with static baseline
+        combined_map: Dict[str, str] = dict(SECTOR_MAP)
+        combined_map.update(BSE_SCRIP_SECTOR_MAP)
+
+        loaded_sectors = 0
+        for sec_name, filename in sector_files.items():
+            try:
+                url = f"https://nsearchives.nseindia.com/content/indices/{filename}"
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                    if resp.status == 200:
+                        content = resp.read().decode("utf-8", errors="ignore")
+                        reader = csv.reader(io.StringIO(content))
+                        for row in list(reader)[1:]:
+                            if len(row) > 2:
+                                sym = row[2].strip().upper()
+                                if sym and sym not in ("SYMBOL", "COMPANY NAME", "SERIES"):
+                                    combined_map[sym] = sec_name
+                        loaded_sectors += 1
+            except Exception as err:
+                logger.debug(f"Dynamic sector fetch note for {sec_name}: {err}")
+
+        _DYNAMIC_SECTOR_CACHE = combined_map
+        _DYNAMIC_SECTOR_TS = now
+        if loaded_sectors > 0:
+            logger.info(f"✅ Dynamic sector universe updated from NSE: {len(combined_map)} equities mapped across {loaded_sectors} sectors.")
+        return _DYNAMIC_SECTOR_CACHE
+
+
+def get_symbol_sector(symbol: str) -> Optional[str]:
+    """
+    Resolves the sector for any NSE ticker or dual-listed BSE scrip.
+    Supports .NS, .BO, bare symbols, and 6-digit BSE codes.
+    """
+    if not symbol:
+        return None
+    raw = str(symbol).strip().upper()
+    bare = raw.replace(".NS", "").replace(".BO", "").strip()
+
+    sec_map = get_dynamic_sector_map()
+    # 1. Direct match
+    if bare in sec_map:
+        return sec_map[bare]
+    if raw in sec_map:
+        return sec_map[raw]
+    # 2. Check BSE scrip map
+    if bare in BSE_SCRIP_SECTOR_MAP:
+        return BSE_SCRIP_SECTOR_MAP[bare]
+    return None
 
 _SECTOR_RETURNS_CACHE: Dict[str, Dict[str, Any]] = {}
 _SECTOR_RETURNS_TTL: float = 900.0  # 15 minutes
@@ -84,8 +244,7 @@ def calculate_sector_relative_strength(symbol: str, stock_20d_ret: Optional[floa
     Computes Mansfield Relative Strength of stock against its specific sector benchmark.
     Returns None values if sector or stock 20d return is unavailable.
     """
-    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
-    sector_name = SECTOR_MAP.get(clean_sym)
+    sector_name = get_symbol_sector(symbol)
     if not sector_name or stock_20d_ret is None:
         return {
             "sector_name": sector_name or "BROAD_MARKET",
@@ -560,7 +719,7 @@ def evaluate_forensic_health(symbol: str, financials: Dict[str, Any]) -> Dict[st
     if profit_margin and profit_margin > 15.0:
         strengths.append(f"High Operating Profit Margin ({profit_margin}%)")
         
-    sector_name = SECTOR_MAP.get(symbol.upper(), "BROAD_MARKET")
+    sector_name = get_symbol_sector(symbol) or "BROAD_MARKET"
     
     return {
         "symbol": symbol,

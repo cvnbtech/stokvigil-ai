@@ -738,11 +738,13 @@ def compute_tactical_levels(
     l4: Optional[float] = None,
     vwap_val: Optional[float] = None,
     vwap_upper_1s: Optional[float] = None,
-    action_bias: str = "HOLD_NEUTRAL"
+    action_bias: str = "HOLD_NEUTRAL",
+    risk_budget: Optional[float] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Computes institutional tactical levels: entry range, target 1, target 2, protective stop-loss, and R:R ratio.
     Direction-Aware: Properly computes downside targets and protective buy-stops for SELL_WATCH short / breakdown trades.
+    Includes Mathematical Risk-Based Position Sizer (1% Capital Risk Rule).
     ZERO-DEFAULT RULE: Returns None if current_price is None or <= 0.
     """
     if current_price is None or float(current_price) <= 0:
@@ -752,6 +754,15 @@ def compute_tactical_levels(
     atr = float(atr_val or (price * 0.015))
     if atr <= 0:
         atr = price * 0.015
+
+    # Determine risk budget (defaults to ₹2,000 or 1% of Demat portfolio)
+    budget = 2000.0
+    if risk_budget is not None and float(risk_budget) > 0:
+        budget = float(risk_budget)
+    elif demat_context and isinstance(demat_context, dict):
+        demat_val = demat_context.get("portfolio_value") or demat_context.get("total_value") or demat_context.get("capital")
+        if demat_val and float(demat_val) > 0:
+            budget = max(500.0, round(float(demat_val) * 0.01, 2))
 
     is_sell = action_bias in ["SELL_WATCH"]
     is_sl_alert = action_bias in ["TRAILING_SL_ALERT"]
@@ -785,6 +796,13 @@ def compute_tactical_levels(
         reward_val = max(2.5, price - target_2)
         rr_ratio = round(reward_val / risk_val, 1)
 
+        # Position Sizing
+        risk_per_share = round(abs(price - stop_loss), 2)
+        effective_risk = max(0.5, risk_per_share)
+        recommended_qty = max(1, int(budget // effective_risk))
+        capital_at_risk = round(recommended_qty * effective_risk, 2)
+        estimated_pos_val = round(recommended_qty * price, 2)
+
         return {
             "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
             "target_1": f"₹{target_1:,.2f}",
@@ -793,6 +811,12 @@ def compute_tactical_levels(
             "expansion_support_2": f"₹{target_2:,.2f}",
             "protective_stop_loss": f"₹{stop_loss:,.2f}",
             "risk_reward_ratio": f"1:{rr_ratio}",
+            "recommended_quantity": recommended_qty,
+            "risk_per_share": risk_per_share,
+            "capital_at_risk": capital_at_risk,
+            "estimated_position_value": estimated_pos_val,
+            "risk_budget": budget,
+            "position_sizing_rule": f"1% Capital Risk Rule (₹{budget:,.0f} risk budget)",
             "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
         }
 
@@ -839,6 +863,13 @@ def compute_tactical_levels(
     reward_val = max(2.5, target_2 - price)
     rr_ratio = round(reward_val / risk_val, 1)
 
+    # Position Sizing
+    risk_per_share = round(abs(price - stop_loss), 2)
+    effective_risk = max(0.5, risk_per_share)
+    recommended_qty = max(1, int(budget // effective_risk))
+    capital_at_risk = round(recommended_qty * effective_risk, 2)
+    estimated_pos_val = round(recommended_qty * price, 2)
+
     return {
         "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
         "target_1": f"₹{target_1:,.2f}",
@@ -847,6 +878,12 @@ def compute_tactical_levels(
         "expansion_resistance_2": f"₹{target_2:,.2f}",
         "protective_stop_loss": f"₹{stop_loss:,.2f}",
         "risk_reward_ratio": f"1:{rr_ratio}",
+        "recommended_quantity": recommended_qty,
+        "risk_per_share": risk_per_share,
+        "capital_at_risk": capital_at_risk,
+        "estimated_position_value": estimated_pos_val,
+        "risk_budget": budget,
+        "position_sizing_rule": f"1% Capital Risk Rule (₹{budget:,.0f} risk budget)",
         "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
     }
 

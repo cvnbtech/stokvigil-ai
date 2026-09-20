@@ -144,6 +144,14 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
       > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
 13. **Stop-Loss Limit (`SL-L`) Execution Routing & SEBI/NSE `SL-M` Ban Enforcement**:
     - Enforces full compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives to prevent freak-trade execution slippage. Validates stop-orders: any stop order submitted as `MARKET` is rejected with `HTTP 422 Unprocessable Entity`. Stop orders must be placed as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
+14. **Dynamic Sector Universe & Dual-Exchange (NSE + BSE) Coverage (`get_dynamic_sector_map`)**:
+    - Dynamically queries official NSE sector constituent lists (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) with a 24-hour RAM cache, expanding coverage from static lists to 250+ equities. Implements complete Dual-Exchange Parity (`get_symbol_sector`) mapping 6-digit BSE security codes (e.g. `500325` for Reliance, `500209` for Infosys, `500180` for HDFC Bank) and `.BO` suffixes to their true sector benchmarks.
+15. **Mathematical Risk-Based Position Sizer (1% Capital Rule)**:
+    - Institutional trade sizing based on the standard 1% account risk budget (default ₹2,000 or 1% of Demat portfolio): $\text{Quantity} = \max(1, \lfloor \text{Risk Budget} / |\text{Price} - \text{Stop Loss}| \rfloor)$. Computes `recommended_quantity`, `risk_per_share`, and `capital_at_risk` for both bullish and breakdown short setups, rendering real-time sizing guidance on Telegram alerts and HUD cards.
+16. **In-Memory Vectorized Strategy Backtester Engine (`GET /api/market/backtest`)**:
+    - High-speed historical backtesting module powered by pure NumPy/Pandas vectorization (sub-1s execution). Evaluates algorithmic Camarilla H4 Breakouts and Confluence Trend setups over historical OHLCV bars across both NSE and BSE. Generates Win Rate %, Profit Factor, Max Drawdown %, annualized Sharpe Ratio, trade logs, and sampled equity curves with zero synthetic mock data.
+17. **03:45 PM IST Post-Market Executive Telegram Digest (`POST /api/cron/post-market-summary`)**:
+    - Automated daily closing bell scorecard dispatched at 03:45 PM IST. Summarizes benchmark closing levels (NIFTY 50, SENSEX, India VIX), Cash Market Breadth (ADR), FII/DII institutional cash turnover, sector rotation leaders/laggards, and the day's algorithmic Target 1 mathematical hit rate.
 
 ---
 
@@ -467,5 +475,10 @@ The scheduled GitHub Actions runner executes automated workflows strictly during
    - **Synchronous Execution & Free-Tier Optimization**: Synchronously executes the market scan during the active HTTP request to guarantee 100% CPU allocation under Cloud Run's standard request-based billing ($0.00 cost within 360,000 vCPU-seconds/month quota), avoiding CPU throttling while streaming heartbeat progress logs every 20 symbols. Guarded by `_scan_in_progress` to prevent overlapping runs.
    - **Vectorized Pre-Computation & Concurrent Evaluation**: Uses `batch_fetch_multi_timeframe_technicals` to download multi-ticker 5m candles in parallel and reuses 8-hour cached daily bars, pre-computing un-cached symbols with `asyncio.Semaphore(20)`. Evaluates all user portfolios concurrently via `asyncio.gather` bounded by `asyncio.Semaphore(10)`, and parallelizes per-user symbol analysis with nested `asyncio.gather`.
 
-4. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
+4. **03:45 PM IST Post-Market Closing Bell Digest (`cron: '15 10 * * 1-5'` / `10:15 UTC`)**:
+   - Executes `POST /api/cron/post-market-summary` with `-H "X-Cron-Secret: ${{ secrets.CRON_SECRET_KEY }}"`.
+   - Dispatches the daily closing bell scorecard (NIFTY 50, SENSEX, India VIX, Cash Market Breadth ADR, FII/DII net flows, sector rotation leaders/laggards, and algorithmic Target 1 hit rates) to all registered Telegram and FCM users.
+
+5. **Android Release APK Builder ([build_apk.yml](.github/workflows/build_apk.yml))**:
    - Compiles release Android APK (`com.app.stokvigil`) on push to `main` or manual workflow dispatch, injecting `google-services.json` securely from GitHub Secrets.
+

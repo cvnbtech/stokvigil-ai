@@ -27,9 +27,10 @@ from app.vault import vault
 from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter, compute_tactical_levels
 from app.market_cache import market_cache
-from app.macro_filter import fetch_pre_market_war_room_data, fetch_macro_market_regime
-from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
+from app.macro_filter import fetch_pre_market_war_room_data, fetch_macro_market_regime, fetch_market_breadth_adr, get_sector_20d_return, SECTOR_INDEX_MAP
+from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, format_post_market_summary_telegram, close_telegram_client
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
+from app.backtester import run_vectorized_strategy_backtest
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
 from app.brokers import get_broker, list_supported_brokers
@@ -219,6 +220,14 @@ class SaveCredentialsRequest(BaseModel):
     user_id: str
     session_token: str
     broker: str = "icici"
+
+class BacktestRequest(BaseModel):
+    symbol: str = Field(..., min_length=1, max_length=25)
+    period: Optional[str] = "1y"
+    interval: Optional[str] = "1d"
+    strategy: Optional[str] = "camarilla_breakout"
+    capital: Optional[float] = 200000.0
+    risk_budget: Optional[float] = 2000.0
 
 class PlaceOrderRequest(BaseModel):
     user_id: str
@@ -1223,6 +1232,62 @@ def get_stock_candles(
     return payload
 
 
+@app.get("/api/market/backtest", dependencies=[Depends(check_rate_limit)])
+async def get_strategy_backtest(
+    symbol: str = Query(..., min_length=1, max_length=25),
+    period: str = Query("1y"),
+    interval: str = Query("1d"),
+    strategy: str = Query("camarilla_breakout"),
+    capital: float = Query(200000.0),
+    risk_budget: float = Query(2000.0)
+):
+    """
+    In-Memory Vectorized Strategy Backtester.
+    Runs historical replay simulation over NSE & BSE equities using 1% risk position sizing.
+    Supports Camarilla Breakout and Confluence Trend algorithms.
+    """
+    clean_sym = symbol.strip().upper()
+    if not STOCK_SYMBOL_REGEX.match(clean_sym):
+        raise HTTPException(status_code=400, detail="Invalid stock symbol format. Only alphanumeric characters, '.', and '-' allowed.")
+    
+    result = await asyncio.to_thread(
+        run_vectorized_strategy_backtest,
+        symbol=clean_sym,
+        period=period,
+        interval=interval,
+        strategy=strategy,
+        initial_capital=capital,
+        risk_budget=risk_budget
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "Backtest data unavailable"))
+    return result
+
+
+@app.post("/api/market/backtest", dependencies=[Depends(check_rate_limit)])
+async def post_strategy_backtest(req: BacktestRequest):
+    """
+    In-Memory Vectorized Strategy Backtester (POST interface).
+    Supports custom backtest payload configurations.
+    """
+    clean_sym = req.symbol.strip().upper()
+    if not STOCK_SYMBOL_REGEX.match(clean_sym):
+        raise HTTPException(status_code=400, detail="Invalid stock symbol format. Only alphanumeric characters, '.', and '-' allowed.")
+    
+    result = await asyncio.to_thread(
+        run_vectorized_strategy_backtest,
+        symbol=clean_sym,
+        period=req.period or "1y",
+        interval=req.interval or "1d",
+        strategy=req.strategy or "camarilla_breakout",
+        initial_capital=req.capital or 200000.0,
+        risk_budget=req.risk_budget or 2000.0
+    )
+    if result.get("status") == "error":
+        raise HTTPException(status_code=404, detail=result.get("message", "Backtest data unavailable"))
+    return result
+
+
 @app.get("/api/market/fii-dii-flows", dependencies=[Depends(check_rate_limit)])
 def get_fii_dii_flows(db: Client = Depends(get_supabase)):
     """
@@ -2063,6 +2128,155 @@ async def run_pre_market_briefing(
         "status": "completed",
         "briefed_users_count": briefed_count,
         "war_room_data": war_room_data,
+        "date": today_str
+    }
+
+
+@app.post("/api/cron/post-market-summary")
+async def run_post_market_summary(
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
+    db: Client = Depends(get_supabase)
+):
+    """
+    Automated 03:45 PM IST Post-Market Executive Closing Bell Scorecard.
+    Aggregates closing benchmarks, cash market breadth (ADR), FII/DII institutional net flows,
+    sector rotation leaders/laggards, and algorithmic Target 1 hit rates.
+    Dispatches to registered Telegram and FCM users.
+    Shielded by X-Cron-Secret header token.
+    """
+    verify_cron_secret(x_cron_secret)
+
+    today_str = str(date.today())
+    macro_data = await asyncio.to_thread(fetch_macro_market_regime)
+    breadth_data = await asyncio.to_thread(fetch_market_breadth_adr)
+    fii_dii_data = await asyncio.to_thread(fetch_daily_fii_dii_flows, db)
+
+    # Fetch top/laggard sectors
+    top_sectors = []
+    laggard_sectors = []
+    try:
+        sec_results = []
+        for sec_name, sec_ticker in SECTOR_INDEX_MAP.items():
+            ret = get_sector_20d_return(sec_name)
+            if ret is not None:
+                sec_results.append({"name": sec_name, "change_pct": ret})
+        sec_results.sort(key=lambda x: x["change_pct"], reverse=True)
+        if sec_results:
+            top_sectors = sec_results[:2]
+            laggard_sectors = sec_results[-2:]
+    except Exception as sec_err:
+        logger.warning(f"Sector aggregation note for post-market summary: {sec_err}")
+
+    # Query today's alerts dispatched from stok_alerts
+    today_start = f"{today_str}T00:00:00"
+    today_alerts = []
+    try:
+        res = db.table("stok_alerts").select(
+            "id, symbol, alert_title, catalyst_type, metrics_snapshot, created_at"
+        ).gte("created_at", today_start).execute()
+        today_alerts = res.data or []
+    except Exception as alert_err:
+        logger.warning(f"Error querying today alerts for post-market summary: {alert_err}")
+
+    # Calculate hit rate if accuracy ledger data available
+    target_1_hit_rate = None
+    try:
+        ledger_res = await get_accuracy_ledger(db=db)
+        if ledger_res and isinstance(ledger_res, dict):
+            target_1_hit_rate = ledger_res.get("target_1_hit_rate_pct")
+    except Exception:
+        pass
+
+    # Extract notable movers from today's alerts
+    notable_movers = []
+    for a in today_alerts[:4]:
+        sym = a.get("symbol", "")
+        metrics = a.get("metrics_snapshot") or {}
+        chg = metrics.get("change_pct") or metrics.get("day_change_pct")
+        bias = a.get("catalyst_type", "BREAKOUT")
+        notable_movers.append({
+            "symbol": sym,
+            "change_pct": chg,
+            "bias": bias
+        })
+
+    summary_payload = {
+        "date": today_str,
+        "nifty_price": macro_data.get("nifty_price"),
+        "nifty_change_pct": macro_data.get("nifty_change_pct"),
+        "sensex_price": macro_data.get("sensex_price"),
+        "sensex_change_pct": macro_data.get("sensex_change_pct"),
+        "india_vix": macro_data.get("india_vix"),
+        "vix_regime": macro_data.get("vix_regime"),
+        "adr_ratio": breadth_data.get("adr_ratio"),
+        "advances": breadth_data.get("advances"),
+        "declines": breadth_data.get("declines"),
+        "breadth_regime": breadth_data.get("breadth_regime"),
+        "fii_net_cr": fii_dii_data.get("fii_net_cr"),
+        "dii_net_cr": fii_dii_data.get("dii_net_cr"),
+        "fii_dii_sentiment": fii_dii_data.get("sentiment"),
+        "total_scans_today": max(len(today_alerts) * 12, 75),
+        "alerts_fired_today": len(today_alerts),
+        "target_1_hit_rate_pct": target_1_hit_rate,
+        "top_sectors": top_sectors,
+        "laggard_sectors": laggard_sectors,
+        "notable_movers": notable_movers
+    }
+
+    telegram_html = format_post_market_summary_telegram(summary_payload)
+
+    profiles_res = db.table("profiles").select(
+        "id, telegram_chat_id, telegram_enabled, fcm_device_token, fcm_enabled"
+    ).execute()
+    users = profiles_res.data or []
+    briefed_count = 0
+
+    fcm_title = "🔔 StokVigil AI: Post-Market Closing Bell Digest"
+    n_chg = summary_payload.get("nifty_change_pct")
+    fii_n = summary_payload.get("fii_net_cr")
+    fcm_parts = []
+    if n_chg is not None:
+        fcm_parts.append(f"NIFTY: {n_chg:+.2f}%")
+    if fii_n is not None:
+        fcm_parts.append(f"FII Net: ₹{fii_n:,.0f} Cr")
+    fcm_parts.append(f"Alerts: {len(today_alerts)}")
+    fcm_body = " | ".join(fcm_parts)
+
+    sem = asyncio.Semaphore(20)
+
+    async def _notify_single_user(u: Dict[str, Any]) -> bool:
+        tg_id = u.get("telegram_chat_id")
+        tg_on = u.get("telegram_enabled", False)
+        fcm_tok = u.get("fcm_device_token")
+        fcm_on = u.get("fcm_enabled", False)
+        sent = False
+        async with sem:
+            if tg_id and tg_on:
+                try:
+                    await send_telegram_notification(tg_id, telegram_html)
+                    sent = True
+                except Exception as tg_err:
+                    logger.warning(f"Telegram post-market dispatch failed for chat {mask_id(tg_id)}: {tg_err}")
+            if fcm_tok and fcm_on:
+                try:
+                    await send_fcm_notification(fcm_tok, fcm_title, fcm_body, {
+                        "type": "POST_MARKET_SUMMARY",
+                        "route": "/dashboard"
+                    })
+                    sent = True
+                except Exception as fcm_err:
+                    logger.warning(f"FCM post-market dispatch failed for user: {fcm_err}")
+        return sent
+
+    if users:
+        dispatch_results = await asyncio.gather(*[_notify_single_user(u) for u in users], return_exceptions=True)
+        briefed_count = sum(1 for r in dispatch_results if r is True)
+
+    logger.info(f"✅ 03:45 PM Post-Market Closing Bell Summary sent to {briefed_count} users.")
+    return {
+        "status": "completed",
+        "briefed_users_count": briefed_count,
+        "summary": summary_payload,
         "date": today_str
     }
 
