@@ -42,20 +42,48 @@ def classify_institutional_sentiment(fii_net: float, dii_net: float) -> str:
     return "NEUTRAL_BALANCED"
 
 
+def normalize_to_iso_date(raw_date_str: str) -> str:
+    """
+    Normalizes diverse date formats (e.g. '05-Sep-2026', '2026-09-05', '05/09/2026')
+    to standard PostgreSQL ISO date format 'YYYY-MM-DD'.
+    """
+    if not raw_date_str:
+        return date.today().isoformat()
+    clean_str = str(raw_date_str).strip()
+    for fmt in ("%d-%b-%Y", "%d-%B-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(clean_str, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return date.today().isoformat()
+
+
 def _fetch_from_nse_direct() -> Optional[Dict[str, Any]]:
     """
-    Attempts to fetch official FII/DII daily trade report from NSE.
+    Attempts to fetch official FII/DII daily trade report from NSE with session cookie support.
     """
-    url = "https://www.nseindia.com/api/fiidiiTradeReact"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": "https://www.nseindia.com/reports/fii-dii",
     }
+    cookie_jar = urllib.request.HTTPCookieProcessor()
+    opener = urllib.request.build_opener(cookie_jar)
+
+    # 1. Warm up cookies on NSE homepage to establish session and bypass Akamai bot shield
+    try:
+        home_req = urllib.request.Request("https://www.nseindia.com", headers=headers)
+        with opener.open(home_req, timeout=3) as home_resp:
+            _ = home_resp.read()
+    except Exception as cookie_err:
+        logger.debug(f"NSE cookie warmup note: {cookie_err}")
+
+    # 2. Fetch official FII/DII trade endpoint
+    url = "https://www.nseindia.com/api/fiidiiTradeReact"
     try:
         req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with opener.open(req, timeout=5) as response:
             if response.status == 200:
                 raw = json.loads(response.read().decode("utf-8"))
                 if isinstance(raw, list) and len(raw) >= 2:
@@ -69,10 +97,12 @@ def _fetch_from_nse_direct() -> Optional[Dict[str, Any]]:
                         d_buy = float(str(dii_entry.get("buyValue", 0)).replace(",", ""))
                         d_sell = float(str(dii_entry.get("sellValue", 0)).replace(",", ""))
                         d_net = float(str(dii_entry.get("netValue", 0)).replace(",", ""))
-                        t_date = fii_entry.get("date", datetime.now().strftime("%d-%b-%Y"))
+                        raw_date = fii_entry.get("date", datetime.now().strftime("%d-%b-%Y"))
+                        iso_date = normalize_to_iso_date(raw_date)
 
                         return {
-                            "date": t_date,
+                            "date": iso_date,
+                            "raw_date": raw_date,
                             "fii": {"buy": f_buy, "sell": f_sell, "net": f_net},
                             "dii": {"buy": d_buy, "sell": d_sell, "net": d_net},
                             "combined_net": round(f_net + d_net, 2),
@@ -82,6 +112,48 @@ def _fetch_from_nse_direct() -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.debug(f"Direct NSE FII/DII live fetch skipped/unavailable: {e}")
     return None
+
+
+def persist_fii_dii_record(db: Any, data: Dict[str, Any]) -> bool:
+    """
+    Persists or upserts official FII/DII daily net flows into public.fii_dii_flows table.
+    Ensures idempotency via on_conflict="trade_date".
+    """
+    if db is None or not data or not data.get("fii") or not data.get("dii"):
+        return False
+
+    trade_date = data.get("date") or normalize_to_iso_date(data.get("raw_date", ""))
+    if not trade_date or trade_date == "DATA_UNAVAILABLE":
+        return False
+
+    f_buy = float(data["fii"].get("buy", 0.0) or 0.0)
+    f_sell = float(data["fii"].get("sell", 0.0) or 0.0)
+    f_net = float(data["fii"].get("net", 0.0) or 0.0)
+    d_buy = float(data["dii"].get("buy", 0.0) or 0.0)
+    d_sell = float(data["dii"].get("sell", 0.0) or 0.0)
+    d_net = float(data["dii"].get("net", 0.0) or 0.0)
+    comb_net = float(data.get("combined_net", round(f_net + d_net, 2)) or 0.0)
+    sentiment = str(data.get("sentiment") or classify_institutional_sentiment(f_net, d_net))
+
+    payload = {
+        "trade_date": trade_date,
+        "fii_buy_cr": f_buy,
+        "fii_sell_cr": f_sell,
+        "fii_net_cr": f_net,
+        "dii_buy_cr": d_buy,
+        "dii_sell_cr": d_sell,
+        "dii_net_cr": d_net,
+        "combined_net_cr": comb_net,
+        "sentiment_bias": sentiment
+    }
+
+    try:
+        db.table("fii_dii_flows").upsert(payload, on_conflict="trade_date").execute()
+        logger.info(f"✅ Successfully persisted FII/DII flow record for {trade_date} (Combined: {comb_net:+.2f} Cr, Sentiment: {sentiment}) to Supabase.")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to upsert FII/DII flows to database for {trade_date}: {e}")
+        return False
 
 
 def _get_unavailable_institutional_payload() -> Dict[str, Any]:
@@ -105,7 +177,8 @@ def _get_unavailable_institutional_payload() -> Dict[str, Any]:
 def fetch_daily_fii_dii_flows(db=None) -> Dict[str, Any]:
     """
     Returns latest FII/DII net flows with 30-minute caching.
-    Attempts live NSE query, falls back to Supabase historical table, and finally to DATA_UNAVAILABLE state.
+    Attempts live NSE query, persists fresh records to Supabase, falls back to
+    Supabase historical table, and finally to DATA_UNAVAILABLE state.
     """
     global _FII_DII_CACHE, _CACHE_TIMESTAMP
 
@@ -116,7 +189,10 @@ def fetch_daily_fii_dii_flows(db=None) -> Dict[str, Any]:
     # 1. Try Live NSE
     data = _fetch_from_nse_direct()
 
-    # 2. Try Supabase Cache Table if DB available
+    # If live NSE data was retrieved and db is available, immediately persist it
+    if data and db is not None:
+        persist_fii_dii_record(db, data)
+
     # 2. Try Supabase Cache Table if DB available (to fetch or enrich with multi-day history)
     if db is not None:
         try:

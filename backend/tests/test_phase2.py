@@ -5,12 +5,21 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 import pandas as pd
 
+# Set test environment to prevent vault production check abort
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.main import app, get_supabase
 from app.config import settings
-from app.fii_dii_tracker import classify_institutional_sentiment, fetch_daily_fii_dii_flows
+from app.fii_dii_tracker import (
+    classify_institutional_sentiment,
+    fetch_daily_fii_dii_flows,
+    persist_fii_dii_record,
+    normalize_to_iso_date
+)
 
 
 class MockDBResult:
@@ -21,6 +30,7 @@ class MockDBResult:
 class MockDBTable:
     def __init__(self, table_name):
         self.table_name = table_name
+        self.last_upsert_payload = None
 
     def select(self, *args, **kwargs):
         return self
@@ -32,6 +42,10 @@ class MockDBTable:
         return self
 
     def limit(self, *args, **kwargs):
+        return self
+
+    def upsert(self, payload, *args, **kwargs):
+        self.last_upsert_payload = payload
         return self
 
     def execute(self):
@@ -69,8 +83,13 @@ class MockDBTable:
 
 
 class MockSupabaseClient:
+    def __init__(self):
+        self._tables = {}
+
     def table(self, table_name):
-        return MockDBTable(table_name)
+        if table_name not in self._tables:
+            self._tables[table_name] = MockDBTable(table_name)
+        return self._tables[table_name]
 
 
 class TestPhase2Features(unittest.TestCase):
@@ -105,6 +124,31 @@ class TestPhase2Features(unittest.TestCase):
         self.assertIn("history", data)
         self.assertIsInstance(data["history"], list)
         self.assertGreater(len(data["history"]), 0)
+
+    def test_normalize_to_iso_date(self):
+        """Must convert DD-Mon-YYYY to ISO YYYY-MM-DD."""
+        self.assertEqual(normalize_to_iso_date("05-Sep-2026"), "2026-09-05")
+        self.assertEqual(normalize_to_iso_date("19-September-2026"), "2026-09-19")
+        self.assertEqual(normalize_to_iso_date("2026-09-20"), "2026-09-20")
+
+    def test_persist_fii_dii_record(self):
+        """Must format payload and execute upsert into fii_dii_flows table."""
+        sample_data = {
+            "date": "2026-09-19",
+            "fii": {"buy": 15000.0, "sell": 13000.0, "net": 2000.0},
+            "dii": {"buy": 10000.0, "sell": 9500.0, "net": 500.0},
+            "combined_net": 2500.0,
+            "sentiment": "STRONG_ACCUMULATION"
+        }
+        success = persist_fii_dii_record(self.mock_db, sample_data)
+        self.assertTrue(success)
+        table = self.mock_db.table("fii_dii_flows")
+        self.assertIsNotNone(table.last_upsert_payload)
+        self.assertEqual(table.last_upsert_payload["trade_date"], "2026-09-19")
+        self.assertEqual(table.last_upsert_payload["fii_net_cr"], 2000.0)
+        self.assertEqual(table.last_upsert_payload["dii_net_cr"], 500.0)
+        self.assertEqual(table.last_upsert_payload["combined_net_cr"], 2500.0)
+        self.assertEqual(table.last_upsert_payload["sentiment_bias"], "STRONG_ACCUMULATION")
 
     def test_accuracy_ledger_endpoint(self):
         """GET /api/market/accuracy-ledger must return audited non-custodial performance stats."""

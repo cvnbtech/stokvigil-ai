@@ -1998,6 +1998,12 @@ async def run_pre_market_briefing(
     except Exception as m_err:
         logger.warning(f"Maintenance prune note: {m_err}")
 
+    # Automated FII/DII institutional flow sync
+    try:
+        asyncio.create_task(asyncio.to_thread(fetch_daily_fii_dii_flows, db))
+    except Exception as fii_err:
+        logger.warning(f"FII/DII sync note: {fii_err}")
+
     today_str = str(date.today())
     war_room_data = await asyncio.to_thread(fetch_pre_market_war_room_data)
     telegram_html = format_pre_market_war_room_telegram(war_room_data)

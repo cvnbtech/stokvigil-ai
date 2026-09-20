@@ -359,8 +359,11 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
    - Zero PII leakage: Strictly projects public technical parameters without user identifiers or position sizes.
 4. **Institutional FII & DII Cash Market Net Flow Engine (`fii_dii_tracker.py`)**:
    - Captures daily official Indian equity cash turnover (combined NSE & BSE institutional transactions).
+   - **Cookie-Enabled Session Handshake**: Warms up session cookies against the NSE root domain to bypass Akamai bot-shield blocking (`HTTP 403`) on cloud server environments.
+   - **Date Normalization & Persistent Ledger**: Automatically converts NSE dates (`DD-Mon-YYYY`) into ISO format (`YYYY-MM-DD`) and idempotently upserts records into the Supabase `fii_dii_flows` table (`on_conflict="trade_date"`).
+   - **Automated Morning Sync**: Synchronizes daily institutional flows automatically during the 09:00 AM IST Pre-Market War Room Briefing (`POST /api/cron/pre-market-briefing`).
    - Multi-tier fallback (Live NSE API $\rightarrow$ Supabase `fii_dii_flows` table $\rightarrow$ Institutional proxy) with 30-minute in-memory caching.
-   - Sentiment classification: `STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_DII_SUPPORT_DEFENDING`.
+   - Sentiment classification: `STRONG_ACCUMULATION`, `BULLISH_INFLOW`, `HEAVY_DISTRIBUTION`, `DOMESTIC_DII_SUPPORT_DEFENDING`, `FII_ABSORBING_DII_PROFIT_BOOKING`, `BEARISH_OUTFLOW`.
    - Visual sentiment bars in Web and Mobile dashboard headers.
 5. **In-App Candlestick Charts with Camarilla Overlays (`GET /api/stocks/candles`)**:
    - **Cross-Platform TradingView Engine**: Integrated TradingView Lightweight Charts across the Next.js Web Portal (`web_portal/src/components/LightweightCandleChart.tsx`) and the Flutter Mobile App (`mobile_app/lib/screens/candle_chart_screen.dart` & `mobile_app/lib/widgets/candle_chart_modal.dart`).
@@ -557,7 +560,9 @@ G:\stokvigil-ai\
 │       ├── 20260809_init_stokvigil.sql
 │       ├── 20260822_enhance_stokalerts.sql
 │       ├── 20260906_fii_dii_flows.sql
-│       └── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
+│       ├── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
+│       ├── 20260919_drop_not_null_broker_keys.sql <-- Master App Publisher Model
+│       └── 20260920_fii_dii_service_role_policy.sql <-- Service Role Write Policy on fii_dii_flows
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
