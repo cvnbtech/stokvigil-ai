@@ -424,7 +424,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
-                        hintText: "SEARCH NSE/BSE STOCK (E.G. TATA, RELIANCE, 500325)",
+                        hintText: "SEARCH NSE/BSE SYMBOL OR SECURITY CODE",
                         hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.bold),
                         border: InputBorder.none,
                         contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -653,7 +653,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                   ),
                                   SizedBox(height: 8),
                                   Text(
-                                    "Add NSE/BSE stock symbols above (e.g., RELIANCE, TCS, 500325) to monitor breakouts, earnings, and block deals.",
+                                    "Add NSE/BSE stock symbols or security codes above to monitor breakouts, earnings, and block deals.",
                                     textAlign: TextAlign.center,
                                     style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
                                   ),

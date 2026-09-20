@@ -308,9 +308,9 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 - **⚡ Wyckoff VSA Badge**: Explicit highlighting of `SMART_MONEY_ABSORPTION` vs `OPERATOR_CHURN_TRAP` with contextual commentary.
 - **💼 ICICI Demat Position Snapshot**: Displays sanitized average buy price, quantity, current market value, and real-time P&L %.
 
-### 2.1.8 Dynamic Sector Universe Discovery & Dual-Exchange Parity (`macro_filter.py`)
+### 2.1.8 Dynamic Sector Universe Discovery & Live Dual-Exchange Parity (`macro_filter.py`)
 - **Daily Automated Fetch (`get_dynamic_sector_map`)**: Refreshes 7 official NSE sectoral constituent archives daily (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) with a 24-hour thread-safe RAM cache. Expands sectoral coverage across 250+ equities dynamically with zero hardcoded stock lists.
-- **BSE Dual-Exchange Mapping (`get_symbol_sector`)**: Native resolution of 6-digit numeric security codes (e.g. `500325` for Reliance, `500209` for Infosys, `500180` for HDFC Bank) and `.BO` dual-listed tickers, ensuring Mansfield Relative Strength and sectoral momentum correctly apply to BSE scrips.
+- **Live BSE India API Dynamic Resolution (`resolve_bse_scrip_to_symbol`) & Sector Engine (`get_symbol_sector`)**: Dynamically resolves any 6-digit numeric BSE security code to its ticker symbol on-the-fly via the official live BSE India API (`https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w?...`) with thread-safe caching. Cross-references dynamically parsed official NSE constituent archives and live sector metadata with zero hardcoded stock symbols or static scrip code dictionaries.
 
 ### 2.1.9 Mathematical Risk-Based Position Sizer (1% Capital Rule) (`agent_runner.py`)
 - **Institutional Risk Sizing**: Eliminates arbitrary lot sizes by calculating the exact safe share quantity based on the account's defined risk budget (default ₹2,000 or 1% of Demat portfolio):
@@ -321,9 +321,12 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 
 ### 2.1.10 In-Memory Vectorized Strategy Backtester Engine (`app/backtester.py`)
 - **High-Speed Historical Replay**: Sub-1-second vectorized backtesting powered by NumPy and Pandas. Exposes `GET /api/market/backtest` and `POST /api/market/backtest`.
-- **Dual-Exchange Simulation**: Evaluates historical OHLCV candles for both NSE (`.NS`) and BSE (`.BO` & 6-digit scrips).
+- **Dual-Exchange Simulation**: Evaluates historical OHLCV candles for both NSE (`.NS`) and BSE (`.BO` & 6-digit scrips) with 1% capital risk position sizing.
 - **Institutional Metrics**: Calculates Win Rate %, Target 1 Hit Rate %, Profit Factor, Peak-to-Trough Max Drawdown %, annualized Sharpe Ratio, trade logs with exit reasons (`TARGET_1_HIT`, `TARGET_2_HIT`, `STOP_LOSS_HIT`, `TIME_EXPIRY`), and equity curve time-series.
 - **Strict Zero-Default Execution**: Returns structured error responses if historical exchange data is unavailable, strictly prohibiting synthetic data generation.
+- **Cross-Platform Interactive UI**:
+  - **Web Portal (`web_portal/src/components/BacktestView.tsx`)**: Replay interface with custom timeframe and strategy selectors, responsive SVG equity curve chart, 6-card performance HUD, trade history table with color-coded profit/loss badges, and 100% dynamic symbol input (zero hardcoded presets).
+  - **Flutter Mobile App (`mobile_app/lib/screens/backtest_screen.dart`)**: Native mobile backtest screen featuring strategy selectors, capital risk inputs, visual performance cards, full trade logs, and dynamic ticker/scrip input.
 
 ### 2.1.11 03:45 PM IST Post-Market Executive Telegram Digest (`main.py` & `notifications.py`)
 - **Automated Closing Bell Scorecard**: Dispatched 15 minutes after cash market close via `POST /api/cron/post-market-summary` (`cron: '15 10 * * 1-5'`).
@@ -377,11 +380,13 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 2. **1-Tap Shareable "Alpha Cards"**:
    - `web_portal/src/components/ShareAlphaCardModal.tsx`: Uses client-side off-screen HTML5 2D Canvas to generate 1080×1080 branded PNG cards with zero server load.
    - Includes one-tap direct distribution to WhatsApp groups and X (Twitter) with real factor geometry.
-3. **Public Audited Accuracy Ledger (`/transparency` & `/api/market/accuracy-ledger`)**:
-   - Non-repudiation audit ledger exposing Target 1 hit rates %, cumulative win rate, average risk-to-reward ratio, and signal history.
-   - 300-second in-memory cache serving 10,000+ concurrent requests at $<0.1\text{ms}$.
+3. **Public Audited Accuracy & Transparency Ledger (`/transparency`, `AuditLedgerView.tsx`, `audit_ledger_screen.dart` & `/api/market/accuracy-ledger`)**:
+   - **Cryptographic Verification**: Assigns cryptographic non-repudiation records to every alert at dispatch and audits signal trajectories using tick-level NSE and BSE prices.
+   - **Strict Verification Methodology**: A signal outcome is verified as `TARGET_1_REACHED` strictly if market price achieves the 1.5x ATR Tactical Benchmark prior to breaching the protective stop-loss floor. Volatility projections are benchmarks, not guaranteed profit targets.
+   - **Performance HUD**: Exposes Target 1 hit rate %, cumulative win rate %, average risk-to-reward ratio, and signal history across the public Web route (`/transparency`), embedded Web view (`AuditLedgerView.tsx`), and native Flutter Mobile Screen (`audit_ledger_screen.dart`).
+   - **High-Concurrency RAM Cache**: 300-second in-memory cache serving 10,000+ concurrent requests at $<0.1\text{ms}$.
    - **Dynamic Calculation & Zero-Mock Policy**: All performance stats are calculated on the fly directly from stored `stok_alerts`. When 0 verified signals exist, the ledger transparently reports `total_verified_signals: 0, win_rate_pct: 0.0, avg_risk_reward: "-"` with zero mock placeholders.
-   - Zero PII leakage: Strictly projects public technical parameters without user identifiers or position sizes.
+   - **Zero PII Leakage**: Strictly projects public mathematical parameters without exposing user identifiers or position sizes.
 4. **Institutional FII & DII Cash Market Net Flow Engine (`fii_dii_tracker.py`)**:
    - Captures daily official Indian equity cash turnover (combined NSE & BSE institutional transactions).
    - **Cookie-Enabled Session Handshake**: Warms up session cookies against the NSE root domain to bypass Akamai bot-shield blocking (`HTTP 403`) on cloud server environments.
@@ -503,17 +508,19 @@ To eliminate broker lock-in and provide a frictionless onboarding experience for
    - **In-Memory Cache Seeding (`update_live_tick`) & Zero PostgreSQL Bloat**: Quote queries seed `market_cache` in RAM for subsequent sub-millisecond lookups, ensuring high-frequency price updates never write to PostgreSQL and preventing MVCC/WAL table bloat and Supabase IOPS depletion.
 4. **Universal Dynamic ISIN & Dual-Exchange Resolver (`resolve_isin_to_nse_symbol`)**:
    - Dynamically resolves CDSL/NSDL ISIN codes (`INE...`) to verified NSE and BSE equities with dynamic company name extraction (`shortName`/`longName`), clean symbol presentation, and exchange badge tags (`BSE` amber / `NSE` cyan), preventing internal exchange routing suffixes (`.BO`, `.NS`) from leaking into user-facing UI or database watchlists.
-5. **Proxy-Aware Sliding-Window IP Rate Limiting & Input Sanitization**:
-   - Public quote and search routes enforce a 120 req/min sliding-window rate limit per client IP.
-   - Multi-Tier Reverse-Proxy Client IP Resolution (`CF-Connecting-IP`, `X-Forwarded-For` first client hop, `X-Real-IP`) ensures users behind Google Cloud Run, Cloudflare, Render, or AWS ALB do not share rate-limiting buckets.
-   - Thread-Safe Periodic Auto-Pruning (`_prune_rate_limit_buckets` with `threading.Lock`) automatically evicts expired IP records every 60 seconds.
+5. **Proxy-Aware Sliding-Window IP Rate Limiting, Spoofing Defense & Input Sanitization**:
+   - Public quote and search routes enforce a sliding-window rate limit per client IP.
+   - **Reverse-Proxy Spoofing Defense (`_is_trusted_proxy` & `_sanitize_ip`)**: Only trusts reverse-proxy headers (`CF-Connecting-IP`, `X-Real-IP`, `X-Forwarded-For`) if the direct socket peer (`request.client.host`) originates from a verified private/internal network (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `127.0.0.0/8`, `fc00::/7`, `fe80::/10`) or explicit `TRUSTED_PROXIES`. Direct public internet connections strictly use the direct peer IP, preventing attacker spoofing. Extracted IPs are validated via Python `ipaddress` and capped at 45 characters. Loopback bypass is strictly restricted to local automated test suites in `test`/`development` environments.
+   - Thread-Safe Periodic Auto-Pruning (`_prune_rate_limit_buckets` with `threading.Lock`) automatically evicts expired IP records.
    - Hard Memory Bounds & Anti-OOM Protection (`_RATE_LIMIT_MAX_BUCKETS = 10000`) with emergency LRU eviction prevents dictionary bloat from distributed spoofing attacks.
    - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&.]{1,25}$`) neutralizes injection attempts while permitting valid suffixed queries.
-6. **In-App Session Token Auto-Capture & Browser History Scrubbing (Flutter Mobile & Web Portal)**:
+6. **In-App Session Token Auto-Capture & Multi-Route Browser History Scrubbing (Flutter Mobile & Web Portal)**:
    - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
-   - On the web callback route (`/api/auth/icici-callback`), `window.history.replaceState` immediately scrubs the sensitive `apisession` token from the browser address bar and history to prevent credential leakage in logs or referrers, enforced with strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
+   - On both the web callback route (`/api/auth/icici-callback`), `/callback`, and the Web Portal root route (`/`), `window.history.replaceState` immediately scrubs sensitive `apisession` and `api_session` tokens from the browser address bar and history to prevent credential leakage in logs, bookmarks, or referrers, enforced alongside strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
    - Under the Zero-Manual-Keys model, manual developer App Key / Secret Key fields and visibility toggles are completely eliminated; users simply paste or auto-capture their single daily broker session token with 1 tap.
-7. **Decoupled Fast-Path Watchlist HUD & SEBI Footnote Architecture (Mobile & Web)**:
+7. **Backtesting Resource Exhaustion Protection (`/api/market/backtest`)**:
+   - Vectorized Strategy Backtester endpoints (`GET /api/market/backtest` and `POST /api/market/backtest`) enforce mandatory Supabase JWT Bearer authentication (`Depends(get_current_user_id)`). This prevents unauthenticated attackers from exhausting server CPU and memory via repeated high-depth historical simulation requests. Both Next.js Web Portal (`BacktestView.tsx`) and Flutter Mobile App (`api_service.dart`) pass authenticated session tokens.
+8. **Decoupled Fast-Path Watchlist HUD & SEBI Footnote Architecture (Mobile & Web)**:
    - **< 100ms Fast-Path Rendering**: Watchlists across Flutter Mobile (`watchlist_screen.dart`) and Next.js Web (`WatchlistTab.tsx`) decouple Demat synchronization (`_syncDematHoldings`) from initial UI mounting (`_loadWatchlist`). The stored Supabase watchlist mounts and renders in < 100ms, streaming live quote updates and Demat holdings asynchronously.
    - **Dual Target & SL UI Display**: Each stock card displays the active signal badge alongside explicit `Target: ₹...` and `SL: ₹...` metrics.
    - **SEBI Statutory Micro-Footnotes**: Embedded at the base of both Web Portal and Mobile App watchlists: *"All targets & stop-losses are algorithmic volatility benchmarks (1.5x ATR / Camarilla Pivots) for surveillance. Not an investment advisory or price guarantee."*

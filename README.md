@@ -144,14 +144,16 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
       > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
 13. **Stop-Loss Limit (`SL-L`) Execution Routing & SEBI/NSE `SL-M` Ban Enforcement**:
     - Enforces full compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives to prevent freak-trade execution slippage. Validates stop-orders: any stop order submitted as `MARKET` is rejected with `HTTP 422 Unprocessable Entity`. Stop orders must be placed as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
-14. **Dynamic Sector Universe & Dual-Exchange (NSE + BSE) Coverage (`get_dynamic_sector_map`)**:
-    - Dynamically queries official NSE sector constituent lists (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) with a 24-hour RAM cache, expanding coverage from static lists to 250+ equities. Implements complete Dual-Exchange Parity (`get_symbol_sector`) mapping 6-digit BSE security codes (e.g. `500325` for Reliance, `500209` for Infosys, `500180` for HDFC Bank) and `.BO` suffixes to their true sector benchmarks.
+14. **Dynamic Sector Universe & Live Dual-Exchange Coverage (`get_dynamic_sector_map` & `resolve_bse_scrip_to_symbol`)**:
+    - Dynamically queries official NSE sector constituent lists (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) with a 24-hour RAM cache, expanding coverage to 250+ equities with zero hardcoded stock lists. Implements complete Dual-Exchange Parity (`get_symbol_sector`), dynamically querying BSE India's official API (`resolve_bse_scrip_to_symbol`) on-the-fly to resolve any 6-digit numeric security code and `.BO` suffix to its true sector benchmark without static symbol dictionaries.
 15. **Mathematical Risk-Based Position Sizer (1% Capital Rule)**:
     - Institutional trade sizing based on the standard 1% account risk budget (default ₹2,000 or 1% of Demat portfolio): $\text{Quantity} = \max(1, \lfloor \text{Risk Budget} / |\text{Price} - \text{Stop Loss}| \rfloor)$. Computes `recommended_quantity`, `risk_per_share`, and `capital_at_risk` for both bullish and breakdown short setups, rendering real-time sizing guidance on Telegram alerts and HUD cards.
-16. **In-Memory Vectorized Strategy Backtester Engine (`GET /api/market/backtest`)**:
-    - High-speed historical backtesting module powered by pure NumPy/Pandas vectorization (sub-1s execution). Evaluates algorithmic Camarilla H4 Breakouts and Confluence Trend setups over historical OHLCV bars across both NSE and BSE. Generates Win Rate %, Profit Factor, Max Drawdown %, annualized Sharpe Ratio, trade logs, and sampled equity curves with zero synthetic mock data.
+16. **In-Memory Vectorized Strategy Backtester Engine (`GET /api/market/backtest`, `POST /api/market/backtest` & Cross-Platform UI)**:
+    - High-speed historical backtesting module powered by pure NumPy/Pandas vectorization (sub-1s execution). Evaluates algorithmic Camarilla H4 Breakouts and Confluence Trend setups over historical OHLCV bars across both NSE and BSE with 1% capital risk position sizing. Generates Win Rate %, Profit Factor, Max Drawdown %, annualized Sharpe Ratio, trade logs, and sampled equity curves with zero synthetic mock data. Backtesting endpoints strictly require authenticated Supabase JWT Bearer session tokens to prevent unauthenticated compute exhaustion and DoS. Seamlessly integrated into both the **Next.js Web Portal (`BacktestView.tsx`)** and **Flutter Mobile App (`backtest_screen.dart`)** with 100% dynamic symbol input.
 17. **03:45 PM IST Post-Market Executive Telegram Digest (`POST /api/cron/post-market-summary`)**:
     - Automated daily closing bell scorecard dispatched at 03:45 PM IST. Summarizes benchmark closing levels (NIFTY 50, SENSEX, India VIX), Cash Market Breadth (ADR), FII/DII institutional cash turnover, sector rotation leaders/laggards, and the day's algorithmic Target 1 mathematical hit rate.
+18. **Public Audited Accuracy & Transparency Ledger (`/transparency` & `/api/market/accuracy-ledger`)**:
+    - Cryptographic non-repudiation audit ledger verifying every dispatched signal against tick-level exchange prices. Signals are marked as `TARGET_1_REACHED` strictly if price hits the 1.5x ATR Tactical Benchmark prior to breaching the protective stop-loss floor. Dynamically computes cumulative win rate %, target hit rate %, and average risk-to-reward ratio with zero mock defaults and zero PII exposure, accessible via Web (`/transparency`) and Mobile (`AuditLedgerScreen`).
 
 ---
 
@@ -328,7 +330,7 @@ Per SEBI compliance regulations, Indian broker session tokens expire daily at mi
    - Tapping **`[ 🔐 Connect Demat & Sync Holdings ]`** transmits `{ user_id, session_token, broker: "icici" }`.
    - The token is encrypted using Fernet AES-256 with PBKDF2HMAC before persisting in `user_credentials`.
    - Live Demat holdings are instantly decrypted and synchronized in RAM.
-   - The web callback route (`/api/auth/icici-callback`) scrubs `apisession` tokens from browser history (`window.history.replaceState`), eliminating token leakage in navigation logs or referrer headers.
+   - Both the web callback route (`/api/auth/icici-callback`, `/callback`) and the Web Portal root route (`/`) scrub sensitive `apisession` and `api_session` tokens from the browser address bar and history (`window.history.replaceState`), eliminating token leakage in navigation logs, browser history, or referrer headers.
 
 ---
 
@@ -415,7 +417,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (120 automated unit tests across 13 suites, including multi-broker adapters & security hardening):
+3. Run test suite (133 automated unit tests across 14 suites, including institutional engines, multi-broker adapters, and quantitative upgrades):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

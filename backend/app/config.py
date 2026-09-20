@@ -83,6 +83,25 @@ class Settings(BaseSettings):
             return []
         return ["*"]
 
+    # Trusted Reverse Proxies (Optional comma-separated string or list of proxy IPs)
+    TRUSTED_PROXIES: Union[str, List[str]] = ""
+
+    @property
+    def trusted_proxies_list(self) -> List[str]:
+        val = self.TRUSTED_PROXIES
+        if isinstance(val, list):
+            return [str(x).strip().strip('"').strip("'") for x in val if str(x).strip()]
+        if isinstance(val, str) and val.strip():
+            if val.strip().startswith("[") and val.strip().endswith("]"):
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, list):
+                        return [str(x).strip().strip('"').strip("'") for x in parsed if str(x).strip()]
+                except Exception:
+                    pass
+            return [x.strip().strip('"').strip("'") for x in val.split(",") if x.strip()]
+        return []
+
     class Config:
         env_file = (".env", "../.env")
         extra = "allow"

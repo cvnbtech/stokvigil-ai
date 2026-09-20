@@ -207,7 +207,9 @@ class TestFinancialTradeFlaws(unittest.TestCase):
             quantity=100
         )
 
-        with patch("breeze_connect.BreezeConnect") as MockBreeze:
+        mock_breeze_mod = MagicMock()
+        MockBreeze = mock_breeze_mod.BreezeConnect
+        with patch.dict("sys.modules", {"breeze_connect": mock_breeze_mod}):
             instance = MockBreeze.return_value
             # Simulate ICICI Breeze silent RMS failure (Status 500 with Error message, no python exception)
             instance.place_order.return_value = {
@@ -251,7 +253,9 @@ class TestFinancialTradeFlaws(unittest.TestCase):
             quantity=50
         )
 
-        with patch("breeze_connect.BreezeConnect") as MockBreeze:
+        mock_breeze_mod = MagicMock()
+        MockBreeze = mock_breeze_mod.BreezeConnect
+        with patch.dict("sys.modules", {"breeze_connect": mock_breeze_mod}):
             instance = MockBreeze.return_value
             instance.place_order.return_value = {
                 "Status": 200,

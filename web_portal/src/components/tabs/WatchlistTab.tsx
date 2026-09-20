@@ -63,7 +63,7 @@ export default function WatchlistTab({
               value={ticker}
               onChange={e => handleStockChange(e.target.value)}
               onKeyDown={e => e.key === "Enter" && addStock()}
-              placeholder="Search NSE/BSE stock (e.g. TATA, RELIANCE, 500325)"
+              placeholder="Search NSE/BSE symbol or security code..."
               style={{
                 width: "100%", background: "none", border: "none",
                 padding: "11px 14px 11px 36px", fontSize: 12.5, fontWeight: 700,

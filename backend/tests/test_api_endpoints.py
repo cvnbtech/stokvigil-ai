@@ -681,6 +681,71 @@ class TestApiEndpoints(unittest.TestCase):
         finally:
             settings.ENVIRONMENT = orig_env
 
+    # 34. Security: Rate Limiter Proxy IP Spoofing Prevention
+    def test_34_rate_limiter_spoofing_prevention(self):
+        from app.main import _extract_client_ip, _sanitize_ip, _is_trusted_proxy
+        from unittest.mock import MagicMock
+
+        # Untrusted public direct connection attempting to spoof loopback via X-Forwarded-For
+        req_untrusted = MagicMock()
+        req_untrusted.headers = {"x-forwarded-for": "127.0.0.1", "cf-connecting-ip": "10.0.0.1"}
+        req_untrusted.client.host = "203.0.113.88"
+        # Since 203.0.113.88 is public, proxy headers must be ignored
+        self.assertFalse(_is_trusted_proxy("203.0.113.88"))
+        self.assertEqual(_extract_client_ip(req_untrusted), "203.0.113.88")
+
+        # Malformed, injection, and oversized IP string sanitization
+        self.assertIsNone(_sanitize_ip("not-an-ip"))
+        self.assertIsNone(_sanitize_ip("<script>alert(1)</script>"))
+        self.assertIsNone(_sanitize_ip("127.0.0.1; DROP TABLE users;"))
+        self.assertIsNone(_sanitize_ip("a" * 100))
+        self.assertEqual(_sanitize_ip(" 192.168.1.1 "), "192.168.1.1")
+        self.assertEqual(_sanitize_ip("::1"), "::1")
+
+        # When headers are absent and host is missing
+        req_empty = MagicMock()
+        req_empty.headers = {}
+        req_empty.client.host = None
+        self.assertEqual(_extract_client_ip(req_empty), "unverified_client")
+
+    # 35. Security: Backtesting CPU Resource Exhaustion Protection (Authentication Enforced)
+    def test_35_backtest_authentication_enforcement(self):
+        orig_override = app.dependency_overrides.pop(get_current_user_id, None)
+        try:
+            # 1. GET /api/market/backtest without auth returns 401
+            res_get = self.client.get("/api/market/backtest?symbol=RELIANCE")
+            self.assertEqual(res_get.status_code, 401)
+            self.assertIn("Missing Authorization Bearer token", res_get.json().get("detail", ""))
+
+            # 2. POST /api/market/backtest without auth returns 401
+            res_post = self.client.post("/api/market/backtest", json={"symbol": "RELIANCE"})
+            self.assertEqual(res_post.status_code, 401)
+            self.assertIn("Missing Authorization Bearer token", res_post.json().get("detail", ""))
+        finally:
+            if orig_override is not None:
+                app.dependency_overrides[get_current_user_id] = orig_override
+
+    # 36. Backtesting Authenticated Execution
+    @patch("app.main.run_vectorized_strategy_backtest")
+    def test_36_backtest_authenticated_success(self, mock_backtest):
+        mock_backtest.return_value = {
+            "status": "success",
+            "symbol": "RELIANCE",
+            "total_trades": 12,
+            "win_rate_pct": 75.0,
+            "total_pnl": 15000.0,
+        }
+
+        # 1. GET /api/market/backtest with authenticated user
+        res_get = self.client.get("/api/market/backtest?symbol=RELIANCE&period=6m&strategy=camarilla_breakout")
+        self.assertEqual(res_get.status_code, 200)
+        self.assertEqual(res_get.json()["total_trades"], 12)
+
+        # 2. POST /api/market/backtest with authenticated user
+        res_post = self.client.post("/api/market/backtest", json={"symbol": "RELIANCE", "period": "6m"})
+        self.assertEqual(res_post.status_code, 200)
+        self.assertEqual(res_post.json()["win_rate_pct"], 75.0)
+
 
 if __name__ == "__main__":
     unittest.main()

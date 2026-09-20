@@ -45,11 +45,12 @@ export default function App() {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger" | "backtest">("home");
-  const [backtestSymbol, setBacktestSymbol] = useState<string>("RELIANCE.NS");
+  const [backtestSymbol, setBacktestSymbol] = useState<string>("");
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<string>("icici");
   const [brokerLoginUrl, setBrokerLoginUrl] = useState<string>("");
   const [sessionTok, setSessionTok] = useState("");
+  const [authToken, setAuthToken]   = useState<string>("");
   const [keySaved, setKeySaved]   = useState(false);
   const [keySaving, setKeySaving] = useState(false);
   const [hasCredentials, setHasCredentials] = useState(false);
@@ -496,10 +497,26 @@ export default function App() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const sessionParam = params.get("apisession");
+      let sessionParam = params.get("apisession") || params.get("api_session");
+      if (!sessionParam) {
+        try {
+          sessionParam = sessionStorage.getItem("stokvigil_pending_apisession");
+          if (sessionParam) {
+            sessionStorage.removeItem("stokvigil_pending_apisession");
+          }
+        } catch (_) {}
+      }
       if (sessionParam) {
         setSessionTok(sessionParam);
         openKeyModal();
+        // Immediately scrub the sensitive session token from the browser URL address bar and history
+        if (params.has("apisession") || params.has("api_session")) {
+          params.delete("apisession");
+          params.delete("api_session");
+          const remaining = params.toString();
+          const cleanUrl = window.location.pathname + (remaining ? `?${remaining}` : "") + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
       }
     }
   }, [openKeyModal]);
@@ -515,6 +532,7 @@ export default function App() {
 
     const handleSession = (session: any) => {
       if (session?.user) {
+        setAuthToken(session?.access_token || "");
         const u = {
           id: session.user.id,
           name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Investor",
@@ -531,6 +549,7 @@ export default function App() {
           loadProfileData(session.user.id);
         }
       } else {
+        setAuthToken("");
         lastLoadedUidRef.current = null;
         setUser(null);
         setScreen("auth");
@@ -1131,7 +1150,7 @@ export default function App() {
           {/* STRATEGY BACKTESTER TAB */}
           {tab === "backtest" && (
             <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
-              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("home")} />
+              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("home")} authToken={authToken} />
             </div>
           )}
         </DraggableVerticalCanvas>

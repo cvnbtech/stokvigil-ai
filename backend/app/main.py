@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -74,41 +75,103 @@ def _prune_rate_limit_buckets(now: float) -> None:
         for ip in keys_to_evict:
             _RATE_LIMIT_BUCKETS.pop(ip, None)
 
+_TRUSTED_PROXY_SUBNETS = (
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+)
+
+def _is_trusted_proxy(host: Optional[str]) -> bool:
+    """
+    Determines if the direct socket peer (request.client.host) is a trusted internal proxy
+    (Cloud Run, AWS ALB, Render, Nginx, Docker gateway, Kubernetes Ingress, or localhost).
+    Proxy headers are ONLY trusted when incoming requests originate from these trusted peers.
+    """
+    if not host:
+        return False
+    clean = host.strip()
+    if clean in ("testclient", "localhost"):
+        return True
+    trusted_list = getattr(settings, "trusted_proxies_list", [])
+    if clean in trusted_list:
+        return True
+    try:
+        ip = ipaddress.ip_address(clean)
+        return any(ip in net for net in _TRUSTED_PROXY_SUBNETS)
+    except ValueError:
+        return False
+
+def _sanitize_ip(ip_str: Optional[str]) -> Optional[str]:
+    """
+    Validates and canonicalizes IPv4 and IPv6 strings using Python's ipaddress library.
+    Rejects malformed strings, command injections, and prevents dictionary key inflation.
+    """
+    if not ip_str:
+        return None
+    candidate = ip_str.strip()
+    if len(candidate) > 45:  # Standard max length for valid IPv6 string representations
+        return None
+    try:
+        validated = ipaddress.ip_address(candidate)
+        return str(validated)
+    except ValueError:
+        return None
+
 def _extract_client_ip(request: Request) -> str:
     """
-    Extracts the genuine client IP, taking into account trusted reverse-proxy headers
-    (Cloud Run, Cloudflare, Render, AWS ALB, Nginx) before falling back to request.client.host.
+    Extracts the genuine client IP, strictly validating IP syntax and preventing header spoofing.
+    Reverse-proxy headers (Cloudflare, X-Real-IP, X-Forwarded-For) are ONLY inspected if the
+    immediate socket connection originates from a trusted private or loopback proxy.
+    Direct public internet connections always use request.client.host.
     """
-    # 1. Check Cloudflare connecting IP
-    cf_ip = request.headers.get("cf-connecting-ip")
-    if cf_ip and cf_ip.strip():
-        return cf_ip.strip()
+    direct_host = request.client.host if (request.client and request.client.host) else None
 
-    # 2. Check X-Forwarded-For (first IP is the originating client IP)
-    x_forwarded = request.headers.get("x-forwarded-for")
-    if x_forwarded and x_forwarded.strip():
-        client_ip = x_forwarded.split(",")[0].strip()
-        if client_ip:
-            return client_ip
+    # Only inspect proxy headers if the immediate peer is a verified trusted internal proxy or test client
+    if _is_trusted_proxy(direct_host):
+        # 1. Check Cloudflare connecting IP
+        cf_ip = _sanitize_ip(request.headers.get("cf-connecting-ip"))
+        if cf_ip:
+            return cf_ip
 
-    # 3. Check X-Real-IP
-    x_real = request.headers.get("x-real-ip")
-    if x_real and x_real.strip():
-        return x_real.strip()
+        # 2. Check X-Real-IP
+        x_real = _sanitize_ip(request.headers.get("x-real-ip"))
+        if x_real:
+            return x_real
 
-    # 4. Fallback to direct connection host
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+        # 3. Check X-Forwarded-For (first valid client IP in proxy chain)
+        x_forwarded = request.headers.get("x-forwarded-for")
+        if x_forwarded and x_forwarded.strip():
+            for part in x_forwarded.split(","):
+                cand = _sanitize_ip(part)
+                if cand:
+                    return cand
+
+    # Direct connection host (public connection or fallback)
+    sanitized_direct = _sanitize_ip(direct_host)
+    if sanitized_direct:
+        return sanitized_direct
+
+    if direct_host in ("testclient", "localhost"):
+        return direct_host
+
+    return "unverified_client"
 
 def check_rate_limit(request: Request):
     """
-    Protects public search and quote APIs from abuse, scraping, and DoS attacks.
-    Thread-safe, proxy-aware, with auto-pruning to eliminate memory leaks.
+    Protects public search, quote, and market intelligence APIs from abuse, scraping, and DoS attacks.
+    Thread-safe, proxy-spoofing protected, with auto-pruning to eliminate memory leaks.
     """
-    client_ip = _extract_client_ip(request)
-    if client_ip in ["127.0.0.1", "localhost", "unknown"]:
+    # Automated unit tests and development testclient socket exemption:
+    direct_host = request.client.host if (request.client and request.client.host) else None
+    if settings.ENVIRONMENT in ["test", "development"] and direct_host in ["testclient", "127.0.0.1", "localhost", "::1"]:
         return
+
+    client_ip = _extract_client_ip(request)
 
     now = time.time()
     with _RATE_LIMIT_LOCK:
@@ -119,7 +182,7 @@ def check_rate_limit(request: Request):
         timestamps = _RATE_LIMIT_BUCKETS.get(client_ip, [])
         valid_ts = [ts for ts in timestamps if now - ts < _RATE_LIMIT_WINDOW]
         if len(valid_ts) >= _RATE_LIMIT_MAX_REQ:
-            logger.warning(f"Rate limit exceeded for IP: {client_ip}")
+            logger.warning(f"Rate limit exceeded for client: {client_ip}")
             raise HTTPException(
                 status_code=429,
                 detail="Too many requests. Please slow down and try again in a minute."
@@ -1239,12 +1302,14 @@ async def get_strategy_backtest(
     interval: str = Query("1d"),
     strategy: str = Query("camarilla_breakout"),
     capital: float = Query(200000.0),
-    risk_budget: float = Query(2000.0)
+    risk_budget: float = Query(2000.0),
+    auth_user_id: str = Depends(get_current_user_id)
 ):
     """
     In-Memory Vectorized Strategy Backtester.
     Runs historical replay simulation over NSE & BSE equities using 1% risk position sizing.
     Supports Camarilla Breakout and Confluence Trend algorithms.
+    Requires authentication to protect compute resources from unauthenticated DoS.
     """
     clean_sym = symbol.strip().upper()
     if not STOCK_SYMBOL_REGEX.match(clean_sym):
@@ -1265,10 +1330,14 @@ async def get_strategy_backtest(
 
 
 @app.post("/api/market/backtest", dependencies=[Depends(check_rate_limit)])
-async def post_strategy_backtest(req: BacktestRequest):
+async def post_strategy_backtest(
+    req: BacktestRequest,
+    auth_user_id: str = Depends(get_current_user_id)
+):
     """
     In-Memory Vectorized Strategy Backtester (POST interface).
     Supports custom backtest payload configurations.
+    Requires authentication to protect compute resources from unauthenticated DoS.
     """
     clean_sym = req.symbol.strip().upper()
     if not STOCK_SYMBOL_REGEX.match(clean_sym):

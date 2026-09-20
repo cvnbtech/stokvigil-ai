@@ -231,7 +231,7 @@ function renderCallbackHtml(rawToken: string) {
     </a>
     ` : ""}
 
-    <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" rel="noopener noreferrer">
+    <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" rel="noopener noreferrer" onclick="try { sessionStorage.setItem('stokvigil_pending_apisession', '${safeToken}'); } catch(_){}">
       🌐 Open in StokVigil Web Portal →
     </a>
 

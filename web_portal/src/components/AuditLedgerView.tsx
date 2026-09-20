@@ -223,7 +223,7 @@ export default function AuditLedgerView({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <input
           type="text"
-          placeholder="Search by ticker (e.g. RELIANCE)..."
+          placeholder="Search by ticker or catalyst..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{

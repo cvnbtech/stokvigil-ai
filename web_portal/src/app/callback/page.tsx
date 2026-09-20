@@ -8,6 +8,9 @@ function CallbackForwarder() {
 
   useEffect(() => {
     const apisession = searchParams.get("apisession") || searchParams.get("api_session") || "";
+    if (typeof window !== "undefined" && window.history && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
     const target = apisession
       ? `/api/auth/icici-callback?apisession=${encodeURIComponent(apisession)}`
       : `/api/auth/icici-callback`;

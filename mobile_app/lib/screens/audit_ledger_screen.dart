@@ -271,7 +271,7 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
                 style: const TextStyle(color: Colors.white, fontSize: 12.5),
                 onChanged: (val) => setState(() => _searchQuery = val),
                 decoration: InputDecoration(
-                  hintText: "Search ticker or catalyst (e.g. RELIANCE)...",
+                  hintText: "Search ticker or catalyst...",
                   hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
                   prefixIcon: const Icon(Icons.search, color: AppTheme.cyan, size: 18),
                   suffixIcon: _searchQuery.isNotEmpty

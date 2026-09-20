@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { supabase } from "./ui/DesignTokens";
 
 export interface BacktestTrade {
   entry_date: string;
@@ -50,6 +51,7 @@ interface BacktestViewProps {
   backendUrl?: string;
   initialSymbol?: string;
   onBack?: () => void;
+  authToken?: string;
 }
 
 const C = {
@@ -70,19 +72,11 @@ const C = {
   border: "rgba(255,255,255,0.08)",
 };
 
-const PRESET_SYMBOLS = [
-  { label: "RELIANCE", ticker: "RELIANCE.NS" },
-  { label: "TCS", ticker: "TCS.NS" },
-  { label: "HDFCBANK", ticker: "HDFCBANK.NS" },
-  { label: "INFY", ticker: "INFY.NS" },
-  { label: "BSE: RIL (500325)", ticker: "500325.BO" },
-  { label: "BSE: TCS (532540)", ticker: "532540.BO" },
-];
-
 export default function BacktestView({
   backendUrl,
-  initialSymbol = "RELIANCE.NS",
+  initialSymbol = "",
   onBack,
+  authToken,
 }: BacktestViewProps) {
   const [symbol, setSymbol] = useState(initialSymbol);
   const [strategy, setStrategy] = useState("camarilla_breakout");
@@ -103,14 +97,31 @@ export default function BacktestView({
 
     try {
       const cleanSym = symToRun.trim().toUpperCase();
+
+      let token = authToken;
+      if (!token && supabase) {
+        try {
+          const { data } = await supabase.auth.getSession();
+          token = data?.session?.access_token || "";
+        } catch (_) {}
+      }
+
+      const headers: Record<string, string> = {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
       const res = await fetch(
         `${resolvedBackend}/api/market/backtest?symbol=${encodeURIComponent(
           cleanSym
-        )}&period=${periodToRun}&strategy=${stratToRun}&capital=200000&risk_budget=2000`
+        )}&period=${periodToRun}&strategy=${stratToRun}&capital=200000&risk_budget=2000`,
+        { headers }
       );
 
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
+        if (res.status === 401) {
+          throw new Error("Authentication required. Please sign in to run strategy backtests.");
+        }
         throw new Error(errData?.detail || `Backtest failed with status ${res.status}`);
       }
 
@@ -126,9 +137,12 @@ export default function BacktestView({
   };
 
   useEffect(() => {
-    runBacktest(initialSymbol, strategy, period);
+    if (initialSymbol && initialSymbol.trim()) {
+      setSymbol(initialSymbol);
+      runBacktest(initialSymbol, strategy, period);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialSymbol]);
 
   // Compute SVG coordinates for Equity Curve
   const renderEquityChart = () => {
@@ -284,17 +298,17 @@ export default function BacktestView({
           gap: 12,
         }}
       >
-        {/* Symbol Input & Popular Presets */}
+        {/* Symbol Input Control */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 10, color: C.gray2, fontWeight: 800, letterSpacing: "0.05em" }}>
-            TICKER SYMBOL OR BSE SCRIP (E.G. RELIANCE, TCS, 500325)
+            TICKER SYMBOL OR SECURITY CODE (NSE / BSE)
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
               type="text"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              placeholder="Enter symbol (e.g. RELIANCE, 500325)"
+              placeholder="Enter symbol or security code..."
               style={{
                 flex: 1,
                 background: "#04060E",
@@ -306,19 +320,22 @@ export default function BacktestView({
                 fontWeight: 700,
                 outline: "none",
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runBacktest(symbol, strategy, period);
+              }}
             />
             <button
               onClick={() => runBacktest(symbol, strategy, period)}
-              disabled={loading}
+              disabled={loading || !symbol.trim()}
               style={{
-                background: loading ? "rgba(6,182,212,0.2)" : "rgba(6,182,212,0.9)",
+                background: loading || !symbol.trim() ? "rgba(6,182,212,0.2)" : "rgba(6,182,212,0.9)",
                 border: "none",
                 borderRadius: 10,
                 padding: "0 18px",
-                color: loading ? C.gray1 : "#000",
+                color: loading || !symbol.trim() ? C.gray1 : "#000",
                 fontSize: 12,
                 fontWeight: 900,
-                cursor: loading ? "not-allowed" : "pointer",
+                cursor: loading || !symbol.trim() ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
@@ -326,31 +343,6 @@ export default function BacktestView({
             >
               {loading ? "Replaying..." : "⚡ Run Replay"}
             </button>
-          </div>
-
-          {/* Preset Chips */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-            {PRESET_SYMBOLS.map((p) => (
-              <button
-                key={p.ticker}
-                onClick={() => {
-                  setSymbol(p.ticker);
-                  runBacktest(p.ticker, strategy, period);
-                }}
-                style={{
-                  background: symbol.toUpperCase() === p.ticker ? "rgba(6,182,212,0.18)" : "rgba(255,255,255,0.04)",
-                  border: `1px solid ${symbol.toUpperCase() === p.ticker ? C.cyan : C.border}`,
-                  color: symbol.toUpperCase() === p.ticker ? C.cyan : C.gray1,
-                  borderRadius: 8,
-                  padding: "4px 8px",
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -433,6 +425,31 @@ export default function BacktestView({
           <b>⚠️ Backtest Data Notice:</b> {error}
           <div style={{ fontSize: 10.5, color: C.gray1, marginTop: 4 }}>
             In accordance with our strict Zero-Default policy, we never generate synthetic mock trades. Verify the symbol or try another ticker with active historical liquidity.
+          </div>
+        </div>
+      )}
+
+      {/* Empty State Guidance */}
+      {!result && !loading && !error && (
+        <div
+          style={{
+            background: C.card,
+            border: `1px dashed ${C.border}`,
+            borderRadius: 14,
+            padding: "36px 20px",
+            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <span style={{ fontSize: 32 }}>🧪</span>
+          <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>
+            Ready to Replay Historical Strategy
+          </div>
+          <div style={{ fontSize: 11, color: C.gray1, maxWidth: 460, lineHeight: 1.6 }}>
+            Enter any active NSE or BSE stock symbol or 6-digit security code above and click <b>Run Replay</b>. The institutional engine evaluates Win Rates, Profit Factor, Max Drawdown, and executes a simulated 1% capital risk position sizing model.
           </div>
         </div>
       )}

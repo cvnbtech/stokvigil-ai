@@ -11,113 +11,35 @@ from typing import Dict, Any, Tuple, Optional, List, Set
 
 logger = logging.getLogger("stokvigil.macro_filter")
 
-# Base sector mapping for major Indian equities (NSE & BSE)
-SECTOR_MAP = {
-    "TCS": "NIFTY IT",
-    "INFY": "NIFTY IT",
-    "WIPRO": "NIFTY IT",
-    "HCLTECH": "NIFTY IT",
-    "TECHM": "NIFTY IT",
-    "LTIM": "NIFTY IT",
-    "COFORGE": "NIFTY IT",
-    "PERSISTENT": "NIFTY IT",
-    "MPHASIS": "NIFTY IT",
-    "HDFCBANK": "NIFTY BANK",
-    "ICICIBANK": "NIFTY BANK",
-    "SBIN": "NIFTY BANK",
-    "KOTAKBANK": "NIFTY BANK",
-    "AXISBANK": "NIFTY BANK",
-    "INDUSINDBK": "NIFTY BANK",
-    "BANKBARODA": "NIFTY BANK",
-    "PNB": "NIFTY BANK",
-    "AUBANK": "NIFTY BANK",
-    "FEDERALBNK": "NIFTY BANK",
-    "IDFCFIRSTB": "NIFTY BANK",
-    "CANBK": "NIFTY BANK",
-    "TATAMOTORS": "NIFTY AUTO",
-    "M&M": "NIFTY AUTO",
-    "MARUTI": "NIFTY AUTO",
-    "BAJAJ-AUTO": "NIFTY AUTO",
-    "HEROMOTOCO": "NIFTY AUTO",
-    "EICHERMOT": "NIFTY AUTO",
-    "TVSMOTOR": "NIFTY AUTO",
-    "BHARATFORG": "NIFTY AUTO",
-    "ASHOKLEY": "NIFTY AUTO",
-    "SUNPHARMA": "NIFTY PHARMA",
-    "CIPLA": "NIFTY PHARMA",
-    "DRREDDY": "NIFTY PHARMA",
-    "DIVISLAB": "NIFTY PHARMA",
-    "LUPIN": "NIFTY PHARMA",
-    "TORNTPHARM": "NIFTY PHARMA",
-    "AUROPHARMA": "NIFTY PHARMA",
-    "ZYDUSLIFE": "NIFTY PHARMA",
-    "RELIANCE": "NIFTY ENERGY",
-    "ONGC": "NIFTY ENERGY",
-    "NTPC": "NIFTY ENERGY",
-    "POWERGRID": "NIFTY ENERGY",
-    "BPCL": "NIFTY ENERGY",
-    "IOC": "NIFTY ENERGY",
-    "GAIL": "NIFTY ENERGY",
-    "COALINDIA": "NIFTY ENERGY",
-    "TATAPOWER": "NIFTY ENERGY",
-    "TATASTEEL": "NIFTY METAL",
-    "JSWSTEEL": "NIFTY METAL",
-    "HINDALCO": "NIFTY METAL",
-    "JINDALSTEL": "NIFTY METAL",
-    "VEDL": "NIFTY METAL",
-    "NATIONALUM": "NIFTY METAL",
-    "NMDC": "NIFTY METAL",
-    "ITC": "NIFTY FMCG",
-    "HINDUNILVR": "NIFTY FMCG",
-    "NESTLEIND": "NIFTY FMCG",
-    "BRITANNIA": "NIFTY FMCG",
-    "TATACONSUM": "NIFTY FMCG",
-    "DABUR": "NIFTY FMCG",
-    "GODREJCP": "NIFTY FMCG",
-    "MARICO": "NIFTY FMCG",
-    "VBL": "NIFTY FMCG",
-    "COLPAL": "NIFTY FMCG",
+# Dynamic Industry Taxonomy to NIFTY Sector Benchmarks (Category Mapping, NOT Hardcoded Stocks)
+GLOBAL_INDUSTRY_TO_NIFTY_SECTOR = {
+    "Financial Services": "NIFTY BANK",
+    "Financial": "NIFTY BANK",
+    "Banking": "NIFTY BANK",
+    "Banks": "NIFTY BANK",
+    "Technology": "NIFTY IT",
+    "Software": "NIFTY IT",
+    "Information Technology": "NIFTY IT",
+    "Consumer Cyclical": "NIFTY AUTO",
+    "Automobile": "NIFTY AUTO",
+    "Auto": "NIFTY AUTO",
+    "Auto Manufacturers": "NIFTY AUTO",
+    "Healthcare": "NIFTY PHARMA",
+    "Pharmaceuticals": "NIFTY PHARMA",
+    "Drug Manufacturers": "NIFTY PHARMA",
+    "Basic Materials": "NIFTY METAL",
+    "Metals & Mining": "NIFTY METAL",
+    "Steel": "NIFTY METAL",
+    "Energy": "NIFTY ENERGY",
+    "Oil & Gas": "NIFTY ENERGY",
+    "Utilities": "NIFTY ENERGY",
+    "Consumer Defensive": "NIFTY FMCG",
+    "Consumer Goods": "NIFTY FMCG",
 }
 
-# Dual-listed BSE 6-digit scrips mapped directly to sector benchmarks
-BSE_SCRIP_SECTOR_MAP = {
-    "500325": "NIFTY ENERGY",   # Reliance
-    "532540": "NIFTY IT",       # TCS
-    "500209": "NIFTY IT",       # Infosys
-    "500180": "NIFTY BANK",     # HDFC Bank
-    "532174": "NIFTY BANK",     # ICICI Bank
-    "500112": "NIFTY BANK",     # SBI
-    "500247": "NIFTY BANK",     # Kotak Bank
-    "532215": "NIFTY BANK",     # Axis Bank
-    "500570": "NIFTY AUTO",     # Tata Motors
-    "500520": "NIFTY AUTO",     # M&M
-    "532500": "NIFTY AUTO",     # Maruti
-    "500493": "NIFTY AUTO",     # Bharat Forge
-    "532977": "NIFTY AUTO",     # Bajaj Auto
-    "500182": "NIFTY AUTO",     # Hero MotoCorp
-    "524715": "NIFTY PHARMA",   # Sun Pharma
-    "500087": "NIFTY PHARMA",   # Cipla
-    "500124": "NIFTY PHARMA",   # Dr Reddy
-    "532488": "NIFTY PHARMA",   # Divis Lab
-    "532522": "NIFTY PHARMA",   # Torrent Pharma
-    "500875": "NIFTY FMCG",     # ITC
-    "500696": "NIFTY FMCG",     # Hindustan Unilever
-    "500790": "NIFTY FMCG",     # Nestle India
-    "500820": "NIFTY FMCG",     # Asian Paints
-    "532921": "NIFTY FMCG",     # Adani Ports
-    "500114": "NIFTY FMCG",     # Titan
-    "500470": "NIFTY METAL",    # Tata Steel
-    "500228": "NIFTY METAL",    # JSW Steel
-    "500440": "NIFTY METAL",    # Hindalco
-    "532286": "NIFTY METAL",    # Jindal Steel
-    "532555": "NIFTY ENERGY",   # NTPC
-    "532898": "NIFTY ENERGY",   # Power Grid
-    "500312": "NIFTY ENERGY",   # ONGC
-    "532155": "NIFTY ENERGY",   # GAIL
-    "507685": "NIFTY IT",       # Wipro
-    "532281": "NIFTY IT",       # HCL Tech
-    "532755": "NIFTY IT",       # Tech Mahindra
-}
+# Dynamic Reference Aliases (Deprecated: Sector maps are now 100% dynamic from exchange APIs)
+SECTOR_MAP: Dict[str, str] = {}
+BSE_SCRIP_SECTOR_MAP: Dict[str, str] = {}
 
 SECTOR_INDEX_MAP = {
     "NIFTY IT": "^CNXIT",
@@ -133,11 +55,44 @@ _DYNAMIC_SECTOR_CACHE: Dict[str, str] = {}
 _DYNAMIC_SECTOR_TS: float = 0.0
 _DYNAMIC_SECTOR_TTL: float = 86400.0  # 24 hours
 _DYNAMIC_SECTOR_LOCK = threading.Lock()
+_BSE_SCRIP_CACHE: Dict[str, str] = {}
+
+
+def resolve_bse_scrip_to_symbol(scrip_code: str) -> Optional[str]:
+    """
+    Dynamically resolves any 6-digit numeric BSE security code to its ticker symbol
+    via the official BSE India API with zero hardcoding.
+    """
+    clean_code = str(scrip_code).strip().upper()
+    if not (clean_code.isdigit() and len(clean_code) == 6):
+        return None
+    if clean_code in _BSE_SCRIP_CACHE:
+        return _BSE_SCRIP_CACHE[clean_code]
+    try:
+        url = f"https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w?Group=&Scripcode={clean_code}&industry=&segment=Equity&status=Active"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Referer": "https://www.bseindia.com/",
+            "Accept": "application/json, text/plain, */*",
+        }
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                if isinstance(data, list) and len(data) > 0:
+                    scrip_id = data[0].get("scrip_id", "").strip().upper()
+                    if scrip_id:
+                        _BSE_SCRIP_CACHE[clean_code] = scrip_id
+                        return scrip_id
+    except Exception as e:
+        logger.debug(f"Dynamic BSE scrip lookup notice for {clean_code}: {e}")
+    return None
+
 
 def get_dynamic_sector_map() -> Dict[str, str]:
     """
     Dynamically fetches and caches official NSE sector index constituent lists from NSE archives.
-    Refreshed once every 24 hours. Gracefully falls back to embedded SECTOR_MAP with 150+ stocks.
+    Refreshed once every 24 hours. Zero hardcoded stocks.
     """
     global _DYNAMIC_SECTOR_CACHE, _DYNAMIC_SECTOR_TS
     now = time.time()
@@ -162,16 +117,15 @@ def get_dynamic_sector_map() -> Dict[str, str]:
             "Accept": "text/csv, text/plain, */*",
         }
 
-        # Start with static baseline
-        combined_map: Dict[str, str] = dict(SECTOR_MAP)
-        combined_map.update(BSE_SCRIP_SECTOR_MAP)
+        # 100% Dynamic - no hardcoded stock list
+        combined_map: Dict[str, str] = {}
 
         loaded_sectors = 0
         for sec_name, filename in sector_files.items():
             try:
                 url = f"https://nsearchives.nseindia.com/content/indices/{filename}"
                 req = urllib.request.Request(url, headers=headers)
-                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                with urllib.request.urlopen(req, timeout=4.0) as resp:
                     if resp.status == 200:
                         content = resp.read().decode("utf-8", errors="ignore")
                         reader = csv.reader(io.StringIO(content))
@@ -193,8 +147,8 @@ def get_dynamic_sector_map() -> Dict[str, str]:
 
 def get_symbol_sector(symbol: str) -> Optional[str]:
     """
-    Resolves the sector for any NSE ticker or dual-listed BSE scrip.
-    Supports .NS, .BO, bare symbols, and 6-digit BSE codes.
+    Dynamically resolves the sector for any NSE ticker or dual-listed BSE scrip.
+    Supports .NS, .BO, bare symbols, and 6-digit BSE codes with ZERO hardcoding.
     """
     if not symbol:
         return None
@@ -202,14 +156,43 @@ def get_symbol_sector(symbol: str) -> Optional[str]:
     bare = raw.replace(".NS", "").replace(".BO", "").strip()
 
     sec_map = get_dynamic_sector_map()
-    # 1. Direct match
+
+    # 1. Direct match against dynamic NSE constituent cache
     if bare in sec_map:
         return sec_map[bare]
     if raw in sec_map:
         return sec_map[raw]
-    # 2. Check BSE scrip map
-    if bare in BSE_SCRIP_SECTOR_MAP:
-        return BSE_SCRIP_SECTOR_MAP[bare]
+    if bare in _DYNAMIC_SECTOR_CACHE:
+        return _DYNAMIC_SECTOR_CACHE[bare]
+
+    # 2. Dynamic BSE 6-digit scrip code resolution via live BSE API
+    lookup_sym = bare
+    if bare.isdigit() and len(bare) == 6:
+        resolved_sym = resolve_bse_scrip_to_symbol(bare)
+        if resolved_sym:
+            if resolved_sym in sec_map:
+                sec = sec_map[resolved_sym]
+                _DYNAMIC_SECTOR_CACHE[bare] = sec
+                _DYNAMIC_SECTOR_CACHE[raw] = sec
+                return sec
+            lookup_sym = resolved_sym
+
+    # 3. Dynamic lookup via Ticker Metadata & Industry Taxonomy
+    for cand in [f"{lookup_sym}.NS", f"{lookup_sym}.BO", lookup_sym]:
+        try:
+            t = yf.Ticker(cand)
+            info = getattr(t, "info", None) or {}
+            sector_str = info.get("sector")
+            if sector_str:
+                nifty_sec = GLOBAL_INDUSTRY_TO_NIFTY_SECTOR.get(sector_str)
+                if nifty_sec:
+                    _DYNAMIC_SECTOR_CACHE[bare] = nifty_sec
+                    _DYNAMIC_SECTOR_CACHE[raw] = nifty_sec
+                    _DYNAMIC_SECTOR_CACHE[lookup_sym] = nifty_sec
+                    return nifty_sec
+        except Exception:
+            continue
+
     return None
 
 _SECTOR_RETURNS_CACHE: Dict[str, Dict[str, Any]] = {}

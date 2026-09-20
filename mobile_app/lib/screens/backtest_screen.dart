@@ -11,7 +11,7 @@ class BacktestScreen extends StatefulWidget {
 
   const BacktestScreen({
     super.key,
-    this.initialSymbol = 'RELIANCE.NS',
+    this.initialSymbol = '',
   });
 
   @override
@@ -26,20 +26,13 @@ class _BacktestScreenState extends State<BacktestScreen> {
   String? _errorMessage;
   Map<String, dynamic>? _result;
 
-  static const List<Map<String, String>> _presets = [
-    {'label': 'RELIANCE', 'ticker': 'RELIANCE.NS'},
-    {'label': 'TCS', 'ticker': 'TCS.NS'},
-    {'label': 'HDFCBANK', 'ticker': 'HDFCBANK.NS'},
-    {'label': 'INFY', 'ticker': 'INFY.NS'},
-    {'label': 'BSE: RIL (500325)', 'ticker': '500325.BO'},
-    {'label': 'BSE: TCS (532540)', 'ticker': '532540.BO'},
-  ];
-
   @override
   void initState() {
     super.initState();
     _symbolController = TextEditingController(text: widget.initialSymbol);
-    _runBacktest();
+    if (widget.initialSymbol.trim().isNotEmpty) {
+      _runBacktest();
+    }
   }
 
   @override
@@ -161,7 +154,38 @@ class _BacktestScreenState extends State<BacktestScreen> {
               _buildErrorNotice(),
             ] else if (_result != null) ...[
               _buildResultsView(),
+            ] else ...[
+              _buildEmptyStatePrompt(),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyStatePrompt() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
+      decoration: BoxDecoration(
+        color: const Color(0xFF080B16),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: Center(
+        child: Column(
+          children: const [
+            Icon(Icons.science_outlined, color: AppTheme.cyan, size: 36),
+            SizedBox(height: 12),
+            Text(
+              "Ready to Replay Historical Strategy",
+              style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
+            ),
+            SizedBox(height: 6),
+            Text(
+              "Enter any active NSE or BSE stock symbol or 6-digit security code above and tap Replay to evaluate institutional performance metrics with 1% capital risk sizing.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 11, height: 1.5),
+            ),
           ],
         ),
       ),
@@ -180,7 +204,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            "TICKER SYMBOL OR BSE SCRIP (E.G. RELIANCE, TCS, 500325)",
+            "TICKER SYMBOL OR SECURITY CODE (NSE / BSE)",
             style: TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
           ),
           const SizedBox(height: 8),
@@ -200,7 +224,7 @@ class _BacktestScreenState extends State<BacktestScreen> {
                     controller: _symbolController,
                     style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800),
                     decoration: const InputDecoration(
-                      hintText: "Enter symbol (e.g. 500325, INFY)",
+                      hintText: "Enter symbol or security code...",
                       hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -230,42 +254,6 @@ class _BacktestScreenState extends State<BacktestScreen> {
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-
-          // Preset Chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _presets.map((p) {
-                final isSelected = _symbolController.text.trim().toUpperCase() == p['ticker'];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: GestureDetector(
-                    onTap: () {
-                      _symbolController.text = p['ticker']!;
-                      _runBacktest();
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isSelected ? AppTheme.cyan.withOpacity(0.18) : Colors.white.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: isSelected ? AppTheme.cyan : AppTheme.cardBorder),
-                      ),
-                      child: Text(
-                        p['label']!,
-                        style: TextStyle(
-                          color: isSelected ? AppTheme.cyan : AppTheme.textSecondary,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
           ),
           const SizedBox(height: 14),
 
