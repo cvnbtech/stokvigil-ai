@@ -27,7 +27,7 @@ from app.vault import vault
 from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
 from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter, compute_tactical_levels
 from app.market_cache import market_cache
-from app.macro_filter import fetch_pre_market_war_room_data
+from app.macro_filter import fetch_pre_market_war_room_data, fetch_macro_market_regime
 from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, close_telegram_client
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
@@ -1766,6 +1766,9 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
         synced_symbols_count = await sync_market_cache_for_all_active_symbols(db)
         logger.info(f"⚡ In-Memory Market Cache refreshed: {synced_symbols_count} unique symbols pre-computed.")
 
+        # Pre-fetch macro data snapshot once for all users in this scan cycle (sub-millisecond RAM cache hit)
+        macro_snapshot = await asyncio.to_thread(fetch_macro_market_regime)
+
         # Step 2: High-speed in-memory evaluation across all users (PgBouncer pool first, REST fallback)
         pooled_users = await fetch_all("SELECT id FROM profiles")
         if pooled_users is not None:
@@ -1783,7 +1786,7 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
             uid = u['id']
             async with user_sem:
                 try:
-                    alerts = await evaluate_user_portfolio_and_watchlists(uid, db)
+                    alerts = await evaluate_user_portfolio_and_watchlists(uid, db, macro_data=macro_snapshot)
                     scanned_users += 1
                     return alerts or []
                 except Exception as user_err:

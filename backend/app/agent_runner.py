@@ -1660,7 +1660,11 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     return synced_count
 
 
-async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) -> List[dict]:
+async def evaluate_user_portfolio_and_watchlists(
+    user_id: str, 
+    supabase_client, 
+    macro_data: Optional[Dict[str, Any]] = None
+) -> List[dict]:
     """
     Evaluates all tracked stocks for a user across demat holdings and manual watchlists.
     Uses high-speed In-Memory Market Cache for sub-millisecond per-stock lookups.
@@ -1777,7 +1781,8 @@ async def evaluate_user_portfolio_and_watchlists(user_id: str, supabase_client) 
         else:
             logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
-    macro_data = await asyncio.to_thread(fetch_macro_market_regime)
+    if macro_data is None:
+        macro_data = await asyncio.to_thread(fetch_macro_market_regime)
 
     # 4. Evaluate each symbol concurrently using high-speed In-Memory Cache (< 0.1ms lookup) with parallel fallback
     sym_sem = asyncio.Semaphore(10)

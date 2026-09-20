@@ -39,7 +39,7 @@ class TestAdvancedAccuracy(unittest.TestCase):
         self.assertIn("breadth_regime", macro)
         self.assertIn("allow_breakout_trades", macro)
         self.assertIsInstance(macro["allow_breakout_trades"], bool)
-        if macro["adr_ratio"] < 0.60:
+        if macro["adr_ratio"] is not None and macro["adr_ratio"] < 0.60:
             self.assertFalse(macro["allow_breakout_trades"])
 
     def test_bse_cash_fallback_in_flow_tracker(self):

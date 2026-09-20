@@ -1,7 +1,9 @@
 import time
 import json
 import urllib.request
+import urllib.parse
 import logging
+import threading
 import yfinance as yf
 from typing import Dict, Any, Tuple, Optional, List
 
@@ -199,6 +201,45 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
     # ZERO-DEFAULT POLICY: When direct exchange breadth data is unavailable, return clean unpopulated state
     return default_breadth
 
+def _fetch_yahoo_chart_meta(symbol: str) -> Optional[Tuple[float, float, float]]:
+    """
+    Direct high-speed chart metadata fetcher bypassing yfinance crumb/cookie session blocks.
+    Returns (current_price, prev_close, change_pct) or None if unavailable.
+    """
+    encoded_sym = urllib.parse.quote(symbol)
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{encoded_sym}?range=2d&interval=1d"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+    }
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read().decode("utf-8"))
+                results = data.get("chart", {}).get("result", [])
+                if results and len(results) > 0:
+                    meta = results[0].get("meta", {})
+                    curr_p = meta.get("regularMarketPrice")
+                    prev_p = meta.get("chartPreviousClose") or meta.get("previousClose")
+                    if curr_p is not None:
+                        curr_p = float(curr_p)
+                        if prev_p is not None and float(prev_p) > 0:
+                            prev_p = float(prev_p)
+                            chg_pct = round(((curr_p - prev_p) / prev_p) * 100, 2)
+                        else:
+                            chg_pct = 0.0
+                        return (curr_p, prev_p, chg_pct)
+    except Exception as e:
+        logger.debug(f"Direct Yahoo chart fetch note for {symbol}: {e}")
+    return None
+
+# In-memory cache for macro market regime (TTL: 60 seconds)
+_MACRO_REGIME_CACHE: Dict[str, Any] = {}
+_MACRO_REGIME_TS: float = 0.0
+_MACRO_REGIME_TTL: float = 60.0
+_MACRO_REGIME_LOCK = threading.Lock()
+
 def fetch_macro_market_regime() -> Dict[str, Any]:
     """
     Fetches broad Indian market indices and breadth:
@@ -206,8 +247,16 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
     - BSE SENSEX (^BSESN)
     - India VIX (^INDIAVIX)
     - Advance-Decline Ratio (Market Breadth ADR)
+    Features 60s thread-safe in-memory caching and stale-cache fallback on rate limits.
     ZERO-DEFAULT POLICY: Returns None and DATA_UNAVAILABLE when realtime exchange data cannot be retrieved.
     """
+    global _MACRO_REGIME_CACHE, _MACRO_REGIME_TS
+
+    # Fast path: return fresh in-memory snapshot if within TTL
+    now = time.time()
+    if _MACRO_REGIME_CACHE and (now - _MACRO_REGIME_TS) < _MACRO_REGIME_TTL:
+        return dict(_MACRO_REGIME_CACHE)
+
     default_res = {
         "nifty_price": None,
         "nifty_change_pct": None,
@@ -222,88 +271,123 @@ def fetch_macro_market_regime() -> Dict[str, Any]:
         "breadth_regime": "DATA_UNAVAILABLE",
         "allow_breakout_trades": False
     }
-    
-    try:
-        nifty = yf.Ticker("^NSEI")
-        nifty_hist = nifty.history(period="2d")
-        
-        nifty_change_pct = None
-        nifty_price = None
-        nifty_trend = "DATA_UNAVAILABLE"
-        if len(nifty_hist) >= 2:
-            prev_close = float(nifty_hist['Close'].iloc[-2])
-            curr_close = float(nifty_hist['Close'].iloc[-1])
-            nifty_price = round(curr_close, 2)
-            nifty_change_pct = round(((curr_close - prev_close) / prev_close) * 100, 2)
-            nifty_trend = "BULLISH" if nifty_change_pct > 0.3 else ("BEARISH" if nifty_change_pct < -0.3 else "NEUTRAL")
-        elif not nifty_hist.empty:
-            curr_close = float(nifty_hist['Close'].iloc[-1])
-            nifty_price = round(curr_close, 2)
-            nifty_trend = "NEUTRAL"
-            
-        # India VIX
-        vix = yf.Ticker("^INDIAVIX")
-        vix_hist = vix.history(period="2d")
-        vix_val = None
-        vix_regime = "DATA_UNAVAILABLE"
-        allow_breakout = True
-        if not vix_hist.empty:
-            vix_val = round(float(vix_hist['Close'].iloc[-1]), 2)
-            if vix_val < 13.0:
-                vix_regime = "LOW_VOLATILITY_TRENDING"
-                allow_breakout = True
-            elif vix_val <= 19.0:
-                vix_regime = "NORMAL_VOLATILITY"
-                allow_breakout = True
-            elif vix_val <= 24.0:
-                vix_regime = "ELEVATED_VOLATILITY_CAUTION"
-                allow_breakout = True
-            else:
-                vix_regime = "EXTREME_VOLATILITY_HIGH_RISK"
-                allow_breakout = False
-            
-        # BSE SENSEX (^BSESN)
-        sensex_price = None
-        sensex_change_pct = None
+
+    with _MACRO_REGIME_LOCK:
+        now = time.time()
+        if _MACRO_REGIME_CACHE and (now - _MACRO_REGIME_TS) < _MACRO_REGIME_TTL:
+            return dict(_MACRO_REGIME_CACHE)
+
         try:
-            sensex = yf.Ticker("^BSESN")
-            sensex_hist = sensex.history(period="2d")
-            if len(sensex_hist) >= 2:
-                s_prev = float(sensex_hist['Close'].iloc[-2])
-                s_curr = float(sensex_hist['Close'].iloc[-1])
-                sensex_price = round(s_curr, 2)
-                sensex_change_pct = round(((s_curr - s_prev) / s_prev) * 100, 2)
-            elif not sensex_hist.empty:
-                sensex_price = round(float(sensex_hist['Close'].iloc[-1]), 2)
+            # 1. NIFTY 50 (^NSEI)
+            nifty_price = None
+            nifty_change_pct = None
+            nifty_trend = "DATA_UNAVAILABLE"
+            nifty_meta = _fetch_yahoo_chart_meta("^NSEI")
+            if nifty_meta:
+                nifty_price = round(nifty_meta[0], 2)
+                nifty_change_pct = nifty_meta[2]
+                nifty_trend = "BULLISH" if nifty_change_pct > 0.3 else ("BEARISH" if nifty_change_pct < -0.3 else "NEUTRAL")
+            else:
+                nifty = yf.Ticker("^NSEI")
+                nifty_hist = nifty.history(period="2d")
+                if len(nifty_hist) >= 2:
+                    prev_close = float(nifty_hist['Close'].iloc[-2])
+                    curr_close = float(nifty_hist['Close'].iloc[-1])
+                    nifty_price = round(curr_close, 2)
+                    nifty_change_pct = round(((curr_close - prev_close) / prev_close) * 100, 2)
+                    nifty_trend = "BULLISH" if nifty_change_pct > 0.3 else ("BEARISH" if nifty_change_pct < -0.3 else "NEUTRAL")
+                elif not nifty_hist.empty:
+                    curr_close = float(nifty_hist['Close'].iloc[-1])
+                    nifty_price = round(curr_close, 2)
+                    nifty_trend = "NEUTRAL"
+
+            # 2. India VIX (^INDIAVIX)
+            vix_val = None
+            vix_regime = "DATA_UNAVAILABLE"
+            allow_breakout = True
+            vix_meta = _fetch_yahoo_chart_meta("^INDIAVIX")
+            if vix_meta:
+                vix_val = round(vix_meta[0], 2)
+            else:
+                vix = yf.Ticker("^INDIAVIX")
+                vix_hist = vix.history(period="2d")
+                if not vix_hist.empty:
+                    vix_val = round(float(vix_hist['Close'].iloc[-1]), 2)
+
+            if vix_val is not None:
+                if vix_val < 13.0:
+                    vix_regime = "LOW_VOLATILITY_TRENDING"
+                    allow_breakout = True
+                elif vix_val <= 19.0:
+                    vix_regime = "NORMAL_VOLATILITY"
+                    allow_breakout = True
+                elif vix_val <= 24.0:
+                    vix_regime = "ELEVATED_VOLATILITY_CAUTION"
+                    allow_breakout = True
+                else:
+                    vix_regime = "EXTREME_VOLATILITY_HIGH_RISK"
+                    allow_breakout = False
+
+            # 3. BSE SENSEX (^BSESN)
+            sensex_price = None
+            sensex_change_pct = None
+            sensex_meta = _fetch_yahoo_chart_meta("^BSESN")
+            if sensex_meta:
+                sensex_price = round(sensex_meta[0], 2)
+                sensex_change_pct = sensex_meta[2]
+            else:
+                try:
+                    sensex = yf.Ticker("^BSESN")
+                    sensex_hist = sensex.history(period="2d")
+                    if len(sensex_hist) >= 2:
+                        s_prev = float(sensex_hist['Close'].iloc[-2])
+                        s_curr = float(sensex_hist['Close'].iloc[-1])
+                        sensex_price = round(s_curr, 2)
+                        sensex_change_pct = round(((s_curr - s_prev) / s_prev) * 100, 2)
+                    elif not sensex_hist.empty:
+                        sensex_price = round(float(sensex_hist['Close'].iloc[-1]), 2)
+                except Exception as e:
+                    logger.debug(f"BSE SENSEX fetch fallback: {e}")
+
+            # 4. Market Breadth Advance-Decline Ratio (ADR)
+            breadth = fetch_market_breadth_adr()
+            adr_val = breadth.get("adr_ratio")
+            breadth_regime = breadth.get("breadth_regime", "DATA_UNAVAILABLE")
+
+            # Market Breadth Veto: If severe distribution (ADR < 0.60), block breakout trades
+            if adr_val is not None and adr_val < 0.60:
+                allow_breakout = False
+
+            result = {
+                "nifty_price": nifty_price,
+                "nifty_change_pct": nifty_change_pct,
+                "nifty_trend": nifty_trend,
+                "sensex_price": sensex_price,
+                "sensex_change_pct": sensex_change_pct,
+                "india_vix": vix_val,
+                "vix_regime": vix_regime,
+                "adr_ratio": adr_val,
+                "advances": breadth.get("advances"),
+                "declines": breadth.get("declines"),
+                "breadth_regime": breadth_regime,
+                "allow_breakout_trades": allow_breakout
+            }
+
+            # Only cache when we obtain at least one valid index data point
+            if nifty_price is not None or vix_val is not None:
+                _MACRO_REGIME_CACHE = result
+                _MACRO_REGIME_TS = now
+
+            return result
+
         except Exception as e:
-            logger.debug(f"BSE SENSEX fetch fallback: {e}")
-
-        # Market Breadth Advance-Decline Ratio (ADR)
-        breadth = fetch_market_breadth_adr()
-        adr_val = breadth.get("adr_ratio")
-        breadth_regime = breadth.get("breadth_regime", "DATA_UNAVAILABLE")
-
-        # Market Breadth Veto: If severe distribution (ADR < 0.60), block breakout trades
-        if adr_val is not None and adr_val < 0.60:
-            allow_breakout = False
-
-        return {
-            "nifty_price": nifty_price,
-            "nifty_change_pct": nifty_change_pct,
-            "nifty_trend": nifty_trend,
-            "sensex_price": sensex_price,
-            "sensex_change_pct": sensex_change_pct,
-            "india_vix": vix_val,
-            "vix_regime": vix_regime,
-            "adr_ratio": adr_val,
-            "advances": breadth.get("advances"),
-            "declines": breadth.get("declines"),
-            "breadth_regime": breadth_regime,
-            "allow_breakout_trades": allow_breakout
-        }
-    except Exception as e:
-        logger.error(f"Error fetching macro regime: {e}")
-        return default_res
+            logger.error(f"Error fetching macro regime: {e}")
+            if _MACRO_REGIME_CACHE:
+                logger.warning("Returning stale in-memory macro regime cache due to upstream fetch error.")
+                stale_result = dict(_MACRO_REGIME_CACHE)
+                stale_result["is_stale"] = True
+                return stale_result
+            return default_res
 
 
 def fetch_pre_market_war_room_data() -> Dict[str, Any]:
@@ -344,17 +428,21 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
     }
     
     for t_sym, key in ticker_map.items():
-        try:
-            t = yf.Ticker(t_sym)
-            fast = getattr(t, 'fast_info', None)
-            if fast:
-                lp = getattr(fast, 'last_price', None)
-                prev = getattr(fast, 'regular_market_previous_close', None)
-                if lp and prev and prev > 0:
-                    pct = round(((float(lp) - float(prev)) / float(prev)) * 100, 2)
-                    global_cues[key] = pct
-        except Exception as err:
-            logger.debug(f"Pre-market global cue fetch failed for {t_sym}: {err}")
+        meta = _fetch_yahoo_chart_meta(t_sym)
+        if meta and meta[2] is not None:
+            global_cues[key] = meta[2]
+        else:
+            try:
+                t = yf.Ticker(t_sym)
+                fast = getattr(t, 'fast_info', None)
+                if fast:
+                    lp = getattr(fast, 'last_price', None)
+                    prev = getattr(fast, 'regular_market_previous_close', None)
+                    if lp and prev and prev > 0:
+                        pct = round(((float(lp) - float(prev)) / float(prev)) * 100, 2)
+                        global_cues[key] = pct
+            except Exception as err:
+                logger.debug(f"Pre-market global cue fetch failed for {t_sym}: {err}")
             
     valid_cues = [v for v in [global_cues["dow_jones_pct"], global_cues["nasdaq_pct"], global_cues["nikkei_pct"]] if v is not None]
     if valid_cues:
@@ -379,21 +467,29 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
     
     sector_results = []
     for s_name, s_ticker in sector_tickers.items():
-        try:
-            t = yf.Ticker(s_ticker)
-            fast = getattr(t, 'fast_info', None)
-            if fast:
-                lp = getattr(fast, 'last_price', None)
-                prev = getattr(fast, 'regular_market_previous_close', None)
-                if lp and prev and prev > 0:
-                    chg_pct = round(((float(lp) - float(prev)) / float(prev)) * 100, 2)
-                    sector_results.append({
-                        "name": s_name,
-                        "price": round(float(lp), 2),
-                        "change_pct": chg_pct
-                    })
-        except Exception:
-            continue
+        meta = _fetch_yahoo_chart_meta(s_ticker)
+        if meta:
+            sector_results.append({
+                "name": s_name,
+                "price": round(float(meta[0]), 2),
+                "change_pct": meta[2]
+            })
+        else:
+            try:
+                t = yf.Ticker(s_ticker)
+                fast = getattr(t, 'fast_info', None)
+                if fast:
+                    lp = getattr(fast, 'last_price', None)
+                    prev = getattr(fast, 'regular_market_previous_close', None)
+                    if lp and prev and prev > 0:
+                        chg_pct = round(((float(lp) - float(prev)) / float(prev)) * 100, 2)
+                        sector_results.append({
+                            "name": s_name,
+                            "price": round(float(lp), 2),
+                            "change_pct": chg_pct
+                        })
+            except Exception:
+                continue
             
     sector_results.sort(key=lambda x: x["change_pct"], reverse=True)
     leading_sectors = sector_results[:2] if sector_results else []

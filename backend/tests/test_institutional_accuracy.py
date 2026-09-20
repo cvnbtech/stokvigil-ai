@@ -8,6 +8,10 @@ from unittest.mock import patch, MagicMock
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# Set test environment to prevent vault production check abort
+os.environ["ENVIRONMENT"] = "test"
+os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+
 from app.technical_engine import (
     calculate_vwap_bands,
     calculate_ttm_squeeze,
