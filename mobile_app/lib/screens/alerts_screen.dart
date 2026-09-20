@@ -10,6 +10,7 @@ import '../widgets/custom_widgets.dart';
 import '../widgets/candle_chart_modal.dart';
 import 'candle_chart_screen.dart';
 import 'audit_ledger_screen.dart';
+import 'backtest_screen.dart';
 
 class AlertsScreen extends StatefulWidget {
   const AlertsScreen({super.key});
@@ -243,6 +244,15 @@ Automated surveillance via StokVigil AI 🛡️''';
         elevation: 0,
         title: const StokVigilBrandHeader(),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BacktestScreen()),
+              );
+            },
+            icon: const Icon(Icons.science_outlined, color: AppTheme.cyan),
+            tooltip: "Strategy Backtester",
+          ),
           IconButton(
             onPressed: () {
               Navigator.of(context).push(

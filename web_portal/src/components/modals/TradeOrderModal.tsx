@@ -166,6 +166,60 @@ export default function TradeOrderModal({
               </div>
             )}
 
+            {/* 1% Capital Risk Position Sizer (Default ₹2,000 risk budget) */}
+            {(() => {
+              const execPrice = orderType === "LIMIT" && limitPrice ? parseFloat(limitPrice) || tradeData.price : tradeData.price;
+              const parsedSl = parseFloat(stopLossPriceInput) || (tradeData.sl ? parseFloat(tradeData.sl.replace(/[^0-9.]/g, "")) : 0);
+              const effectiveSl = parsedSl > 0 ? parsedSl : (tradeData.type === "BUY" ? execPrice * 0.98 : execPrice * 1.02);
+              const riskPerShare = Math.max(0.5, Math.abs(execPrice - effectiveSl));
+              const safePositionQty = execPrice > 0 ? Math.max(1, Math.floor(2000.0 / riskPerShare)) : 1;
+              const capitalAtRisk = Math.round(safePositionQty * riskPerShare);
+
+              if (execPrice <= 0) return null;
+
+              return (
+                <div style={{
+                  background: "rgba(16,185,129,0.06)",
+                  border: "1px dashed rgba(16,185,129,0.4)",
+                  borderRadius: 12,
+                  padding: "10px 12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8
+                }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: C.emerald, textTransform: "uppercase" }}>
+                      🛡️ 1% Capital Risk Rule
+                    </div>
+                    <div style={{ fontSize: 10, color: C.gray1 }}>
+                      Max Risk: <b>₹{capitalAtRisk.toLocaleString("en-IN")}</b> (at ₹{effectiveSl.toFixed(2)} SL)
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setOrderQty(safePositionQty);
+                    }}
+                    style={{
+                      background: "rgba(16,185,129,0.15)",
+                      border: "1px solid rgba(16,185,129,0.6)",
+                      color: C.emerald,
+                      borderRadius: 8,
+                      padding: "5px 10px",
+                      fontSize: 10.5,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    ⚡ Apply Safe: {safePositionQty} Qty
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Quantity Stepper & Manual Input Control */}
             <div style={{ background: "#080B16", border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
+import '../screens/backtest_screen.dart';
 
 // ─────────────────────────────────────────────
 // OFFICIAL 4-COLOR GOOGLE 'G' LOGO WIDGET
@@ -740,6 +741,29 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
     return widget.currentPrice;
   }
 
+  double get _effectiveSl {
+    final parsed = double.tryParse(_stopLossController.text.trim());
+    if (parsed != null && parsed > 0) return parsed;
+    final widgetParsed = double.tryParse(widget.stopLoss.replaceAll(RegExp(r'[^0-9.]'), ''));
+    if (widgetParsed != null && widgetParsed > 0) return widgetParsed;
+    return _tradeType == 'BUY' ? _effectivePrice * 0.98 : _effectivePrice * 1.02;
+  }
+
+  double get _riskPerShare {
+    final diff = (_effectivePrice - _effectiveSl).abs();
+    return diff < 0.5 ? 0.5 : diff;
+  }
+
+  int get _safeRiskQuantity {
+    if (_effectivePrice <= 0) return 1;
+    final q = (2000.0 / _riskPerShare).floor();
+    return q < 1 ? 1 : q;
+  }
+
+  int get _safeCapitalAtRisk {
+    return (_safeRiskQuantity * _riskPerShare).round();
+  }
+
   Future<void> _executeOrder() async {
     final user = SupabaseService().currentUser;
     if (user == null) {
@@ -876,12 +900,31 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                       ),
                     ],
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  )
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => BacktestScreen(initialSymbol: widget.symbol),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.science_outlined, color: AppTheme.cyan, size: 20),
+                        tooltip: "Backtest Strategy",
+                        padding: const EdgeInsets.only(right: 8),
+                        constraints: const BoxConstraints(),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 18),
@@ -1160,6 +1203,68 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                   ),
                 ],
                 const SizedBox(height: 14),
+
+                if (widget.currentPrice > 0) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.emerald.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppTheme.emerald.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "🛡️ 1% CAPITAL RISK RULE",
+                                style: TextStyle(
+                                  color: AppTheme.emerald,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                "Max Risk: ₹$_safeCapitalAtRisk (at ₹${_effectiveSl.toStringAsFixed(2)} SL)",
+                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _qty = _safeRiskQuantity;
+                              _qtyController.text = '$_qty';
+                            });
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppTheme.emerald.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.emerald.withOpacity(0.6)),
+                            ),
+                            child: Text(
+                              "⚡ Apply: $_safeRiskQuantity Qty",
+                              style: const TextStyle(
+                                color: AppTheme.emerald,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 // Quantity Stepper Control
                 Container(

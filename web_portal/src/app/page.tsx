@@ -8,6 +8,7 @@ import AlertsTab from "../components/tabs/AlertsTab";
 import WatchlistTab from "../components/tabs/WatchlistTab";
 import SettingsTab from "../components/tabs/SettingsTab";
 import AuditLedgerView from "../components/AuditLedgerView";
+import BacktestView from "../components/BacktestView";
 import TradeOrderModal from "../components/modals/TradeOrderModal";
 import StockDetailModal from "../components/modals/StockDetailModal";
 import IciciKeyModal from "../components/modals/IciciKeyModal";
@@ -43,7 +44,8 @@ export default function App() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
-  const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger">("home");
+  const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger" | "backtest">("home");
+  const [backtestSymbol, setBacktestSymbol] = useState<string>("RELIANCE.NS");
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [selectedBroker, setSelectedBroker] = useState<string>("icici");
   const [brokerLoginUrl, setBrokerLoginUrl] = useState<string>("");
@@ -997,6 +999,17 @@ export default function App() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
+              onClick={() => setTab(tab === "backtest" ? "home" : "backtest")}
+              style={{
+                background: tab === "backtest" ? "rgba(6,182,212,0.25)" : "rgba(6,182,212,0.12)",
+                border: `1px solid ${tab === "backtest" ? C.cyan : "rgba(6,182,212,0.35)"}`,
+                borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800,
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              🧪 Backtest
+            </button>
+            <button
               onClick={() => setTab(tab === "ledger" ? "home" : "ledger")}
               style={{
                 background: tab === "ledger" ? "rgba(16,185,129,0.25)" : "rgba(16,185,129,0.12)",
@@ -1114,6 +1127,13 @@ export default function App() {
               <AuditLedgerView onBack={() => setTab("home")} />
             </div>
           )}
+
+          {/* STRATEGY BACKTESTER TAB */}
+          {tab === "backtest" && (
+            <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
+              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("home")} />
+            </div>
+          )}
         </DraggableVerticalCanvas>
 
         {/* Bottom Navigation */}
@@ -1170,6 +1190,10 @@ export default function App() {
             selectedStock={selectedStock}
             onClose={() => setSelectedStock(null)}
             onPlaceOrder={handlePlaceOrderFromStock}
+            onOpenBacktest={(sym) => {
+              setBacktestSymbol(sym);
+              setTab("backtest");
+            }}
           />
         )}
 

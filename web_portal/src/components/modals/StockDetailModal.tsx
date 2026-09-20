@@ -7,12 +7,14 @@ interface StockDetailModalProps {
   selectedStock: HoldingItem;
   onClose: () => void;
   onPlaceOrder: (stock: HoldingItem) => void;
+  onOpenBacktest?: (symbol: string) => void;
 }
 
 export default function StockDetailModal({
   selectedStock,
   onClose,
   onPlaceOrder,
+  onOpenBacktest,
 }: StockDetailModalProps) {
   return (
     <div style={{
@@ -118,6 +120,30 @@ export default function StockDetailModal({
                 : "⚡ Execute Trade Order"
             }
           </Btn>
+          {onOpenBacktest && (
+            <button
+              onClick={() => {
+                onClose();
+                onOpenBacktest(selectedStock.symbol);
+              }}
+              style={{
+                background: "rgba(6,182,212,0.1)",
+                border: `1px solid ${C.borderCyan}`,
+                borderRadius: 12,
+                padding: "9px 0",
+                color: C.cyan,
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              🧪 Backtest Strategy Replay
+            </button>
+          )}
           <Btn variant="ghost" onClick={onClose}>
             Close
           </Btn>

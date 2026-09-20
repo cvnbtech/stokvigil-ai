@@ -543,5 +543,38 @@ class ApiService {
       return {'success': false, 'error': e.toString()};
     }
   }
+
+  Future<Map<String, dynamic>?> fetchStrategyBacktest({
+    required String symbol,
+    String period = '1y',
+    String interval = '1d',
+    String strategy = 'camarilla_breakout',
+    double capital = 200000.0,
+    double riskBudget = 2000.0,
+  }) async {
+    final cleanSym = symbol.trim().toUpperCase();
+    try {
+      final uri = Uri.parse('$baseUrl/api/market/backtest').replace(
+        queryParameters: {
+          'symbol': cleanSym,
+          'period': period,
+          'interval': interval,
+          'strategy': strategy,
+          'capital': capital.toString(),
+          'risk_budget': riskBudget.toString(),
+        },
+      );
+      final res = await http.get(uri, headers: _getAuthHeaders()).timeout(const Duration(seconds: 35));
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      } else {
+        debugPrint("API Error fetching backtest for $cleanSym (HTTP ${res.statusCode}): ${res.body}");
+        return null;
+      }
+    } catch (e) {
+      debugPrint("API Error executing backtest for $cleanSym: $e");
+      return null;
+    }
+  }
 }
 

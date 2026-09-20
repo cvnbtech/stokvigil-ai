@@ -5,6 +5,8 @@ import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../services/fcm_service.dart';
 import '../widgets/custom_widgets.dart';
+import 'audit_ledger_screen.dart';
+import 'backtest_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final VoidCallback onOpenCredentials;
@@ -314,6 +316,70 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 14),
               ],
+
+              // Institutional Tools Row (Backtester & Audit Ledger)
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const BacktestScreen()),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.cyan.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.borderCyan),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.science_outlined, color: AppTheme.cyan, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              "Backtester",
+                              style: TextStyle(color: AppTheme.cyan, fontSize: 11.5, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppTheme.emerald.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.emerald.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.verified_outlined, color: AppTheme.emerald, size: 16),
+                            SizedBox(width: 6),
+                            Text(
+                              "Audit Ledger",
+                              style: TextStyle(color: AppTheme.emerald, fontSize: 11.5, fontWeight: FontWeight.w900),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
 
               // Hero Gradient Demat Portfolio Balance Card (Matches Screenshot Design)
               Container(

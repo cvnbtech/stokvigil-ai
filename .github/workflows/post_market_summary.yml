@@ -1,0 +1,52 @@
+name: StokVigil 03:45 PM Post-Market Closing Bell Digest
+
+on:
+  schedule:
+    # 03:45 PM IST (10:15 UTC), Monday through Friday
+    - cron: '15 10 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  run-post-market-summary:
+    name: Post-Market Closing Bell Executive Digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger Post-Market Closing Bell Digest
+        env:
+          RAW_BACKEND_URL: ${{ secrets.STOKVIGIL_BACKEND_URL || vars.STOKVIGIL_BACKEND_URL }}
+          RAW_CRON_SECRET: ${{ secrets.CRON_SECRET_KEY || vars.CRON_SECRET_KEY }}
+        run: |
+          BACKEND_URL=$(echo "$RAW_BACKEND_URL" | sed 's:/*$::')
+          CRON_SECRET="$RAW_CRON_SECRET"
+
+          if [ -z "$BACKEND_URL" ]; then
+            echo "❌ Error: STOKVIGIL_BACKEND_URL is not configured in GitHub Secrets or Variables."
+            exit 1
+          fi
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "❌ Error: CRON_SECRET_KEY is not configured in GitHub Secrets or Variables."
+            exit 1
+          fi
+
+          TARGET_URL="${BACKEND_URL}/api/cron/post-market-summary"
+          echo "🔔 Triggering 03:45 PM Post-Market Digest to: ${TARGET_URL}"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$TARGET_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: $CRON_SECRET")
+
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "📡 HTTP Status: $HTTP_STATUS"
+          echo "📄 Response: $BODY"
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Post-market digest trigger failed with HTTP status: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "✅ Post-market closing bell digest successfully generated and dispatched."
