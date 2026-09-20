@@ -272,7 +272,7 @@ class TestInstitutionalUpgrades(unittest.TestCase):
         self.assertIn("TCS.BO", html)
 
     def test_post_market_summary_zero_default_adherence(self):
-        """Tests that post-market summary cleanly handles missing feeds without crashing."""
+        """Tests that post-market summary cleanly handles missing feeds without crashing or inventing defaults."""
         data = {
             "date": "2026-09-20",
             "nifty_price": None,
@@ -282,13 +282,17 @@ class TestInstitutionalUpgrades(unittest.TestCase):
             "declines": None,
             "fii_net_cr": None,
             "dii_net_cr": None,
-            "total_scans_today": 75,
-            "alerts_fired_today": 0
+            "total_scans_today": None,
+            "alerts_fired_today": None
         }
         html = format_post_market_summary_telegram(data)
         self.assertIn("POST-MARKET EXECUTIVE SUMMARY", html)
         self.assertNotIn("₹0.00", html)
         self.assertNotIn("None", html)
+        self.assertNotIn("CLOSING BENCHMARKS", html)
+        self.assertNotIn("CASH MARKET BREADTH", html)
+        self.assertNotIn("INSTITUTIONAL CASH FLOWS", html)
+        self.assertNotIn("ALGORITHMIC SURVEILLANCE SCORECARD", html)
 
 
 if __name__ == "__main__":

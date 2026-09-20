@@ -1808,12 +1808,15 @@ async def get_user_alerts(
 _scan_in_progress = False
 
 
+_DAILY_SCAN_CYCLES_COUNT: int = 0
+_DAILY_SCAN_CYCLES_DATE: str = ""
+
 async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
     """
     Executes full multi-user market intelligence scan.
     Returns structured execution telemetry including scanned symbols, users, and dispatched alerts.
     """
-    global _scan_in_progress
+    global _scan_in_progress, _DAILY_SCAN_CYCLES_COUNT, _DAILY_SCAN_CYCLES_DATE
     if _scan_in_progress:
         logger.info("⚡ Multi-user market scan is already running. Skipping duplicate task.")
         return {
@@ -1824,6 +1827,10 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
 
     _scan_in_progress = True
     today_str = str(date.today())
+    if _DAILY_SCAN_CYCLES_DATE != today_str:
+        _DAILY_SCAN_CYCLES_DATE = today_str
+        _DAILY_SCAN_CYCLES_COUNT = 0
+    _DAILY_SCAN_CYCLES_COUNT += 1
     reset_ai_scan_counter()
     try:
         logger.info("🚀 Multi-user market intelligence scan started...")
@@ -2215,7 +2222,7 @@ async def run_post_market_summary(
         "fii_net_cr": fii_dii_data.get("fii_net_cr"),
         "dii_net_cr": fii_dii_data.get("dii_net_cr"),
         "fii_dii_sentiment": fii_dii_data.get("sentiment"),
-        "total_scans_today": max(len(today_alerts) * 12, 75),
+        "total_scans_today": _DAILY_SCAN_CYCLES_COUNT if _DAILY_SCAN_CYCLES_DATE == today_str else len(today_alerts),
         "alerts_fired_today": len(today_alerts),
         "target_1_hit_rate_pct": target_1_hit_rate,
         "top_sectors": top_sectors,

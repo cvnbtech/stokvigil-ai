@@ -443,8 +443,8 @@ def format_post_market_summary_telegram(data: Dict[str, Any]) -> str:
     dii_net = data.get("dii_net_cr")
     fii_dii_bias = data.get("fii_dii_sentiment")
 
-    total_scans = data.get("total_scans_today", 0)
-    alerts_fired = data.get("alerts_fired_today", 0)
+    total_scans = data.get("total_scans_today")
+    alerts_fired = data.get("alerts_fired_today")
     t1_hits = data.get("target_1_hit_rate_pct")
 
     top_sectors = data.get("top_sectors", [])
@@ -511,12 +511,18 @@ def format_post_market_summary_telegram(data: Dict[str, Any]) -> str:
         html += "\n"
 
     # 5. Algorithmic Surveillance & Performance Scorecard
-    html += "🎯 <b>ALGORITHMIC SURVEILLANCE SCORECARD:</b>\n"
-    html += f"• <b>Surveillance Cycles Today:</b> {total_scans}\n"
-    html += f"• <b>Catalyst Alerts Dispatched:</b> {alerts_fired}\n"
+    scorecard_lines = []
+    if total_scans is not None:
+        scorecard_lines.append(f"• <b>Surveillance Cycles Today:</b> {total_scans}")
+    if alerts_fired is not None:
+        scorecard_lines.append(f"• <b>Catalyst Alerts Dispatched:</b> {alerts_fired}")
     if t1_hits is not None and float(t1_hits) > 0:
-        html += f"• <b>Target 1 Mathematical Hit Rate:</b> <b>{t1_hits:.1f}%</b>\n"
-    html += "\n"
+        scorecard_lines.append(f"• <b>Target 1 Mathematical Hit Rate:</b> <b>{t1_hits:.1f}%</b>")
+    if scorecard_lines:
+        html += "🎯 <b>ALGORITHMIC SURVEILLANCE SCORECARD:</b>\n"
+        for s_line in scorecard_lines:
+            html += f"{s_line}\n"
+        html += "\n"
 
     if notable_movers:
         html += "⚡ <b>NOTABLE MOMENTUM CATALYSTS:</b>\n"
