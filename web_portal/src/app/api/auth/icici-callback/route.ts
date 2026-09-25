@@ -263,14 +263,14 @@ function renderCallbackHtml(rawToken: string) {
     <p>Your ICICI Breeze daily trading session token is ready.</p>
 
     <div class="token-box" onclick="copyToken()">
-      <div class="token-label">Session Token (apisession) — Tap Box or Button to Copy</div>
+      <div class="token-label">Session Token (apisession)</div>
       <input
         type="text"
         class="token-input"
         id="tokenInput"
         readonly
         value="${displayToken || ""}"
-        onclick="event.stopPropagation(); copyToken();"
+        onclick="event.stopPropagation(); this.select(); copyToken();"
         spellcheck="false"
         autocomplete="off"
         placeholder="Waiting for token..."
@@ -302,6 +302,9 @@ function renderCallbackHtml(rawToken: string) {
 
     // Auto-Recovery on Client: check window.location.search, hash, and sessionStorage
     try {
+      if (window._activeSessionToken) {
+        try { sessionStorage.setItem('stokvigil_pending_apisession', window._activeSessionToken); } catch (_) {}
+      }
       if (!window._activeSessionToken && typeof window !== 'undefined') {
         var urlSearch = new URLSearchParams(window.location.search);
         var urlHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
@@ -383,9 +386,8 @@ function renderCallbackHtml(rawToken: string) {
 
     function copyToken() {
       var token = getToken();
-      var input = document.getElementById('tokenInput');
       var btn = document.getElementById('copyBtn');
-      var helpMsg = document.getElementById('helpMsg');
+      var inp = document.getElementById('tokenInput');
 
       if (!token) {
         if (btn) {
@@ -395,57 +397,64 @@ function renderCallbackHtml(rawToken: string) {
         return;
       }
 
-      var copied = false;
-
-      // 1. SYNCHRONOUS DOM Selection on visible on-screen input
-      // Critical for Android Chrome & mobile WebViews: must execute synchronously on user gesture!
-      try {
-        if (input) {
-          input.removeAttribute('readonly');
-          input.focus({ preventScroll: true });
-          input.select();
-          input.setSelectionRange(0, token.length);
-          copied = document.execCommand('copy');
-          input.setAttribute('readonly', 'readonly');
-        }
-      } catch (err) {
-        console.warn("execCommand on visible input error:", err);
-      }
-
-      // 2. SYNCHRONOUS In-Viewport textarea fallback if execCommand returned false
-      if (!copied) {
+      // Visual select for user feedback (input is readonly, so keyboard won't pop up)
+      if (inp) {
         try {
-          var ta = document.createElement('textarea');
-          ta.value = token;
-          ta.style.position = 'fixed';
-          ta.style.top = '0';
-          ta.style.left = '0';
-          ta.style.width = '100px';
-          ta.style.height = '30px';
-          ta.style.opacity = '0.01';
-          ta.style.zIndex = '99999';
-          document.body.appendChild(ta);
-          ta.focus({ preventScroll: true });
-          ta.select();
-          ta.setSelectionRange(0, token.length);
-          copied = document.execCommand('copy');
-          document.body.removeChild(ta);
-        } catch (err) {
-          console.warn("fallback textarea copy error:", err);
-        }
+          inp.select();
+          inp.setSelectionRange(0, token.length);
+        } catch (_) {}
       }
 
-      // 3. PARALLEL Modern navigator.clipboard API call
+      // 1. Primary: navigator.clipboard.writeText (Modern async clipboard API on user gesture)
       if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         navigator.clipboard.writeText(token).then(function() {
           showCopySuccess();
-        }).catch(function(e) {
-          console.warn("navigator.clipboard.writeText notice:", e);
+        }).catch(function(err) {
+          console.warn("navigator.clipboard.writeText failed, using fallback:", err);
+          fallbackExecCopy(token);
         });
+      } else {
+        fallbackExecCopy(token);
+      }
+    }
+
+    function fallbackExecCopy(token) {
+      var copied = false;
+      var ta = document.createElement('textarea');
+      ta.value = token;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.width = '2em';
+      ta.style.height = '2em';
+      ta.style.padding = '0';
+      ta.style.border = 'none';
+      ta.style.outline = 'none';
+      ta.style.boxShadow = 'none';
+      ta.style.background = 'transparent';
+      ta.style.opacity = '0.01';
+      ta.style.zIndex = '99999';
+
+      document.body.appendChild(ta);
+      ta.focus({ preventScroll: true });
+      ta.select();
+      ta.setSelectionRange(0, token.length);
+
+      try {
+        copied = document.execCommand('copy');
+      } catch (err) {
+        console.warn("execCommand fallback error:", err);
+        copied = false;
       }
 
-      // Trigger success visual state
-      showCopySuccess();
+      document.body.removeChild(ta);
+
+      if (copied) {
+        showCopySuccess();
+      } else {
+        showCopyFallbackHelp();
+      }
     }
 
     function showCopySuccess() {
@@ -467,8 +476,37 @@ function renderCallbackHtml(rawToken: string) {
       }
     }
 
+    function showCopyFallbackHelp() {
+      var btn = document.getElementById('copyBtn');
+      var helpMsg = document.getElementById('helpMsg');
+      var inp = document.getElementById('tokenInput');
+
+      if (inp) {
+        try {
+          inp.focus({ preventScroll: true });
+          inp.select();
+          inp.setSelectionRange(0, inp.value.length);
+        } catch (_) {}
+      }
+
+      if (btn) {
+        btn.innerHTML = '👆 Long-Press Token Box to Copy';
+        btn.style.background = '#F59E0B';
+      }
+
+      if (helpMsg) {
+        helpMsg.innerHTML = '⚠️ <strong>Browser restricted auto-copy.</strong> Your token is highlighted above — please <strong>long-press & copy</strong>, or tap <em>1-Tap Open in StokVigil App</em> below.';
+        helpMsg.style.borderColor = 'rgba(245,158,11,0.4)';
+        helpMsg.style.color = '#FDE68A';
+      }
+    }
+
     function copyTokenQuietly() {
-      copyToken();
+      var token = getToken();
+      if (!token) return;
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(token).catch(function() {});
+      }
     }
   </script>
 </body>
@@ -480,7 +518,7 @@ const CALLBACK_SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=(self)",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=*",
   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; frame-ancestors 'none';",
 };
 
