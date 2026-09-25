@@ -349,73 +349,61 @@ export default function SettingsTab({
           🛡️ Transparency & Audit Ledger
         </div>
 
-        <div style={{
-          background: C.bgCard, border: `1px solid ${C.border}`,
-          borderRadius: 16, padding: 14,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
-              }}>🛡️</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Public Audit Ledger & Performance</div>
-                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
-                  View verified signal hit rates, win/loss stats & audited R:R ledger
-                </div>
+        <div
+          onClick={onOpenLedger}
+          style={{
+            background: C.bgCard, border: `1px solid ${C.border}`,
+            borderRadius: 16, padding: "14px 16px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            transition: "all 0.2s ease"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+            }}>🛡️</div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: C.white }}>Public Audit Ledger & Performance</div>
+              <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                View verified signal hit rates, win/loss stats & audited R:R ledger
               </div>
             </div>
-
-            <button
-              onClick={onOpenLedger}
-              style={{
-                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
-                borderRadius: 10, padding: "7px 12px", color: C.emerald, fontSize: 11, fontWeight: 800, cursor: "pointer"
-              }}
-            >
-              View Audit Ledger →
-            </button>
           </div>
+          <span style={{ color: C.emerald, fontSize: 16, fontWeight: 800 }}>→</span>
         </div>
       </div>
 
-      {/* Section 4: Strategy Backtester */}
+      {/* Section 4: Strategy & Backtester */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
-          🧪 Strategy Backtester
+          🧪 Strategy & Backtester
         </div>
 
-        <div style={{
-          background: C.bgCard, border: `1px solid ${C.border}`,
-          borderRadius: 16, padding: 14,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
-              }}>🧪</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Strategy Backtester Engine</div>
-                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
-                  Institutional backtesting on historical exchange bars with 1% risk sizing
-                </div>
+        <div
+          onClick={onOpenBacktest}
+          style={{
+            background: C.bgCard, border: `1px solid ${C.border}`,
+            borderRadius: 16, padding: "14px 16px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            transition: "all 0.2s ease"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+            }}>🧪</div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: C.white }}>Strategy & Backtester</div>
+              <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                Institutional backtesting on historical exchange bars with 1% risk sizing
               </div>
             </div>
-
-            <button
-              onClick={onOpenBacktest}
-              style={{
-                background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
-                borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer"
-              }}
-            >
-              Launch Strategy Backtester →
-            </button>
           </div>
+          <span style={{ color: C.cyan, fontSize: 16, fontWeight: 800 }}>→</span>
         </div>
       </div>
 
@@ -425,38 +413,32 @@ export default function SettingsTab({
           🔒 Security & Access
         </div>
 
-        <div style={{
-          background: C.bgCard, border: `1px solid ${C.border}`,
-          borderRadius: 16, padding: 14,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: "rgba(139,92,246,0.12)", border: `1px solid rgba(139,92,246,0.35)`,
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
-              }}>🔑</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Change Password</div>
-                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
-                  Update master login & auth credentials
-                </div>
+        <div
+          onClick={() => {
+            if (user?.email) setForgotEmail(user.email);
+            setShowForgotModal(true);
+          }}
+          style={{
+            background: C.bgCard, border: `1px solid ${C.border}`,
+            borderRadius: 16, padding: "14px 16px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            transition: "all 0.2s ease"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "rgba(139,92,246,0.12)", border: `1px solid rgba(139,92,246,0.35)`,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+            }}>🔑</div>
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: C.white }}>Change Password</div>
+              <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                Update master login & auth credentials
               </div>
             </div>
-
-            <button
-              onClick={() => {
-                if (user?.email) setForgotEmail(user.email);
-                setShowForgotModal(true);
-              }}
-              style={{
-                background: "rgba(139,92,246,0.12)", border: `1px solid rgba(139,92,246,0.35)`,
-                borderRadius: 10, padding: "7px 12px", color: C.violet, fontSize: 11, fontWeight: 800, cursor: "pointer"
-              }}
-            >
-              Change Password →
-            </button>
           </div>
+          <span style={{ color: C.violet, fontSize: 16, fontWeight: 800 }}>→</span>
         </div>
       </div>
 

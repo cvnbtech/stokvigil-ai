@@ -244,12 +244,12 @@ function renderCallbackHtml(rawToken: string) {
     </div>
 
     <div id="tokenActions" style="display: ${safeToken ? 'block' : 'none'};">
-      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer" onclick="copyTokenQuietly()">
-        📱 1-Tap Open in StokVigil App →
-      </a>
       <button class="btn-copy" id="copyBtn" onclick="copyToken()">
         📋 Copy Session Token
       </button>
+      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer" onclick="copyTokenQuietly()">
+        📱 1-Tap Open in StokVigil App →
+      </a>
     </div>
 
     <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" id="portalBtn" rel="noopener noreferrer" onclick="try { sessionStorage.setItem('stokvigil_pending_apisession', window._activeSessionToken || '${safeToken}'); } catch(_){}">
@@ -257,7 +257,8 @@ function renderCallbackHtml(rawToken: string) {
     </a>
 
     <div class="help-card" id="helpMsg">
-      📱 <strong>On Mobile App:</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app, or tap <em>Copy Session Token</em> and paste into the app.
+      📋 <strong>Step 1:</strong> Tap <em>Copy Session Token</em> to copy your key.<br>
+      📱 <strong>Step 2:</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app and sync credentials.
     </div>
   </div>
 
@@ -320,64 +321,138 @@ function renderCallbackHtml(rawToken: string) {
       }
     } catch (_) {}
 
-    function copyTokenQuietly() {
-      const token = window._activeSessionToken || ${JSON.stringify(safeToken)};
-      if (!token) return;
-      fallbackCopy(token);
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(token).catch(function() {});
+    function getToken() {
+      var t = window._activeSessionToken;
+      if (!t || !t.trim()) {
+        var el = document.getElementById('tokenText');
+        if (el && el.textContent) {
+          var txt = el.textContent.trim();
+          if (txt && txt.indexOf('No valid') === -1) {
+            t = txt;
+          }
+        }
       }
+      if (!t || !t.trim()) {
+        t = ${JSON.stringify(safeToken)};
+      }
+      return (t || '').trim();
     }
 
-    function copyToken() {
-      const token = window._activeSessionToken || ${JSON.stringify(safeToken)};
-      if (!token) return;
-      
-      const btn = document.getElementById('copyBtn');
-      const helpMsg = document.getElementById('helpMsg');
-      if (btn) {
-        btn.innerHTML = '✅ Copied to Clipboard!';
-        btn.style.background = '#10B981';
-        setTimeout(() => {
-          btn.innerHTML = '📋 Copy Session Token Again';
-          btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
-        }, 3000);
-      }
-      if (helpMsg) {
-        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Switch back to StokVigil App and tap <em>PASTE</em>, or tap <em>1-Tap Open in StokVigil App</em> above.';
-        helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
-        helpMsg.style.color = '#A7F3D0';
+    async function copyToClipboard(text) {
+      if (!text) return false;
+
+      // Method 1: Modern navigator.clipboard API (requires fresh user gesture & focused document)
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (err) {
+          console.warn("navigator.clipboard.writeText failed, trying fallback:", err);
+        }
       }
 
-      fallbackCopy(token);
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(token).catch(function() {});
-      }
-    }
-
-    function fallbackCopy(text, cb) {
+      // Method 2: Mobile-compatible offscreen textarea with range selection & readonly flag
       try {
         const textArea = document.createElement('textarea');
         textArea.value = text;
+        textArea.setAttribute('readonly', '');
         textArea.style.position = 'fixed';
-        textArea.style.top = '0';
-        textArea.style.left = '0';
-        textArea.style.width = '2em';
-        textArea.style.height = '2em';
-        textArea.style.padding = '0';
-        textArea.style.border = 'none';
-        textArea.style.outline = 'none';
-        textArea.style.boxShadow = 'none';
-        textArea.style.background = 'transparent';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        textArea.style.opacity = '0';
+        textArea.style.fontSize = '16px';
         document.body.appendChild(textArea);
-        textArea.focus();
+
+        textArea.focus({ preventScroll: true });
         textArea.select();
-        document.execCommand('copy');
+        textArea.setSelectionRange(0, text.length || 999999);
+
+        const successful = document.execCommand('copy');
         document.body.removeChild(textArea);
-        if (cb) cb();
+        if (successful) return true;
       } catch (err) {
-        if (cb) cb();
+        console.warn("execCommand fallback failed:", err);
       }
+
+      // Method 3: Direct selection range on token box element
+      try {
+        const el = document.getElementById('tokenText');
+        if (el) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+            const success = document.execCommand('copy');
+            if (success) return true;
+          }
+        }
+      } catch (_) {}
+
+      return false;
+    }
+
+    async function copyToken() {
+      const token = getToken();
+      const btn = document.getElementById('copyBtn');
+      const helpMsg = document.getElementById('helpMsg');
+
+      if (!token) {
+        if (btn) {
+          btn.innerHTML = '⚠️ No Token Available';
+          btn.style.background = '#EF4444';
+        }
+        return;
+      }
+
+      const success = await copyToClipboard(token);
+
+      if (success) {
+        if (btn) {
+          btn.innerHTML = '✅ Copied to Clipboard!';
+          btn.style.background = '#10B981';
+          setTimeout(() => {
+            btn.innerHTML = '📋 Copy Session Token Again';
+            btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
+          }, 3000);
+        }
+        if (helpMsg) {
+          helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Now tap <em>1-Tap Open in StokVigil App</em> below to launch your app and sync credentials.';
+          helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
+          helpMsg.style.color = '#A7F3D0';
+        }
+      } else {
+        // Highlight token box so user can long-press to copy
+        try {
+          const el = document.getElementById('tokenText');
+          if (el) {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            if (sel) {
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          }
+        } catch (_) {}
+
+        if (btn) {
+          btn.innerHTML = '⚠️ Long Press Token Box to Copy';
+          btn.style.background = '#F59E0B';
+        }
+        if (helpMsg) {
+          helpMsg.innerHTML = '⚠️ <strong>Clipboard access restricted.</strong> Token above is highlighted — tap and hold the box to copy.';
+          helpMsg.style.borderColor = 'rgba(245,158,11,0.4)';
+          helpMsg.style.color = '#FDE68A';
+        }
+      }
+    }
+
+    function copyTokenQuietly() {
+      const token = getToken();
+      if (!token) return;
+      copyToClipboard(token);
     }
   </script>
 </body>
