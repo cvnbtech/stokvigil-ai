@@ -688,13 +688,16 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            width: 38,
+                            height: 38,
                             decoration: BoxDecoration(
                               color: AppTheme.cyan.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: AppTheme.borderCyan),
                             ),
-                            child: const Text("🔑", style: TextStyle(fontSize: 18)),
+                            child: const Center(
+                              child: Text("🔑", style: TextStyle(fontSize: 18)),
+                            ),
                           ),
                           const SizedBox(width: 10),
                           Flexible(
@@ -959,61 +962,72 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           // SECTION 3: TRANSPARENCY & AUDIT LEDGER
           // ─────────────────────────────────────────────
           _buildSectionHeader("🛡️ TRANSPARENCY & AUDIT LEDGER"),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
           GlassCard(
-            borderColor: AppTheme.primaryEmerald.withOpacity(0.35),
-            child: GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryEmerald.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.25)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.primaryEmerald.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text("🛡️", style: TextStyle(fontSize: 16)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  "Public Audit Ledger & Performance",
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  "View verified signal hit rates, win/loss stats & R:R ledger",
-                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
+              );
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primaryEmerald.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.primaryEmerald.withOpacity(0.35)),
+                        ),
+                        child: const Center(
+                          child: Text("🛡️", style: TextStyle(fontSize: 18)),
+                        ),
                       ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios, color: AppTheme.primaryEmerald, size: 14),
-                  ],
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              "Public Audit Ledger & Performance",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "View verified signal hit rates, win/loss stats & R:R ledger",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryEmerald.withOpacity(0.15),
+                    foregroundColor: AppTheme.primaryEmerald,
+                    side: BorderSide(color: AppTheme.primaryEmerald.withOpacity(0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AuditLedgerScreen()),
+                    );
+                  },
+                  child: const Text("View Audit Ledger →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -1022,61 +1036,72 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           // SECTION 4: STRATEGY BACKTESTER
           // ─────────────────────────────────────────────
           _buildSectionHeader("🧪 STRATEGY BACKTESTER"),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
           GlassCard(
-            borderColor: AppTheme.cyan.withOpacity(0.35),
-            child: GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BacktestScreen()),
-                );
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.cyan.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.cyan.withOpacity(0.25)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppTheme.cyan.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text("🧪", style: TextStyle(fontSize: 16)),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  "Strategy Backtester Engine",
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  "Institutional backtesting on historical exchange bars with 1% risk sizing",
-                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const BacktestScreen()),
+              );
+            },
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppTheme.cyan.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.borderCyan),
+                        ),
+                        child: const Center(
+                          child: Text("🧪", style: TextStyle(fontSize: 18)),
+                        ),
                       ),
-                    ),
-                    const Icon(Icons.arrow_forward_ios, color: AppTheme.cyan, size: 14),
-                  ],
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              "Strategy Backtester Engine",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Institutional backtesting on historical bars with 1% risk",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.cyan.withOpacity(0.15),
+                    foregroundColor: AppTheme.cyan,
+                    side: const BorderSide(color: AppTheme.borderCyan),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const BacktestScreen()),
+                    );
+                  },
+                  child: const Text("Launch Strategy Backtester →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 10.5)),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -1085,34 +1110,67 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           // SECTION 5: SECURITY & ACCESS
           // ─────────────────────────────────────────────
           _buildSectionHeader("🔒 SECURITY & ACCESS"),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
           GlassCard(
-            child: GestureDetector(
-              onTap: _showChangePasswordModal,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppTheme.cardBackground2,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.cardBorder),
+            onTap: _showChangePasswordModal,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppTheme.violet.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppTheme.violet.withOpacity(0.35)),
+                        ),
+                        child: const Center(
+                          child: Text("🔑", style: TextStyle(fontSize: 18)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              "Change Password",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13.5),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Update master password & auth credentials",
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: const [
-                    Row(
-                      children: [
-                        Text("🔑 ", style: TextStyle(fontSize: 14)),
-                        Text("Change Password", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
-                      ],
-                    ),
-                    Icon(Icons.arrow_forward, color: AppTheme.textSecondary, size: 16),
-                  ],
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.violet.withOpacity(0.18),
+                    foregroundColor: const Color(0xFFC084FC),
+                    side: BorderSide(color: AppTheme.violet.withOpacity(0.4)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                  onPressed: _showChangePasswordModal,
+                  child: const Text("Change →", style: TextStyle(fontWeight: FontWeight.w900, fontSize: 11)),
                 ),
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           // ─────────────────────────────────────────────
           // SECTION 6: DANGER ZONE (DELETE ACCOUNT)

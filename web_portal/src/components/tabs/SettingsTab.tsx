@@ -353,19 +353,11 @@ export default function SettingsTab({
           background: C.bgCard, border: `1px solid ${C.border}`,
           borderRadius: 16, padding: 14,
         }}>
-          <button
-            onClick={onOpenLedger}
-            style={{
-              width: "100%",
-              background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.25)`,
-              borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
-              cursor: "pointer", textAlign: "left"
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 10,
-                background: "rgba(16,185,129,0.15)", border: `1px solid rgba(16,185,129,0.3)`,
+                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
               }}>🛡️</div>
               <div>
@@ -375,8 +367,17 @@ export default function SettingsTab({
                 </div>
               </div>
             </div>
-            <span style={{ color: C.emerald, fontSize: 14, fontWeight: 800 }}>→</span>
-          </button>
+
+            <button
+              onClick={onOpenLedger}
+              style={{
+                background: "rgba(16,185,129,0.12)", border: `1px solid rgba(16,185,129,0.35)`,
+                borderRadius: 10, padding: "7px 12px", color: C.emerald, fontSize: 11, fontWeight: 800, cursor: "pointer"
+              }}
+            >
+              View Audit Ledger →
+            </button>
+          </div>
         </div>
       </div>
 
@@ -390,19 +391,11 @@ export default function SettingsTab({
           background: C.bgCard, border: `1px solid ${C.border}`,
           borderRadius: 16, padding: 14,
         }}>
-          <button
-            onClick={onOpenBacktest}
-            style={{
-              width: "100%",
-              background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.25)`,
-              borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
-              cursor: "pointer", textAlign: "left"
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: 10,
-                background: "rgba(6,182,212,0.15)", border: `1px solid ${C.borderCyan}`,
+                background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
               }}>🧪</div>
               <div>
@@ -412,8 +405,17 @@ export default function SettingsTab({
                 </div>
               </div>
             </div>
-            <span style={{ color: C.cyan, fontSize: 14, fontWeight: 800 }}>→</span>
-          </button>
+
+            <button
+              onClick={onOpenBacktest}
+              style={{
+                background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
+                borderRadius: 10, padding: "7px 12px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer"
+              }}
+            >
+              Launch Strategy Backtester →
+            </button>
+          </div>
         </div>
       </div>
 
@@ -427,24 +429,34 @@ export default function SettingsTab({
           background: C.bgCard, border: `1px solid ${C.border}`,
           borderRadius: 16, padding: 14,
         }}>
-          <button
-            onClick={() => {
-              if (user?.email) setForgotEmail(user.email);
-              setShowForgotModal(true);
-            }}
-            style={{
-              width: "100%",
-              background: C.bgCard2, border: `1px solid ${C.border}`,
-              borderRadius: 10, padding: 12, display: "flex", alignItems: "center", justifyContent: "space-between",
-              color: C.white, cursor: "pointer", fontSize: 12, fontWeight: 700
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>🔑</span>
-              <span>Change Password</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: "rgba(139,92,246,0.12)", border: `1px solid rgba(139,92,246,0.35)`,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+              }}>🔑</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Change Password</div>
+                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                  Update master login & auth credentials
+                </div>
+              </div>
             </div>
-            <span style={{ color: C.gray2 }}>→</span>
-          </button>
+
+            <button
+              onClick={() => {
+                if (user?.email) setForgotEmail(user.email);
+                setShowForgotModal(true);
+              }}
+              style={{
+                background: "rgba(139,92,246,0.12)", border: `1px solid rgba(139,92,246,0.35)`,
+                borderRadius: 10, padding: "7px 12px", color: C.violet, fontSize: 11, fontWeight: 800, cursor: "pointer"
+              }}
+            >
+              Change Password →
+            </button>
+          </div>
         </div>
       </div>
 
