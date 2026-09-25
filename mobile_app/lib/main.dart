@@ -73,9 +73,15 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
   }
 
   @override
-  void didPushRouteInformation(RouteInformation routeInformation) {
-    super.didPushRouteInformation(routeInformation);
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) {
     _handleIncomingDeepLink(routeInformation.uri.toString());
+    return super.didPushRouteInformation(routeInformation);
+  }
+
+  @override
+  Future<bool> didPushRoute(String route) {
+    _handleIncomingDeepLink(route);
+    return super.didPushRoute(route);
   }
 
   void _handleIncomingDeepLink(String? rawRoute) {
