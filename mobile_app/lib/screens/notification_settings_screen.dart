@@ -9,6 +9,7 @@ import '../utils/error_handler.dart';
 import '../widgets/custom_widgets.dart';
 import 'icici_credentials_screen.dart';
 import 'audit_ledger_screen.dart';
+import 'backtest_screen.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -1018,7 +1019,70 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           const SizedBox(height: 20),
 
           // ─────────────────────────────────────────────
-          // SECTION 4: SECURITY & ACCESS
+          // SECTION 4: STRATEGY BACKTESTER
+          // ─────────────────────────────────────────────
+          _buildSectionHeader("🧪 STRATEGY BACKTESTER"),
+          const SizedBox(height: 10),
+
+          GlassCard(
+            borderColor: AppTheme.cyan.withOpacity(0.35),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BacktestScreen()),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppTheme.cyan.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppTheme.cyan.withOpacity(0.25)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppTheme.cyan.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text("🧪", style: TextStyle(fontSize: 16)),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  "Strategy Backtester Engine",
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  "Institutional backtesting on historical exchange bars with 1% risk sizing",
+                                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 10.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios, color: AppTheme.cyan, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // ─────────────────────────────────────────────
+          // SECTION 5: SECURITY & ACCESS
           // ─────────────────────────────────────────────
           _buildSectionHeader("🔒 SECURITY & ACCESS"),
           const SizedBox(height: 10),
@@ -1051,7 +1115,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           const SizedBox(height: 18),
 
           // ─────────────────────────────────────────────
-          // SECTION 4: DANGER ZONE (DELETE ACCOUNT)
+          // SECTION 6: DANGER ZONE (DELETE ACCOUNT)
           // ─────────────────────────────────────────────
           _buildSectionHeader("⚠️ DANGER ZONE"),
           const SizedBox(height: 10),

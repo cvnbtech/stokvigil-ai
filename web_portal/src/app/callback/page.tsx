@@ -7,10 +7,41 @@ function CallbackForwarder() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    const apisession = searchParams.get("apisession") || searchParams.get("api_session") || "";
-    if (typeof window !== "undefined" && window.history && window.history.replaceState) {
-      window.history.replaceState({}, document.title, window.location.pathname);
+    let apisession = "";
+    if (searchParams) {
+      for (const [k, v] of searchParams.entries()) {
+        if (k.toLowerCase() === "apisession" && v.trim()) {
+          apisession = v.trim();
+          break;
+        }
+      }
     }
+
+    if (!apisession && typeof window !== "undefined") {
+      const windowParams = new URLSearchParams(window.location.search);
+      for (const [k, v] of windowParams.entries()) {
+        if (k.toLowerCase() === "apisession" && v.trim()) {
+          apisession = v.trim();
+          break;
+        }
+      }
+      if (!apisession) {
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+        for (const [k, v] of hashParams.entries()) {
+          if (k.toLowerCase() === "apisession" && v.trim()) {
+            apisession = v.trim();
+            break;
+          }
+        }
+      }
+    }
+
+    if (apisession) {
+      try {
+        sessionStorage.setItem("stokvigil_pending_apisession", apisession);
+      } catch (_) {}
+    }
+
     const target = apisession
       ? `/api/auth/icici-callback?apisession=${encodeURIComponent(apisession)}`
       : `/api/auth/icici-callback`;

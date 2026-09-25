@@ -149,17 +149,17 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
 15. **Mathematical Risk-Based Position Sizer (1% Capital Rule)**:
     - Institutional trade sizing based on the standard 1% account risk budget (default ₹2,000 or 1% of Demat portfolio): $\text{Quantity} = \max(1, \lfloor \text{Risk Budget} / |\text{Price} - \text{Stop Loss}| \rfloor)$. Computes `recommended_quantity`, `risk_per_share`, and `capital_at_risk` for both bullish and breakdown short setups, rendering real-time sizing guidance on Telegram alerts and HUD cards.
 16. **In-Memory Vectorized Strategy Backtester Engine (`GET /api/market/backtest`, `POST /api/market/backtest` & Cross-Platform UI)**:
-    - High-speed historical backtesting module powered by pure NumPy/Pandas vectorization (sub-1s execution). Evaluates algorithmic Camarilla H4 Breakouts and Confluence Trend setups over historical OHLCV bars across both NSE and BSE with 1% capital risk position sizing. Generates Win Rate %, Profit Factor, Max Drawdown %, annualized Sharpe Ratio, trade logs, and sampled equity curves with zero synthetic mock data. Backtesting endpoints strictly require authenticated Supabase JWT Bearer session tokens to prevent unauthenticated compute exhaustion and DoS. Seamlessly integrated into both the **Next.js Web Portal (`BacktestView.tsx`)** and **Flutter Mobile App (`backtest_screen.dart`)** with 100% dynamic symbol input.
+    - High-speed historical backtesting module powered by pure NumPy/Pandas vectorization (sub-1s execution). Evaluates algorithmic Camarilla H4 Breakouts and Confluence Trend setups over historical OHLCV bars across both NSE and BSE with 1% capital risk position sizing. Generates Win Rate %, Profit Factor, Max Drawdown %, annualized Sharpe Ratio, trade logs, and sampled equity curves with zero synthetic mock data. Backtesting endpoints strictly require authenticated Supabase JWT Bearer session tokens to prevent unauthenticated compute exhaustion and DoS. Housed directly within the **Settings / Control Center** screen on both the **Next.js Web Portal (`SettingsTab.tsx` / `BacktestView.tsx`)** and **Flutter Mobile App (`notification_settings_screen.dart` / `backtest_screen.dart`)**, positioned directly following the Audit Ledger to maintain a clean, uncluttered Home surveillance dashboard.
 17. **03:45 PM IST Post-Market Executive Telegram Digest (`POST /api/cron/post-market-summary`)**:
     - Automated daily closing bell scorecard dispatched at 03:45 PM IST. Summarizes benchmark closing levels (NIFTY 50, SENSEX, India VIX), Cash Market Breadth (ADR), FII/DII institutional cash turnover, sector rotation leaders/laggards, and the day's algorithmic Target 1 mathematical hit rate.
 18. **Public Audited Accuracy & Transparency Ledger (`/transparency` & `/api/market/accuracy-ledger`)**:
-    - Cryptographic non-repudiation audit ledger verifying every dispatched signal against tick-level exchange prices. Signals are marked as `TARGET_1_REACHED` strictly if price hits the 1.5x ATR Tactical Benchmark prior to breaching the protective stop-loss floor. Dynamically computes cumulative win rate %, target hit rate %, and average risk-to-reward ratio with zero mock defaults and zero PII exposure, accessible via Web (`/transparency`) and Mobile (`AuditLedgerScreen`).
+    - Real price-tracking accuracy verification engine powered by `accuracy_verifier.py` (`batch_verify_alerts`). Replaces speculative heuristics and hardcoded win rates with true historical OHLCV candle verification: checks whether subsequent exchange ticks hit Tactical Resistance 1 (1.5x ATR Benchmark) prior to breaching the protective stop-loss floor (or inverse for shorts). Signals are classified as `TARGET_1_REACHED`, `STOP_LOSS_HIT`, or `OPEN_MONITORING`, tracking precise peak gains (`max_gain_pct`) and hold duration in hours. Dynamically computes cumulative win rate %, target hit rate %, and average risk-to-reward ratio with zero mock defaults and zero PII exposure. Embedded within the **Settings / Control Center** screen on Web and Mobile, as well as the dedicated public route (`/transparency`).
 
 ---
 
 ### 5. Strict Zero-Default Policy (Pure Data Integrity Guarantee)
 > **Core Operational Rule:** *"Dont display default values if we dont recieve actual values"*
-* **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, or dummy `₹100.0` stock prices).
+* **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, dummy `₹100.0` stock prices, or synthetic win rates like `71.2%`). All performance stats and sector resolutions are 100% dynamic in real-time with zero hardcoded stock dictionaries (`_BSE_SCRIP_CACHE`).
 * **Live Quotes & Watchlist Zero-Default Invariant**: The engine never fabricates synthetic volatility (`true_range = price * 0.015`), placeholder targets (`+2.5%` / `-1.5%`), or hardcoded `'MONITORING'` / `'HOLD'` initial states when real-time values are absent. If market feeds fail, prices are $\le 0$, or session candle volatility is zero, the backend strictly returns `null` for `target`, `stop_loss`, `signal`, and `signal_type`.
 * **Graceful Null Propagation**: If market feeds or tick histories are insufficient (e.g. illiquid stock, exchange holiday, or non-F&O cash equity), functions return clean `None` (JSON `null`) and `"DATA_UNAVAILABLE"`.
 * **Telegram & UI Suppression**:
@@ -326,11 +326,11 @@ Per SEBI compliance regulations, Indian broker session tokens expire daily at mi
    - Opens the official broker login portal with the verified master app key and redirect URL.
    - User logs in with their standard retail broker credentials and 2FA TOTP / Biometrics.
 2. **Step 2: Session Token Connect (`POST /api/user/credentials`)**:
-   - The user copies their generated session token (or mobile auto-captures `apisession` via the secure in-app WebView).
-   - Tapping **`[ 🔐 Connect Demat & Sync Holdings ]`** transmits `{ user_id, session_token, broker: "icici" }`.
+   - The user copies their generated session token (or mobile auto-captures strictly the official `apisession` parameter via the secure in-app WebView).
+   - **Adaptive Neon Action Button**: Tapping **`[ 🔐 Connect Demat & Sync Holdings ]`** transmits `{ user_id, session_token, broker: "icici" }`. The button is permanently rendered with the vibrant 4-color brand gradient (`#00B4D8` $\rightarrow$ `#0284C7` $\rightarrow$ `#6366F1` $\rightarrow$ `#8B5CF6`) and cyan neon glow across both Mobile and Web, disabled by default with 45% dimmed opacity until a session token is present, transitioning smoothly to 100% active opacity.
    - The token is encrypted using Fernet AES-256 with PBKDF2HMAC before persisting in `user_credentials`.
    - Live Demat holdings are instantly decrypted and synchronized in RAM.
-   - Both the web callback route (`/api/auth/icici-callback`, `/callback`) and the Web Portal root route (`/`) scrub sensitive `apisession` and `api_session` tokens from the browser address bar and history (`window.history.replaceState`), eliminating token leakage in navigation logs, browser history, or referrer headers.
+   - **Strict `apisession` Protocol & Browser History Scrubbing**: Callbacks process the official `apisession` parameter case-insensitively, supporting both URL query strings and POST payloads with Base64 padding normalization. Immediately upon receipt, the client saves the token before scrubbing sensitive parameters from the browser address bar and history via `window.history.replaceState`, eliminating credential leakage across navigation logs, browser history, and referrer headers.
 
 ---
 
@@ -417,7 +417,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (133 automated unit tests across 14 suites, including institutional engines, multi-broker adapters, and quantitative upgrades):
+3. Run test suite (143 automated unit tests across 15 suites, including institutional engines, multi-broker adapters, quantitative upgrades, and real price-tracking accuracy verifiers):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

@@ -48,8 +48,16 @@ class TestInstitutionalUpgrades(unittest.TestCase):
     # 1. DYNAMIC SECTOR UNIVERSE & DUAL-EXCHANGE BSE RESOLUTION
     # =========================================================================
 
-    def test_get_symbol_sector_nse_and_bse(self):
+    @patch("app.macro_filter.resolve_bse_scrip_to_symbol")
+    def test_get_symbol_sector_nse_and_bse(self, mock_resolve):
         """Tests that sector resolution works for NSE, BSE, bare, and 6-digit codes."""
+        mock_resolve.side_effect = lambda scrip: {
+            "500180": "HDFCBANK",
+            "500325": "RELIANCE",
+            "500209": "INFY",
+            "532500": "MARUTI",
+        }.get(scrip)
+
         # NSE bare and .NS
         self.assertEqual(get_symbol_sector("HDFCBANK"), "NIFTY BANK")
         self.assertEqual(get_symbol_sector("HDFCBANK.NS"), "NIFTY BANK")
@@ -61,14 +69,15 @@ class TestInstitutionalUpgrades(unittest.TestCase):
         self.assertEqual(get_symbol_sector("500180"), "NIFTY BANK")  # HDFC Bank on BSE
         self.assertEqual(get_symbol_sector("500325"), "NIFTY ENERGY")  # Reliance on BSE
         self.assertEqual(get_symbol_sector("500209"), "NIFTY IT")  # Infosys on BSE
-        self.assertEqual(get_symbol_sector("500570"), "NIFTY AUTO")  # Tata Motors on BSE
+        self.assertEqual(get_symbol_sector("532500"), "NIFTY AUTO")  # Maruti on BSE
 
         # Unknown/Unmapped symbol returns None
         self.assertIsNone(get_symbol_sector("RANDOM_UNKNOWN_CO"))
 
     def test_calculate_sector_relative_strength_uses_dynamic_sector(self):
         """Tests that calculate_sector_relative_strength resolves BSE 6-digit scrips."""
-        with patch("app.macro_filter.get_sector_20d_return", return_value=3.0):
+        with patch("app.macro_filter.get_sector_20d_return", return_value=3.0), \
+             patch("app.macro_filter.resolve_bse_scrip_to_symbol", return_value="RELIANCE"):
             # Test with BSE 6-digit scrip for Reliance
             res = calculate_sector_relative_strength("500325", stock_20d_ret=8.5)
             self.assertEqual(res["sector_name"], "NIFTY ENERGY")

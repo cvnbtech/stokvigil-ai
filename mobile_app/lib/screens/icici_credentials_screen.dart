@@ -359,34 +359,32 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                 const SizedBox(height: 22),
 
                 // Primary Connect CTA Button
-                Container(
-                  width: double.infinity,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: _isFormValid
-                        ? const LinearGradient(
-                            colors: [
-                              Color(0xFF00B4D8),
-                              Color(0xFF0284C7),
-                              Color(0xFF6366F1),
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          )
-                        : null,
-                    color: _isFormValid ? null : Colors.white.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(16),
-                    border: _isFormValid ? null : Border.all(color: Colors.white.withOpacity(0.1)),
-                    boxShadow: _isFormValid
-                        ? const [
-                            BoxShadow(
-                              color: Color(0x6606B6D4),
-                              blurRadius: 16,
-                              offset: Offset(0, 4),
-                            ),
-                          ]
-                        : null,
-                  ),
+                AnimatedOpacity(
+                  opacity: (_isFormValid && !_isLoading) ? 1.0 : 0.45,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(
+                    width: double.infinity,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [
+                          Color(0xFF00B4D8),
+                          Color(0xFF0284C7),
+                          Color(0xFF6366F1),
+                          Color(0xFF8B5CF6),
+                        ],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _isFormValid ? const Color(0x6606B6D4) : const Color(0x3306B6D4),
+                          blurRadius: _isFormValid ? 16 : 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
@@ -415,10 +413,11 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                           ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-          const SizedBox(height: 18),
+        ),
+        const SizedBox(height: 18),
 
           // Security & Compliance Disclaimer
           Center(

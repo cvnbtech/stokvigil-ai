@@ -497,22 +497,32 @@ export default function App() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      let sessionParam = params.get("apisession") || params.get("api_session");
+      let sessionParam = "";
+      let foundKey = "";
+
+      for (const [key, val] of params.entries()) {
+        if (key.toLowerCase() === "apisession" && val.trim()) {
+          sessionParam = val.trim();
+          foundKey = key;
+          break;
+        }
+      }
+
       if (!sessionParam) {
         try {
-          sessionParam = sessionStorage.getItem("stokvigil_pending_apisession");
+          sessionParam = sessionStorage.getItem("stokvigil_pending_apisession") || "";
           if (sessionParam) {
             sessionStorage.removeItem("stokvigil_pending_apisession");
           }
         } catch (_) {}
       }
+
       if (sessionParam) {
         setSessionTok(sessionParam);
         openKeyModal();
         // Immediately scrub the sensitive session token from the browser URL address bar and history
-        if (params.has("apisession") || params.has("api_session")) {
-          params.delete("apisession");
-          params.delete("api_session");
+        if (foundKey) {
+          params.delete(foundKey);
           const remaining = params.toString();
           const cleanUrl = window.location.pathname + (remaining ? `?${remaining}` : "") + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -1017,28 +1027,6 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={() => setTab(tab === "backtest" ? "home" : "backtest")}
-              style={{
-                background: tab === "backtest" ? "rgba(6,182,212,0.25)" : "rgba(6,182,212,0.12)",
-                border: `1px solid ${tab === "backtest" ? C.cyan : "rgba(6,182,212,0.35)"}`,
-                borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800,
-                cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-              }}
-            >
-              🧪 Backtest
-            </button>
-            <button
-              onClick={() => setTab(tab === "ledger" ? "home" : "ledger")}
-              style={{
-                background: tab === "ledger" ? "rgba(16,185,129,0.25)" : "rgba(16,185,129,0.12)",
-                border: `1px solid ${tab === "ledger" ? C.emerald : "rgba(16,185,129,0.35)"}`,
-                borderRadius: 10, padding: "6px 10px", color: C.emerald, fontSize: 11, fontWeight: 800,
-                cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-              }}
-            >
-              🛡️ Audit Ledger
-            </button>
             <button onClick={openKeyModal} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
@@ -1137,20 +1125,22 @@ export default function App() {
               setDeleteConfirmText={setDeleteConfirmText}
               setShowDeleteModal={setShowDeleteModal}
               doSignOut={doSignOut}
+              onOpenLedger={() => setTab("ledger")}
+              onOpenBacktest={() => setTab("backtest")}
             />
           )}
 
           {/* AUDIT LEDGER TAB */}
           {tab === "ledger" && (
             <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
-              <AuditLedgerView onBack={() => setTab("home")} />
+              <AuditLedgerView onBack={() => setTab("settings")} />
             </div>
           )}
 
           {/* STRATEGY BACKTESTER TAB */}
           {tab === "backtest" && (
             <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
-              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("home")} authToken={authToken} />
+              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("settings")} authToken={authToken} />
             </div>
           )}
         </DraggableVerticalCanvas>

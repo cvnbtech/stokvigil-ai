@@ -241,14 +241,19 @@ export default function AuditLedgerView({
         />
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {["ALL", "TARGET_1_REACHED", "STOP_LOSS_DEFENDED"].map((opt) => (
+          {[
+            { id: "ALL", label: "All Signals" },
+            { id: "TARGET_1_REACHED", label: "🎯 Tactical Level 1 Reached" },
+            { id: "STOP_LOSS_DEFENDED", label: "🛡️ SL Defended" },
+            { id: "OPEN_MONITORING", label: "⏳ Open / Monitoring" },
+          ].map((opt) => (
             <button
-              key={opt}
-              onClick={() => setFilterOutcome(opt)}
+              key={opt.id}
+              onClick={() => setFilterOutcome(opt.id)}
               style={{
-                background: filterOutcome === opt ? "rgba(6, 182, 212, 0.2)" : "#080B16",
-                color: filterOutcome === opt ? "#06b6d4" : "#94a3b8",
-                border: `1px solid ${filterOutcome === opt ? "rgba(6, 182, 212, 0.4)" : "rgba(255, 255, 255, 0.08)"}`,
+                background: filterOutcome === opt.id ? "rgba(6, 182, 212, 0.2)" : "#080B16",
+                color: filterOutcome === opt.id ? "#06b6d4" : "#94a3b8",
+                border: `1px solid ${filterOutcome === opt.id ? "rgba(6, 182, 212, 0.4)" : "rgba(255, 255, 255, 0.08)"}`,
                 borderRadius: 8,
                 padding: "6px 10px",
                 fontSize: 10.5,
@@ -256,7 +261,7 @@ export default function AuditLedgerView({
                 cursor: "pointer",
               }}
             >
-              {opt === "ALL" ? "All Signals" : opt === "TARGET_1_REACHED" ? "🎯 Tactical Level 1 Reached" : "🛡️ SL Defended"}
+              {opt.label}
             </button>
           ))}
         </div>
@@ -330,9 +335,25 @@ export default function AuditLedgerView({
                       <td style={{ padding: "12px 14px" }}>
                         <span
                           style={{
-                            background: isWin ? "rgba(16, 185, 129, 0.15)" : "rgba(244, 63, 94, 0.15)",
-                            color: isWin ? "#10b981" : "#f43f5e",
-                            border: `1px solid ${isWin ? "rgba(16, 185, 129, 0.3)" : "rgba(244, 63, 94, 0.3)"}`,
+                            background:
+                              sig.outcome === "TARGET_1_REACHED"
+                                ? "rgba(16, 185, 129, 0.15)"
+                                : sig.outcome === "OPEN_MONITORING"
+                                ? "rgba(245, 158, 11, 0.15)"
+                                : "rgba(244, 63, 94, 0.15)",
+                            color:
+                              sig.outcome === "TARGET_1_REACHED"
+                                ? "#10b981"
+                                : sig.outcome === "OPEN_MONITORING"
+                                ? "#f59e0b"
+                                : "#f43f5e",
+                            border: `1px solid ${
+                              sig.outcome === "TARGET_1_REACHED"
+                                ? "rgba(16, 185, 129, 0.3)"
+                                : sig.outcome === "OPEN_MONITORING"
+                                ? "rgba(245, 158, 11, 0.3)"
+                                : "rgba(244, 63, 94, 0.3)"
+                            }`,
                             padding: "3px 8px",
                             borderRadius: 10,
                             fontSize: 9.5,
@@ -340,7 +361,11 @@ export default function AuditLedgerView({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {isWin ? "🎯 TARGET 1 HIT" : "🛡️ SL DEFENDED"}
+                          {sig.outcome === "TARGET_1_REACHED"
+                            ? "🎯 TARGET 1 HIT"
+                            : sig.outcome === "OPEN_MONITORING"
+                            ? "⏳ MONITORING"
+                            : "🛡️ SL DEFENDED"}
                         </span>
                       </td>
                     </tr>

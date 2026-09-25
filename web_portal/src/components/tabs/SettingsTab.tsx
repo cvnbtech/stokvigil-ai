@@ -22,6 +22,8 @@ interface SettingsTabProps {
   setDeleteConfirmText: (text: string) => void;
   setShowDeleteModal: (show: boolean) => void;
   doSignOut: () => void;
+  onOpenLedger: () => void;
+  onOpenBacktest: () => void;
 }
 
 export default function SettingsTab({
@@ -44,6 +46,8 @@ export default function SettingsTab({
   setDeleteConfirmText,
   setShowDeleteModal,
   doSignOut,
+  onOpenLedger,
+  onOpenBacktest,
 }: SettingsTabProps) {
   return (
     <div className="anim-fadeup" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -339,7 +343,81 @@ export default function SettingsTab({
         </div>
       </div>
 
-      {/* Section 3: Security & Access */}
+      {/* Section 3: Transparency & Audit Ledger */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
+          🛡️ Transparency & Audit Ledger
+        </div>
+
+        <div style={{
+          background: C.bgCard, border: `1px solid ${C.border}`,
+          borderRadius: 16, padding: 14,
+        }}>
+          <button
+            onClick={onOpenLedger}
+            style={{
+              width: "100%",
+              background: "rgba(16,185,129,0.06)", border: `1px solid rgba(16,185,129,0.25)`,
+              borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer", textAlign: "left"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: "rgba(16,185,129,0.15)", border: `1px solid rgba(16,185,129,0.3)`,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+              }}>🛡️</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Public Audit Ledger & Performance</div>
+                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                  View verified signal hit rates, win/loss stats & audited R:R ledger
+                </div>
+              </div>
+            </div>
+            <span style={{ color: C.emerald, fontSize: 14, fontWeight: 800 }}>→</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Section 4: Strategy Backtester */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
+          🧪 Strategy Backtester
+        </div>
+
+        <div style={{
+          background: C.bgCard, border: `1px solid ${C.border}`,
+          borderRadius: 16, padding: 14,
+        }}>
+          <button
+            onClick={onOpenBacktest}
+            style={{
+              width: "100%",
+              background: "rgba(6,182,212,0.06)", border: `1px solid rgba(6,182,212,0.25)`,
+              borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer", textAlign: "left"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: "rgba(6,182,212,0.15)", border: `1px solid ${C.borderCyan}`,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16
+              }}>🧪</div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: C.white }}>Strategy Backtester Engine</div>
+                <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
+                  Institutional backtesting on historical exchange bars with 1% risk sizing
+                </div>
+              </div>
+            </div>
+            <span style={{ color: C.cyan, fontSize: 14, fontWeight: 800 }}>→</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Section 5: Security & Access */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 10, color: C.gray2, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
           🔒 Security & Access
@@ -370,7 +448,7 @@ export default function SettingsTab({
         </div>
       </div>
 
-      {/* Section 4: Danger Zone */}
+      {/* Section 6: Danger Zone */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 10, color: C.rose, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.08em" }}>
           ⚠️ Danger Zone

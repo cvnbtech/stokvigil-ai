@@ -33,6 +33,7 @@ from app.notifications import send_telegram_notification, send_fcm_notification,
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.backtester import run_vectorized_strategy_backtest
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
+from app.accuracy_verifier import batch_verify_alerts
 from app.db_pool import init_db_pool, close_db_pool, get_db_pool, get_db_connection, is_pool_ready, fetch_all, fetch_one
 from app.brokers import get_broker, list_supported_brokers
 
@@ -1406,74 +1407,8 @@ async def get_accuracy_ledger(db: Client = Depends(get_supabase)):
             logger.warning(f"Error querying stok_alerts for accuracy ledger: {e}")
             raw_alerts = []
 
-    ledger_items = []
-    target_hits = 0
-    total_evaluated = 0
-    rr_sum = 0.0
+    response_data = batch_verify_alerts(raw_alerts or [])
 
-    for a in raw_alerts:
-        snap = a.get("metrics_snapshot") or {}
-        tactical = snap.get("tactical_levels") or {}
-        entry = tactical.get("entry_range", "-")
-        target = tactical.get("target_1", "-")
-        sl = tactical.get("protective_stop_loss", "-")
-        rr_str = tactical.get("risk_reward_ratio", "1:2.5")
-        bias = snap.get("action_bias", "STRONG_BUY")
-        score = a.get("impact_score", 75)
-
-        try:
-            rr_val = float(rr_str.split(":")[-1]) if ":" in rr_str else 2.5
-        except Exception:
-            rr_val = 2.5
-        rr_sum += rr_val
-
-        outcome = "TARGET_1_REACHED" if score >= 75 else "STOP_LOSS_DEFENDED"
-        if outcome == "TARGET_1_REACHED":
-            target_hits += 1
-        total_evaluated += 1
-
-        ledger_items.append({
-            "id": a.get("id"),
-            "symbol": a.get("symbol"),
-            "title": a.get("alert_title"),
-            "catalyst": a.get("catalyst_type", "TECHNICAL_BREAKOUT"),
-            "bias": bias,
-            "confluence_score": score,
-            "entry_range": entry,
-            "target_1": target,
-            "stop_loss": sl,
-            "risk_reward": rr_str,
-            "outcome": outcome,
-            "max_gain_pct": round(rr_val * 1.8, 1),
-            "created_at": a.get("created_at")
-        })
-
-    if total_evaluated == 0:
-        win_rate = 0.0
-        avg_rr = "-"
-        total_count = 0
-        profit_factor = 0.0
-        avg_hold = "-"
-    else:
-        win_rate = round((target_hits / total_evaluated) * 100, 1)
-        avg_rr = f"1:{round(rr_sum / total_evaluated, 1)}"
-        total_count = total_evaluated
-        gross_wins = target_hits * (rr_sum / max(1, total_evaluated))
-        gross_losses = max(1, total_evaluated - target_hits)
-        profit_factor = round(gross_wins / gross_losses, 2)
-        avg_hold = "Dynamic"
-
-    response_data = {
-        "audited_summary": {
-            "win_rate_pct": win_rate,
-            "total_verified_signals": total_count,
-            "avg_risk_reward": avg_rr,
-            "avg_hold_duration": avg_hold,
-            "profit_factor": profit_factor,
-            "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE/BSE tick verification."
-        },
-        "ledger": ledger_items
-    }
 
     _ACCURACY_LEDGER_CACHE = response_data
     _ACCURACY_LEDGER_TS = now
@@ -2382,12 +2317,16 @@ async def get_user_accuracy_stats(
     if total == 0:
         return {
             "total_alerts": 0,
-            "win_rate_estimate_pct": 68.5,
+            "win_rate_estimate_pct": 0.0,
             "avg_confluence_score": 0,
             "high_conviction_count": 0,
             "trailing_sl_count": 0,
-            "sample_size": "New account (System baseline: 68.5%)"
+            "sample_size": "New account (No alerts recorded yet)"
         }
+
+    verified_result = batch_verify_alerts(alerts)
+    verified_summary = verified_result.get("audited_summary", {})
+    win_rate = verified_summary.get("win_rate_pct", 0.0)
 
     high_conviction = sum(1 for a in alerts if (a.get("impact_score") or 0) >= 75)
     trailing_sl = sum(1 for a in alerts if a.get("catalyst_type") == "TRAILING_STOP_TRIGGER" or "TRAILING" in str(a.get("alert_title", "")))
@@ -2395,11 +2334,11 @@ async def get_user_accuracy_stats(
 
     return {
         "total_alerts": total,
-        "win_rate_estimate_pct": 71.2 if high_conviction > 0 else 68.5,
+        "win_rate_estimate_pct": win_rate,
         "avg_confluence_score": avg_score,
         "high_conviction_count": high_conviction,
         "trailing_sl_count": trailing_sl,
-        "sample_size": f"Computed over {total} real-time surveillance alerts"
+        "sample_size": f"Computed over {total} real-time surveillance alerts with verified price tracking"
     }
 
 

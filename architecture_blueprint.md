@@ -325,8 +325,8 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 - **Institutional Metrics**: Calculates Win Rate %, Target 1 Hit Rate %, Profit Factor, Peak-to-Trough Max Drawdown %, annualized Sharpe Ratio, trade logs with exit reasons (`TARGET_1_HIT`, `TARGET_2_HIT`, `STOP_LOSS_HIT`, `TIME_EXPIRY`), and equity curve time-series.
 - **Strict Zero-Default Execution**: Returns structured error responses if historical exchange data is unavailable, strictly prohibiting synthetic data generation.
 - **Cross-Platform Interactive UI**:
-  - **Web Portal (`web_portal/src/components/BacktestView.tsx`)**: Replay interface with custom timeframe and strategy selectors, responsive SVG equity curve chart, 6-card performance HUD, trade history table with color-coded profit/loss badges, and 100% dynamic symbol input (zero hardcoded presets).
-  - **Flutter Mobile App (`mobile_app/lib/screens/backtest_screen.dart`)**: Native mobile backtest screen featuring strategy selectors, capital risk inputs, visual performance cards, full trade logs, and dynamic ticker/scrip input.
+  - **Web Portal (`web_portal/src/components/BacktestView.tsx`)**: Replay interface housed within the **Settings / Control Center** tab (`SettingsTab.tsx`, directly following the Audit Ledger) with custom timeframe and strategy selectors, responsive SVG equity curve chart, 6-card performance HUD, trade history table with color-coded profit/loss badges, and 100% dynamic symbol input (zero hardcoded presets).
+  - **Flutter Mobile App (`mobile_app/lib/screens/backtest_screen.dart`)**: Native mobile backtest screen accessed via the **Settings / Notification Settings** screen (`notification_settings_screen.dart`, directly following the Audit Ledger tile) featuring strategy selectors, capital risk inputs, visual performance cards, full trade logs, and dynamic ticker/scrip input.
 
 ### 2.1.11 03:45 PM IST Post-Market Executive Telegram Digest (`main.py` & `notifications.py`)
 - **Automated Closing Bell Scorecard**: Dispatched 15 minutes after cash market close via `POST /api/cron/post-market-summary` (`cron: '15 10 * * 1-5'`).
@@ -381,11 +381,15 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
    - `web_portal/src/components/ShareAlphaCardModal.tsx`: Uses client-side off-screen HTML5 2D Canvas to generate 1080×1080 branded PNG cards with zero server load.
    - Includes one-tap direct distribution to WhatsApp groups and X (Twitter) with real factor geometry.
 3. **Public Audited Accuracy & Transparency Ledger (`/transparency`, `AuditLedgerView.tsx`, `audit_ledger_screen.dart` & `/api/market/accuracy-ledger`)**:
-   - **Cryptographic Verification**: Assigns cryptographic non-repudiation records to every alert at dispatch and audits signal trajectories using tick-level NSE and BSE prices.
-   - **Strict Verification Methodology**: A signal outcome is verified as `TARGET_1_REACHED` strictly if market price achieves the 1.5x ATR Tactical Benchmark prior to breaching the protective stop-loss floor. Volatility projections are benchmarks, not guaranteed profit targets.
-   - **Performance HUD**: Exposes Target 1 hit rate %, cumulative win rate %, average risk-to-reward ratio, and signal history across the public Web route (`/transparency`), embedded Web view (`AuditLedgerView.tsx`), and native Flutter Mobile Screen (`audit_ledger_screen.dart`).
+   - **Real Price-Tracking Verification Engine (`app/accuracy_verifier.py`)**: Assigns cryptographic non-repudiation records to every alert at dispatch and continuously verifies outcomes against authentic tick-level historical OHLCV candles (`batch_verify_alerts`), replacing speculative heuristics with empirical price tracking.
+   - **Strict Verification Methodology**:
+     - **Bullish Setups**: Verified as `TARGET_1_REACHED` strictly if subsequent candle High achieves Tactical Resistance 1 (1.5x ATR Benchmark) before candle Low breaches the protective stop-loss floor. If stop-loss is breached first, it is recorded as `STOP_LOSS_HIT`.
+     - **Bearish Breakdown Setups**: Verified as `TARGET_1_REACHED` if subsequent candle Low touches Tactical Support 1 before candle High breaches the buy-stop ceiling.
+     - **Open Setups**: Signals that have not breached either threshold are tracked under `OPEN_MONITORING`.
+     - **Telemetry Metrics**: Tracks exact peak favorable excursion (`max_gain_pct`) and hold duration in hours (`hold_duration_hours`).
+   - **Performance HUD & UI Placement**: Exposes Target 1 hit rate %, cumulative win rate %, average risk-to-reward ratio, and signal history across the public Web route (`/transparency`), embedded within the **Settings / Control Center** screen on Web (`SettingsTab.tsx`) and Mobile (`notification_settings_screen.dart`), keeping the primary Home dashboard focused on real-time market surveillance.
    - **High-Concurrency RAM Cache**: 300-second in-memory cache serving 10,000+ concurrent requests at $<0.1\text{ms}$.
-   - **Dynamic Calculation & Zero-Mock Policy**: All performance stats are calculated on the fly directly from stored `stok_alerts`. When 0 verified signals exist, the ledger transparently reports `total_verified_signals: 0, win_rate_pct: 0.0, avg_risk_reward: "-"` with zero mock placeholders.
+   - **Dynamic Calculation & Zero-Mock Policy**: All performance stats are calculated on the fly directly from verified `stok_alerts`. When 0 verified signals exist, the ledger transparently reports `total_verified_signals: 0, win_rate_pct: 0.0, avg_risk_reward: "-"` with zero mock placeholders or hardcoded win rate estimates.
    - **Zero PII Leakage**: Strictly projects public mathematical parameters without exposing user identifiers or position sizes.
 4. **Institutional FII & DII Cash Market Net Flow Engine (`fii_dii_tracker.py`)**:
    - Captures daily official Indian equity cash turnover (combined NSE & BSE institutional transactions).
@@ -514,9 +518,10 @@ To eliminate broker lock-in and provide a frictionless onboarding experience for
    - Thread-Safe Periodic Auto-Pruning (`_prune_rate_limit_buckets` with `threading.Lock`) automatically evicts expired IP records.
    - Hard Memory Bounds & Anti-OOM Protection (`_RATE_LIMIT_MAX_BUCKETS = 10000`) with emergency LRU eviction prevents dictionary bloat from distributed spoofing attacks.
    - Strict regex validation (`STOCK_SYMBOL_REGEX = ^[A-Z0-9_\-&.]{1,25}$`) neutralizes injection attempts while permitting valid suffixed queries.
-6. **In-App Session Token Auto-Capture & Multi-Route Browser History Scrubbing (Flutter Mobile & Web Portal)**:
-   - Uses `webview_flutter` modal navigation delegate to intercept the `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
-   - On both the web callback route (`/api/auth/icici-callback`), `/callback`, and the Web Portal root route (`/`), `window.history.replaceState` immediately scrubs sensitive `apisession` and `api_session` tokens from the browser address bar and history to prevent credential leakage in logs, bookmarks, or referrers, enforced alongside strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
+6. **Strict `apisession` Token Auto-Capture, Multi-Route History Scrubbing & Adaptive Neon Action Button (Flutter Mobile & Web Portal)**:
+   - Uses `webview_flutter` modal navigation delegate to intercept strictly the official `apisession` parameter upon ICICI Direct 2FA completion, closing the webview and auto-saving with AES-256 Fernet encryption.
+   - On both the web callback routes (`/api/auth/icici-callback`, `/callback`) and the Web Portal root route (`/`), callbacks process `apisession` case-insensitively, supporting GET query parameters and POST request bodies with Base64 padding auto-recovery. The client-side logic captures and stores the session token into local storage before `window.history.replaceState` scrubs sensitive query parameters from the browser address bar and history to prevent credential leakage in logs, bookmarks, or referrers, enforced alongside strict Content Security Policies (CSP) and `X-Frame-Options: DENY`.
+   - **Adaptive Neon Action Button**: The **`[ 🔐 Connect Demat & Sync Holdings ]`** button across both Mobile (`icici_credentials_screen.dart`) and Web (`IciciKeyModal.tsx`) permanently retains the brand 4-color gradient (`#00B4D8` $\rightarrow$ `#0284C7` $\rightarrow$ `#6366F1` $\rightarrow$ `#8B5CF6`) and cyan neon glow, disabled by default with 45% dimmed opacity until a session token is present, transitioning smoothly to 100% active opacity.
    - Under the Zero-Manual-Keys model, manual developer App Key / Secret Key fields and visibility toggles are completely eliminated; users simply paste or auto-capture their single daily broker session token with 1 tap.
 7. **Backtesting Resource Exhaustion Protection (`/api/market/backtest`)**:
    - Vectorized Strategy Backtester endpoints (`GET /api/market/backtest` and `POST /api/market/backtest`) enforce mandatory Supabase JWT Bearer authentication (`Depends(get_current_user_id)`). This prevents unauthenticated attackers from exhausting server CPU and memory via repeated high-depth historical simulation requests. Both Next.js Web Portal (`BacktestView.tsx`) and Flutter Mobile App (`api_service.dart`) pass authenticated session tokens.
@@ -615,6 +620,8 @@ G:\stokvigil-ai\
 │   │   ├── db_pool.py               <-- Supabase Transaction Pooler (PgBouncer Port 6543) using asyncpg
 │   │   ├── maintenance.py           <-- 30-Day Automated Alert Pruning (db_pool raw SQL + REST fallback)
 │   │   ├── notifications.py         <-- Telegram Cockpit HTML + Interactive Buttons + FCM Push + SEBI Disclaimer Footer + Live Market Snapshot
+│   │   ├── backtester.py            <-- Vectorized NumPy/Pandas Strategy Backtesting Engine
+│   │   ├── accuracy_verifier.py     <-- Real Price-Tracking & Historical OHLCV Candle Verification Worker
 │   │   ├── agent_runner.py          <-- 2-Tier Gatekeeper + Hard Risk Veto + Demat Downside Defense + Momentum Surge Boost + Gemini AI
 │   │   └── main.py                  <-- FastAPI Entrypoint, Concurrency Semaphore(10), Dynamic Order Product Resolver (Cash vs Margin) & BSE Routing
 │   ├── tests/
@@ -630,8 +637,10 @@ G:\stokvigil-ai\
 │   │   ├── test_portfolio_optimization.py <-- 3 Fundamentals Caching & Background Pre-Warming Tests
 │   │   ├── test_alert_edge_cases.py <-- 2 Daily Fallback, Demat P&L, Target/SL Clamping Tests
 │   │   ├── test_institutional_engine.py <-- 1 Master Integration Suite (7 Quantitative Architecture Modules)
-│   │   └── test_financial_trade_flaws.py <-- 8 Financial Trade Execution, Directional Tactical Levels, RMS 500 Interception, Tick Snapping & SEBI MIS Notice Tests
-│   │   # Total: 120 automated unit tests across 13 test suites (100% passing)
+│   │   ├── test_financial_trade_flaws.py <-- 8 Financial Trade Execution, Directional Tactical Levels, RMS 500 Interception, Tick Snapping & SEBI MIS Notice Tests
+│   │   ├── test_institutional_upgrades_free.py <-- 11 Dynamic Sector Universe, BSE Scrip Resolution & Position Sizer Tests
+│   │   └── test_real_accuracy_verifier.py <-- 7 Real-Time Price Tracking, Candle Outcome & Dynamic Win Rate Tests
+│   │   # Total: 143 automated unit tests across 15 test suites (100% passing)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -667,12 +676,13 @@ G:\stokvigil-ai\
 │       │   └── custom_widgets.dart       <-- ConfluenceRadarChart CustomPainter, FII/DII Net Flow Bar & TradeOrderModal (Breeze Execution)
 │       └── screens/
 │           ├── auth_screen.dart
-│           ├── icici_credentials_screen.dart
-│           ├── dashboard_screen.dart <-- FII/DII Net Flow Bar Header & Strict Data Integrity ("--")
+│           ├── icici_credentials_screen.dart <-- Master App Broker Login & Unconditional 4-Color Neon Connect Demat Button (disabled opacity by default)
+│           ├── dashboard_screen.dart <-- Primary Surveillance Dashboard (Audit Ledger & Backtester moved to Settings)
 │           ├── alerts_screen.dart    <-- Radar Toggle & Alpha Card Share Bottom Sheet
 │           ├── candle_chart_screen.dart <-- Fullscreen TradingView Chart with OHLC HUD & Landscape Toggle
 │           ├── audit_ledger_screen.dart <-- Public Audited Accuracy Ledger & Performance KPIs
-│           ├── notification_settings_screen.dart
+│           ├── backtest_screen.dart  <-- Native Strategy Backtester Screen (accessed via Settings after Audit Ledger)
+│           ├── notification_settings_screen.dart <-- Settings Control Center (Broker credentials, Telegram pairing, Audit Ledger & Strategy Backtester)
 │           ├── watchlist_screen.dart <-- Real-time NSE/BSE Ticker Search, Demat Sync & Zero Dummy Prices
 │           ├── terms_conditions_modal.dart
 │           └── onboarding_modal.dart
@@ -688,19 +698,20 @@ G:\stokvigil-ai\
 │       │   │   ├── DesignTokens.ts        <-- Theme Palette, Supabase Client & HoldingItem Interface
 │       │   │   └── UiAtoms.tsx            <-- Card, Btn, Input, Badge, Logo, Modal & Base Elements
 │       │   ├── tabs/
-│       │   │   ├── HomeTab.tsx            <-- Portfolio Card, Privacy Masking, FII/DII Flow Bar, Holdings
+│       │   │   ├── HomeTab.tsx            <-- Portfolio Card, Privacy Masking, FII/DII Flow Bar, Holdings (Audit Ledger & Backtester moved to Settings)
 │       │   │   ├── AlertsTab.tsx          <-- Real-time Alerts Stream, Filters, Confluence Radar
 │       │   │   ├── WatchlistTab.tsx       <-- Ticker Search, Suggestions, Demat Auto-Sync, Stock Cards
-│       │   │   └── SettingsTab.tsx        <-- Broker Switcher, Breeze Keys, Telegram Pairing, Sensitivity, Account Deletion
+│       │   │   └── SettingsTab.tsx        <-- Broker Switcher, Breeze Keys, Telegram Pairing, Sensitivity, Account Deletion, plus integrated Audit Ledger & Strategy Backtester
 │       │   ├── modals/
 │       │   │   ├── TradeOrderModal.tsx    <-- ICICI Breeze Interactive Trade Order Placement
 │       │   │   ├── StockDetailModal.tsx   <-- Holding Metrics Breakdown Modal
-│       │   │   ├── IciciKeyModal.tsx      <-- Multi-Broker Switcher & 1-Tap Login
+│       │   │   ├── IciciKeyModal.tsx      <-- Multi-Broker Switcher, 1-Tap Login & Unconditional 4-Color Neon Connect Demat Button (disabled opacity by default)
 │       │   │   ├── PasswordModal.tsx      <-- Password Management Modal
 │       │   │   └── DeleteAccountModal.tsx <-- Account Deletion Safeguard Modal
 │       │   ├── auth/
 │       │   │   └── AuthScreen.tsx         <-- Authentication & Mandatory Terms & Conditions Screen
 │       │   ├── AuditLedgerView.tsx        <-- Audited Accuracy Ledger & Non-Repudiation Performance Table
+│       │   ├── BacktestView.tsx           <-- In-Memory Vectorized Strategy Backtester & Equity Curve HUD
 │       │   ├── ConfluenceRadar.tsx        <-- 4-Pillar SVG Confluence Radar / Spider Chart
 │       │   ├── LightweightCandleChart.tsx <-- TradingView Lightweight Charts v5 with Camarilla/VWAP/SL & SV Watermark
 │       │   └── ShareAlphaCardModal.tsx    <-- 1-Tap 1080x1080 Offscreen Canvas Viral Card Export
@@ -762,7 +773,9 @@ G:\stokvigil-ai\
 | `/api/auth/register-device` | `POST` | `Bearer <JWT>` | Registers FCM notification token and Telegram chat ID |
 | `/api/user/portfolio` | `GET` | `Bearer <JWT>` | Returns live portfolio holdings, valuation, and P&L (15s RAM caching & background pre-warming) |
 | `/api/user/alerts` | `GET` | `Bearer <JWT>` | Retrieves historical catalyst alerts with tactical levels & confidence scores |
-| `/api/user/accuracy-stats` | `GET` | `Bearer <JWT>` | Computes real-time win rate estimate and historical signal performance stats |
+| `/api/user/accuracy-stats` | `GET` | `Bearer <JWT>` | Computes genuine price-tracking win rates and historical signal outcomes via `accuracy_verifier.py` (checks subsequent OHLCV candles with zero hardcoded defaults) |
+| `/api/market/backtest` | `GET` | `Bearer <JWT>` | Vectorized NumPy/Pandas strategy replay query with 1% capital risk position sizing across NSE & BSE historical candles |
+| `/api/market/backtest` | `POST` | `Bearer <JWT>` | Vectorized NumPy/Pandas strategy replay execution with custom symbol, strategy, and date ranges |
 | `/api/user/delete-account` | `POST` | `Bearer <JWT>` | Cascades permanent deletion across credentials, watchlists, devices, and auth identity |
 | `/api/cron/multi-user-scan` | `POST` | `X-Cron-Secret` | Evaluates all active portfolios/watchlists every 5 minutes during NSE hours (Executes synchronously with `_scan_in_progress` lock to guarantee 100% CPU allocation under Cloud Run Free Tier, returning execution telemetry) |
 | `/api/cron/morning-token-reminder` | `POST` | `X-Cron-Secret` | Dispatches 08:50 AM IST reminders to users with expired daily Demat tokens |

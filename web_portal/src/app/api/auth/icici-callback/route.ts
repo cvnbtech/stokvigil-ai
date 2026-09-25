@@ -2,12 +2,43 @@ import { NextRequest, NextResponse } from "next/server";
 
 function sanitizeToken(token: string): string {
   if (!token) return "";
-  const cleaned = token.trim();
-  // Valid ICICI session tokens are alphanumeric with underscores, hyphens, and dots
-  if (!/^[a-zA-Z0-9_\-\.]{4,128}$/.test(cleaned)) {
+  let cleaned = token.trim();
+  try {
+    cleaned = decodeURIComponent(cleaned);
+  } catch (_) {}
+  // If user or browser passed "apisession=XYZ"
+  if (cleaned.toLowerCase().includes("apisession=")) {
+    cleaned = cleaned.split(/apisession=/i)[1].split("&")[0];
+  }
+  cleaned = cleaned.trim();
+  // Valid ICICI session tokens are alphanumeric with underscores, hyphens, dots, +, and = (Base64 padding)
+  if (!/^[a-zA-Z0-9_\-\.+=]{4,128}$/.test(cleaned)) {
     return "";
   }
   return cleaned;
+}
+
+function extractApiSession(params: URLSearchParams | FormData | Record<string, any>): string {
+  if (params instanceof URLSearchParams) {
+    for (const [k, v] of params.entries()) {
+      if (k.toLowerCase() === "apisession" && v.trim()) {
+        return v.trim();
+      }
+    }
+  } else if (typeof (params as any)?.entries === "function") {
+    for (const [k, v] of (params as FormData).entries()) {
+      if (k.toLowerCase() === "apisession" && typeof v === "string" && v.trim()) {
+        return v.trim();
+      }
+    }
+  } else if (params && typeof params === "object") {
+    for (const [k, v] of Object.entries(params)) {
+      if (k.toLowerCase() === "apisession" && typeof v === "string" && v.trim()) {
+        return v.trim();
+      }
+    }
+  }
+  return "";
 }
 
 function escapeHtml(unsafe: string): string {
@@ -222,16 +253,16 @@ function renderCallbackHtml(rawToken: string) {
       <div class="token-val" id="tokenText">${displayToken || "No valid apisession detected in URL"}</div>
     </div>
 
-    ${safeToken ? `
-    <button class="btn-copy" id="copyBtn" onclick="copyToken()">
-      📋 Copy Session Token
-    </button>
-    <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer">
-      🔒 1-Tap Open in StokVigil App
-    </a>
-    ` : ""}
+    <div id="tokenActions" style="display: ${safeToken ? 'block' : 'none'};">
+      <button class="btn-copy" id="copyBtn" onclick="copyToken()">
+        📋 Copy Session Token
+      </button>
+      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer">
+        🔒 1-Tap Open in StokVigil App
+      </a>
+    </div>
 
-    <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" rel="noopener noreferrer" onclick="try { sessionStorage.setItem('stokvigil_pending_apisession', '${safeToken}'); } catch(_){}">
+    <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" id="portalBtn" rel="noopener noreferrer" onclick="try { sessionStorage.setItem('stokvigil_pending_apisession', window._activeSessionToken || '${safeToken}'); } catch(_){}">
       🌐 Open in StokVigil Web Portal →
     </a>
 
@@ -241,6 +272,57 @@ function renderCallbackHtml(rawToken: string) {
   </div>
 
   <script>
+    window._activeSessionToken = ${JSON.stringify(safeToken)};
+
+    // Auto-Recovery on Client: check window.location.search, hash, and sessionStorage
+    try {
+      if (!window._activeSessionToken && typeof window !== 'undefined') {
+        var urlSearch = new URLSearchParams(window.location.search);
+        var urlHash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        var foundToken = "";
+
+        for (var p of urlSearch.entries()) {
+          if (p[0].toLowerCase() === "apisession" && p[1].trim()) {
+            foundToken = p[1].trim();
+            break;
+          }
+        }
+        if (!foundToken) {
+          for (var hp of urlHash.entries()) {
+            if (hp[0].toLowerCase() === "apisession" && hp[1].trim()) {
+              foundToken = hp[1].trim();
+              break;
+            }
+          }
+        }
+        if (!foundToken) {
+          foundToken = sessionStorage.getItem('stokvigil_pending_apisession') || "";
+        }
+
+        if (foundToken) {
+          try { foundToken = decodeURIComponent(foundToken); } catch (_) {}
+          if (foundToken.toLowerCase().indexOf("apisession=") !== -1) {
+            foundToken = foundToken.split(/apisession=/i)[1].split("&")[0];
+          }
+          foundToken = foundToken.trim();
+          if (/^[a-zA-Z0-9_\-\.+=]{4,128}$/.test(foundToken)) {
+            window._activeSessionToken = foundToken;
+            var tBox = document.getElementById('tokenText');
+            if (tBox) tBox.textContent = foundToken;
+            var actBox = document.getElementById('tokenActions');
+            if (actBox) actBox.style.display = 'block';
+            var appLink = document.getElementById('appBtn');
+            if (appLink) appLink.href = "stokvigil://breeze-callback?apisession=" + encodeURIComponent(foundToken);
+            var portLink = document.getElementById('portalBtn');
+            if (portLink) portLink.href = "/?apisession=" + encodeURIComponent(foundToken);
+            try { sessionStorage.setItem('stokvigil_pending_apisession', foundToken); } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      console.debug("Session token client extraction notice:", e);
+    }
+
     // Security: Immediately scrub sensitive session token from browser address bar & history
     try {
       if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
@@ -267,7 +349,7 @@ function renderCallbackHtml(rawToken: string) {
     }
 
     function copyToken() {
-      const token = ${JSON.stringify(safeToken)};
+      const token = window._activeSessionToken || ${JSON.stringify(safeToken)};
       if (!token) return;
       
       const onSuccess = () => {
@@ -326,7 +408,7 @@ const CALLBACK_SECURITY_HEADERS = {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const apisession = searchParams.get("apisession") || searchParams.get("api_session") || "";
+  const apisession = extractApiSession(searchParams);
 
   return new NextResponse(renderCallbackHtml(apisession), {
     status: 200,
@@ -336,21 +418,21 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  let apisession = searchParams.get("apisession") || searchParams.get("api_session") || "";
+  let apisession = extractApiSession(searchParams);
 
   if (!apisession) {
     try {
       const contentType = request.headers.get("content-type") || "";
       if (contentType.includes("form") || contentType.includes("urlencoded")) {
         const formData = await request.formData();
-        apisession = (formData.get("apisession") as string) || (formData.get("api_session") as string) || "";
+        apisession = extractApiSession(formData);
       } else if (contentType.includes("json")) {
         const json = await request.json();
-        apisession = json.apisession || json.api_session || "";
+        apisession = extractApiSession(json);
       } else {
         const text = await request.text();
         const bodyParams = new URLSearchParams(text);
-        apisession = bodyParams.get("apisession") || bodyParams.get("api_session") || "";
+        apisession = extractApiSession(bodyParams);
       }
     } catch {
       // Fallback

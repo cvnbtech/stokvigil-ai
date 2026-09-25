@@ -194,9 +194,12 @@ export default function IciciKeyModal({
           onClick={saveKey}
           disabled={!sessionTok.trim() || keySaving}
           style={{
-            width: "100%", padding: "12px 16px", borderRadius: 12,
+            width: "100%", padding: "12px 16px", borderRadius: 14,
+            background: "linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)",
+            boxShadow: (!sessionTok.trim() || keySaving) ? "0 4px 14px rgba(6,182,212,0.15)" : "0 8px 24px rgba(6,182,212,0.35)",
             opacity: (!sessionTok.trim() || keySaving) ? 0.45 : 1,
-            cursor: (!sessionTok.trim() || keySaving) ? "not-allowed" : "pointer"
+            cursor: (!sessionTok.trim() || keySaving) ? "not-allowed" : "pointer",
+            transition: "all 0.2s ease"
           }}
         >
           {keySaving ? "⏳ Connecting & Syncing Demat..." : "🔐 Connect Demat & Sync Holdings"}
