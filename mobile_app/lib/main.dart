@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/theme.dart';
 import 'screens/auth_screen.dart';
@@ -39,13 +40,15 @@ class MainNavigationWrapper extends StatefulWidget {
   State<MainNavigationWrapper> createState() => _MainNavigationWrapperState();
 }
 
-class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
+class _MainNavigationWrapperState extends State<MainNavigationWrapper> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkInitialDeepLink();
     if (SupabaseService.isConfigured) {
       _authSubscription = SupabaseService().client.auth.onAuthStateChange.listen((data) {
         if (mounted) {
@@ -59,18 +62,55 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authSubscription?.cancel();
     super.dispose();
+  }
+
+  void _checkInitialDeepLink() {
+    final route = WidgetsBinding.instance.platformDispatcher.defaultRouteName;
+    _handleIncomingDeepLink(route);
+  }
+
+  @override
+  void didPushRouteInformation(RouteInformation routeInformation) {
+    super.didPushRouteInformation(routeInformation);
+    _handleIncomingDeepLink(routeInformation.uri.toString());
+  }
+
+  void _handleIncomingDeepLink(String? rawRoute) {
+    if (rawRoute == null || rawRoute.isEmpty) return;
+    if (rawRoute.contains("apisession=") || rawRoute.contains("breeze-callback")) {
+      String? token;
+      try {
+        final uri = Uri.parse(rawRoute);
+        token = uri.queryParameters['apisession'];
+      } catch (_) {}
+      if (token == null && rawRoute.contains("apisession=")) {
+        token = rawRoute.split("apisession=")[1].split("&")[0];
+      }
+      if (token != null && token.isNotEmpty) {
+        token = Uri.decodeComponent(token).trim();
+        // Place token in system clipboard for immediate redundancy
+        Clipboard.setData(ClipboardData(text: token));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _openCredentialsSetup(initialToken: token);
+          }
+        });
+      }
+    }
   }
 
   void _onTabTapped(int index) {
     setState(() => _currentIndex = index);
   }
 
-  void _openCredentialsSetup() {
+  void _openCredentialsSetup({String? initialToken}) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => IciciCredentialsScreen(
+          initialSessionToken: initialToken,
           onSaved: () {
             Navigator.of(context).pop();
             setState(() {});

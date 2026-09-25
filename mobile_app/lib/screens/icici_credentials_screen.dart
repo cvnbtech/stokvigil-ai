@@ -10,14 +10,15 @@ import '../widgets/broker_icons.dart';
 
 class IciciCredentialsScreen extends StatefulWidget {
   final VoidCallback onSaved;
+  final String? initialSessionToken;
 
-  const IciciCredentialsScreen({super.key, required this.onSaved});
+  const IciciCredentialsScreen({super.key, required this.onSaved, this.initialSessionToken});
 
   @override
   State<IciciCredentialsScreen> createState() => _IciciCredentialsScreenState();
 }
 
-class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
+class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with WidgetsBindingObserver {
   final _sessionTokenController = TextEditingController();
   String _selectedBroker = 'icici';
   String _loginUrl = '';
@@ -29,6 +30,10 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.initialSessionToken != null && widget.initialSessionToken!.isNotEmpty) {
+      _sessionTokenController.text = widget.initialSessionToken!;
+    }
     _sessionTokenController.addListener(_onFieldChanged);
     _loadBrokerAndCredentials();
   }
@@ -78,21 +83,66 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sessionTokenController.removeListener(_onFieldChanged);
     _sessionTokenController.dispose();
     super.dispose();
   }
 
-  Future<void> _pasteFromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null && mounted) {
-      String clean = data!.text!.trim();
-      if (clean.contains("apisession=")) {
-        clean = clean.split("apisession=")[1].split("&")[0];
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _autoDetectClipboardToken();
+    }
+  }
+
+  Future<void> _autoDetectClipboardToken() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text != null && text.isNotEmpty && mounted) {
+        String clean = text;
+        if (clean.contains("apisession=")) {
+          clean = clean.split("apisession=")[1].split("&")[0];
+        }
+        clean = Uri.decodeComponent(clean).trim();
+        // If clean looks like a valid ICICI session token and is not already set
+        if (clean.length >= 4 && clean.length <= 128 && clean != _sessionTokenController.text.trim()) {
+          if (RegExp(r'^[a-zA-Z0-9_\-\.+=]{4,128}$').hasMatch(clean)) {
+            setState(() {
+              _sessionTokenController.text = clean;
+            });
+            ErrorHandler.showSuccessSnackBar(context, "⚡ Session token auto-detected and pasted from clipboard!");
+          }
+        }
       }
-      clean = Uri.decodeComponent(clean).trim();
-      _sessionTokenController.text = clean;
-      ErrorHandler.showSuccessSnackBar(context, "Session token pasted from clipboard!");
+    } catch (_) {}
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim();
+      if (text != null && text.isNotEmpty && mounted) {
+        String clean = text;
+        if (clean.contains("apisession=")) {
+          clean = clean.split("apisession=")[1].split("&")[0];
+        }
+        clean = Uri.decodeComponent(clean).trim();
+        setState(() {
+          _sessionTokenController.text = clean;
+        });
+        ErrorHandler.showSuccessSnackBar(context, "Session token pasted from clipboard!");
+      } else if (mounted) {
+        ErrorHandler.showErrorSnackBar(
+          context,
+          "Clipboard is empty. Complete login in browser and tap 'Copy Session Token' first.",
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(context, "Unable to access clipboard: $e");
+      }
     }
   }
 

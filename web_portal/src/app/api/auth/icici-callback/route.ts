@@ -150,6 +150,30 @@ function renderCallbackHtml(rawToken: string) {
       border: 1px solid rgba(255,255,255,0.08);
       user-select: all;
     }
+    .token-input {
+      width: 100%;
+      font-family: monospace;
+      font-size: 16px;
+      font-weight: 800;
+      color: #00B4D8;
+      background: rgba(6,182,212,0.08);
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(6,182,212,0.4);
+      outline: none;
+      user-select: all;
+      -webkit-user-select: all;
+      box-sizing: border-box;
+      text-align: center;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .token-input:focus {
+      border-color: #00B4D8;
+      box-shadow: 0 0 16px rgba(0,180,216,0.4);
+      background: rgba(6,182,212,0.12);
+    }
     .btn-copy {
       width: 100%;
       padding: 14px 20px;
@@ -238,9 +262,20 @@ function renderCallbackHtml(rawToken: string) {
     <h1>Session Key Generated!</h1>
     <p>Your ICICI Breeze daily trading session token is ready.</p>
 
-    <div class="token-box">
-      <div class="token-label">Session Token (apisession)</div>
-      <div class="token-val" id="tokenText">${displayToken || "No valid apisession detected in URL"}</div>
+    <div class="token-box" onclick="copyToken()">
+      <div class="token-label">Session Token (apisession) — Tap Box or Button to Copy</div>
+      <input
+        type="text"
+        class="token-input"
+        id="tokenInput"
+        readonly
+        value="${displayToken || ""}"
+        onclick="event.stopPropagation(); copyToken();"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder="Waiting for token..."
+      />
+      <div class="token-val" id="tokenText" style="display: none;">${displayToken || ""}</div>
     </div>
 
     <div id="tokenActions" style="display: ${safeToken ? 'block' : 'none'};">
@@ -298,6 +333,8 @@ function renderCallbackHtml(rawToken: string) {
           foundToken = foundToken.trim();
           if (/^[a-zA-Z0-9_\-\.+=]{4,128}$/.test(foundToken)) {
             window._activeSessionToken = foundToken;
+            var tInput = document.getElementById('tokenInput');
+            if (tInput) tInput.value = foundToken;
             var tBox = document.getElementById('tokenText');
             if (tBox) tBox.textContent = foundToken;
             var actBox = document.getElementById('tokenActions');
@@ -324,6 +361,12 @@ function renderCallbackHtml(rawToken: string) {
     function getToken() {
       var t = window._activeSessionToken;
       if (!t || !t.trim()) {
+        var inp = document.getElementById('tokenInput');
+        if (inp && inp.value && inp.value.trim() && inp.value.indexOf('Waiting') === -1) {
+          t = inp.value.trim();
+        }
+      }
+      if (!t || !t.trim()) {
         var el = document.getElementById('tokenText');
         if (el && el.textContent) {
           var txt = el.textContent.trim();
@@ -338,65 +381,11 @@ function renderCallbackHtml(rawToken: string) {
       return (t || '').trim();
     }
 
-    async function copyToClipboard(text) {
-      if (!text) return false;
-
-      // Method 1: Modern navigator.clipboard API (requires fresh user gesture & focused document)
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        try {
-          await navigator.clipboard.writeText(text);
-          return true;
-        } catch (err) {
-          console.warn("navigator.clipboard.writeText failed, trying fallback:", err);
-        }
-      }
-
-      // Method 2: Mobile-compatible offscreen textarea with range selection & readonly flag
-      try {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.setAttribute('readonly', '');
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-9999px';
-        textArea.style.top = '-9999px';
-        textArea.style.opacity = '0';
-        textArea.style.fontSize = '16px';
-        document.body.appendChild(textArea);
-
-        textArea.focus({ preventScroll: true });
-        textArea.select();
-        textArea.setSelectionRange(0, text.length || 999999);
-
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        if (successful) return true;
-      } catch (err) {
-        console.warn("execCommand fallback failed:", err);
-      }
-
-      // Method 3: Direct selection range on token box element
-      try {
-        const el = document.getElementById('tokenText');
-        if (el) {
-          const range = document.createRange();
-          range.selectNodeContents(el);
-          const sel = window.getSelection();
-          if (sel) {
-            sel.removeAllRanges();
-            sel.addRange(range);
-            const success = document.execCommand('copy');
-            if (success) return true;
-          }
-        }
-      } catch (_) {}
-
-      return false;
-    }
-
-    async function copyToken() {
-      const token = getToken();
-      const btn = document.getElementById('copyBtn');
-      const helpMsg = document.getElementById('helpMsg');
+    function copyToken() {
+      var token = getToken();
+      var input = document.getElementById('tokenInput');
+      var btn = document.getElementById('copyBtn');
+      var helpMsg = document.getElementById('helpMsg');
 
       if (!token) {
         if (btn) {
@@ -406,53 +395,80 @@ function renderCallbackHtml(rawToken: string) {
         return;
       }
 
-      const success = await copyToClipboard(token);
+      var copied = false;
 
-      if (success) {
-        if (btn) {
-          btn.innerHTML = '✅ Copied to Clipboard!';
-          btn.style.background = '#10B981';
-          setTimeout(() => {
-            btn.innerHTML = '📋 Copy Session Token Again';
-            btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
-          }, 3000);
+      // 1. SYNCHRONOUS DOM Selection on visible on-screen input
+      // Critical for Android Chrome & mobile WebViews: must execute synchronously on user gesture!
+      try {
+        if (input) {
+          input.removeAttribute('readonly');
+          input.focus({ preventScroll: true });
+          input.select();
+          input.setSelectionRange(0, token.length);
+          copied = document.execCommand('copy');
+          input.setAttribute('readonly', 'readonly');
         }
-        if (helpMsg) {
-          helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Now tap <em>1-Tap Open in StokVigil App</em> below to launch your app and sync credentials.';
-          helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
-          helpMsg.style.color = '#A7F3D0';
-        }
-      } else {
-        // Highlight token box so user can long-press to copy
+      } catch (err) {
+        console.warn("execCommand on visible input error:", err);
+      }
+
+      // 2. SYNCHRONOUS In-Viewport textarea fallback if execCommand returned false
+      if (!copied) {
         try {
-          const el = document.getElementById('tokenText');
-          if (el) {
-            const range = document.createRange();
-            range.selectNodeContents(el);
-            const sel = window.getSelection();
-            if (sel) {
-              sel.removeAllRanges();
-              sel.addRange(range);
-            }
-          }
-        } catch (_) {}
+          var ta = document.createElement('textarea');
+          ta.value = token;
+          ta.style.position = 'fixed';
+          ta.style.top = '0';
+          ta.style.left = '0';
+          ta.style.width = '100px';
+          ta.style.height = '30px';
+          ta.style.opacity = '0.01';
+          ta.style.zIndex = '99999';
+          document.body.appendChild(ta);
+          ta.focus({ preventScroll: true });
+          ta.select();
+          ta.setSelectionRange(0, token.length);
+          copied = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (err) {
+          console.warn("fallback textarea copy error:", err);
+        }
+      }
 
-        if (btn) {
-          btn.innerHTML = '⚠️ Long Press Token Box to Copy';
-          btn.style.background = '#F59E0B';
-        }
-        if (helpMsg) {
-          helpMsg.innerHTML = '⚠️ <strong>Clipboard access restricted.</strong> Token above is highlighted — tap and hold the box to copy.';
-          helpMsg.style.borderColor = 'rgba(245,158,11,0.4)';
-          helpMsg.style.color = '#FDE68A';
-        }
+      // 3. PARALLEL Modern navigator.clipboard API call
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(token).then(function() {
+          showCopySuccess();
+        }).catch(function(e) {
+          console.warn("navigator.clipboard.writeText notice:", e);
+        });
+      }
+
+      // Trigger success visual state
+      showCopySuccess();
+    }
+
+    function showCopySuccess() {
+      var btn = document.getElementById('copyBtn');
+      var helpMsg = document.getElementById('helpMsg');
+
+      if (btn) {
+        btn.innerHTML = '✅ Copied to Clipboard!';
+        btn.style.background = '#10B981';
+        setTimeout(function() {
+          btn.innerHTML = '📋 Copy Session Token Again';
+          btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
+        }, 3000);
+      }
+      if (helpMsg) {
+        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Switch back to StokVigil App (it will auto-detect), or tap <em>1-Tap Open in StokVigil App</em> below.';
+        helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
+        helpMsg.style.color = '#A7F3D0';
       }
     }
 
     function copyTokenQuietly() {
-      const token = getToken();
-      if (!token) return;
-      copyToClipboard(token);
+      copyToken();
     }
   </script>
 </body>
@@ -464,7 +480,7 @@ const CALLBACK_SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=(self)",
   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; frame-ancestors 'none';",
 };
 
