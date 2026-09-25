@@ -20,7 +20,7 @@ class IciciCredentialsScreen extends StatefulWidget {
 class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   final _sessionTokenController = TextEditingController();
   String _selectedBroker = 'icici';
-  String _loginUrl = 'https://api.icicidirect.com/apiuser/login';
+  String _loginUrl = '';
   bool _isLoading = false;
   bool _isSuccess = false;
   bool _hasExistingValidSession = false;
@@ -40,13 +40,25 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   bool get _isFormValid => _sessionTokenController.text.trim().isNotEmpty;
 
   Future<void> _loadBrokerAndCredentials() async {
+    // 1. Directly fetch official broker login URL (public endpoint, works immediately)
+    try {
+      final directUrl = await ApiService().fetchBrokerLoginUrl(_selectedBroker);
+      if (directUrl != null && directUrl.isNotEmpty && directUrl.contains("api_key=") && !directUrl.endsWith("api_key=") && mounted) {
+        setState(() {
+          _loginUrl = directUrl;
+        });
+      }
+    } catch (e) {
+      debugPrint("Could not fetch direct broker login URL: $e");
+    }
+
     final user = SupabaseService().currentUser;
     if (user == null) return;
     try {
       final creds = await ApiService().fetchUserCredentials(user.id);
       if (creds != null && mounted) {
         final url = creds['login_url']?.toString();
-        if (url != null && url.isNotEmpty) {
+        if (url != null && url.isNotEmpty && url.contains("api_key=") && !url.endsWith("api_key=")) {
           _loginUrl = url;
         }
 
@@ -85,6 +97,18 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
   }
 
   void _openBrokerLogin() async {
+    if (_loginUrl.isEmpty || !_loginUrl.contains("api_key=") || _loginUrl.endsWith("api_key=")) {
+      if (mounted) {
+        ErrorHandler.showErrorSnackBar(
+          context,
+          "⚠️ Broker login URL is loading or server ICICI Master App Key is unconfigured. Re-checking backend...",
+        );
+      }
+      await _loadBrokerAndCredentials();
+      if (_loginUrl.isEmpty || !_loginUrl.contains("api_key=") || _loginUrl.endsWith("api_key=")) {
+        return;
+      }
+    }
     final url = Uri.parse(_loginUrl);
     try {
       final success = await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -295,15 +319,17 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> {
                       child: Center(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            IciciDirectLogo(size: 18),
-                            SizedBox(width: 8),
+                          children: [
+                            const IciciDirectLogo(size: 18),
+                            const SizedBox(width: 8),
                             Text(
-                              "1-Tap ICICI Direct Login",
-                              style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 13),
+                              (_loginUrl.isNotEmpty && _loginUrl.contains("api_key=") && !_loginUrl.endsWith("api_key="))
+                                  ? "1-Tap ICICI Direct Login"
+                                  : "Connecting to ICICI Direct...",
+                              style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 13),
                             ),
-                            SizedBox(width: 6),
-                            Icon(Icons.open_in_new, color: AppTheme.cyan, size: 16),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.open_in_new, color: AppTheme.cyan, size: 16),
                           ],
                         ),
                       ),

@@ -22,6 +22,11 @@ class IciciBrokerAdapter(BaseBrokerAdapter):
 
     def get_login_url(self, redirect_uri: Optional[str] = None) -> str:
         master_key = (settings.ICICI_MASTER_APP_KEY or "").strip()
+        if not master_key:
+            logger.warning(
+                "ICICI_MASTER_APP_KEY is unconfigured on the server. "
+                "Login URL will be generated without an api_key parameter."
+            )
         encoded_key = urllib.parse.quote(master_key)
         return f"https://api.icicidirect.com/apiuser/login?api_key={encoded_key}"
 

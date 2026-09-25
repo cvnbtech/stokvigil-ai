@@ -417,7 +417,7 @@ Users can permanently delete their account directly from the **Settings** page:
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
    ```
-3. Run test suite (143 automated unit tests across 15 suites, including institutional engines, multi-broker adapters, quantitative upgrades, and real price-tracking accuracy verifiers):
+3. Run test suite (144 automated unit tests across 15 suites, including institutional engines, multi-broker adapters, quantitative upgrades, and real price-tracking accuracy verifiers):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

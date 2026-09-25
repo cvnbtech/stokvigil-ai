@@ -479,13 +479,19 @@ export default function App() {
     }
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/broker/icici/login-url`, { headers });
+      const base = BACKEND_URL ? BACKEND_URL.replace(/\/+$/, '') : '';
+      let res = await fetch(`${base}/api/broker/icici/login-url`, { headers });
+      if (!res.ok && base) {
+        res = await fetch(`/api/broker/icici/login-url`, { headers });
+      }
       if (res.ok) {
         const d = await res.json();
         if (d.login_url) setBrokerLoginUrl(d.login_url);
       }
-    } catch (_) {}
-  }, [user?.id, loadPortfolioData]);
+    } catch (err) {
+      console.warn("Could not load broker login URL:", err);
+    }
+  }, [user?.id, loadPortfolioData, getAuthHeaders]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {

@@ -74,8 +74,13 @@ jobs:
             exit 1
           fi
 
-          echo "Compiling APK with SUPABASE_URL length: ${#SUPA_URL}, SUPABASE_ANON_KEY length: ${#SUPA_KEY}"
-          flutter build apk --release --no-tree-shake-icons --dart-define=SUPABASE_URL="$SUPA_URL" --dart-define=SUPABASE_ANON_KEY="$SUPA_KEY" --dart-define=BACKEND_URL="$BACKEND_URL"
+          if [ -z "$BACKEND_URL" ]; then
+            echo "❌ Error: STOKVIGIL_BACKEND_URL / BACKEND_URL is not configured in GitHub Secrets or Variables."
+            exit 1
+          fi
+
+          echo "Compiling APK with SUPABASE_URL length: ${#SUPA_URL}, SUPABASE_ANON_KEY length: ${#SUPA_KEY}, BACKEND_URL length: ${#BACKEND_URL}"
+          flutter build apk --release --no-tree-shake-icons --dart-define=SUPABASE_URL="$SUPA_URL" --dart-define=SUPABASE_ANON_KEY="$SUPA_KEY" --dart-define=BACKEND_URL="$BACKEND_URL" --dart-define=STOKVIGIL_BACKEND_URL="$BACKEND_URL"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

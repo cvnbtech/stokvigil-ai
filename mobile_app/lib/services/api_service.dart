@@ -64,6 +64,24 @@ class ApiService {
     }
   }
 
+  Future<String?> fetchBrokerLoginUrl([String broker = 'icici']) async {
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$baseUrl/api/broker/$broker/login-url'),
+            headers: _getAuthHeaders(),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['login_url']?.toString();
+      }
+    } catch (e) {
+      debugPrint("API Error fetching broker login URL: $e");
+    }
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> fetchSupportedBrokers() async {
     try {
       final res = await http

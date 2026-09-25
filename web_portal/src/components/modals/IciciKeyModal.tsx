@@ -30,7 +30,7 @@ export default function IciciKeyModal({
   const [activeTab, setActiveTab] = useState<string>(selectedBroker || "icici");
   const [copySuccess, setCopySuccess] = useState(false);
 
-  const effectiveLoginUrl = loginUrl || "https://api.icicidirect.com/apiuser/login";
+  const effectiveLoginUrl = (loginUrl && loginUrl.includes("api_key=") && !loginUrl.endsWith("api_key=")) ? loginUrl : "";
 
   const handlePasteClipboard = async () => {
     try {
@@ -150,15 +150,22 @@ export default function IciciKeyModal({
           </div>
           <button
             type="button"
-            onClick={() => window.open(effectiveLoginUrl, "_blank")}
+            onClick={() => {
+              if (!loginUrl || !loginUrl.includes("api_key=") || loginUrl.endsWith("api_key=")) {
+                alert("⚠️ Broker login URL is still loading from the server, or ICICI_MASTER_APP_KEY is unconfigured on Cloud Run. Please ensure your backend is reachable.");
+                return;
+              }
+              window.open(loginUrl, "_blank");
+            }}
             style={{
               width: "100%", background: "rgba(6,182,212,0.12)", border: `1.5px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "10px 14px", color: C.cyan, fontSize: 12, fontWeight: 900, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              opacity: (loginUrl && loginUrl.includes("api_key=") && !loginUrl.endsWith("api_key=")) ? 1 : 0.7,
             }}
           >
             <IciciDirectLogo size={18} />
-            <span>1-Click ICICI Direct Login</span>
+            <span>{(loginUrl && loginUrl.includes("api_key=") && !loginUrl.endsWith("api_key=")) ? "1-Click ICICI Direct Login" : "Connecting to Broker Login..."}</span>
             <span style={{ fontSize: 11 }}>↗</span>
           </button>
         </div>
