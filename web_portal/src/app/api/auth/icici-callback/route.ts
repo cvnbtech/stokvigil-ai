@@ -173,35 +173,25 @@ function renderCallbackHtml(rawToken: string) {
     }
     .btn-app {
       width: 100%;
-      padding: 13px 18px;
+      padding: 14px 20px;
       border-radius: 14px;
-      border: 1.5px dashed rgba(139,92,246,0.35);
-      background: rgba(139,92,246,0.05);
-      color: #64748B;
-      font-size: 13.5px;
+      border: 1.5px solid rgba(139,92,246,0.85);
+      background: linear-gradient(135deg, rgba(139,92,246,0.25) 0%, rgba(99,102,241,0.2) 100%);
+      color: #EDE9FE;
+      font-size: 14px;
       font-weight: 900;
-      cursor: not-allowed;
+      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       text-decoration: none;
       margin-bottom: 10px;
-      opacity: 0.45;
-      pointer-events: none;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .btn-app.enabled {
-      opacity: 1;
-      pointer-events: auto;
-      cursor: pointer;
-      border: 1.5px solid rgba(139,92,246,0.85);
-      background: linear-gradient(135deg, rgba(139,92,246,0.25) 0%, rgba(99,102,241,0.2) 100%);
-      color: #EDE9FE;
-      box-shadow: 0 0 24px rgba(139,92,246,0.4), 0 4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 0 20px rgba(139,92,246,0.35), 0 4px 12px rgba(0,0,0,0.5);
       animation: pulseGlow 2s infinite ease-in-out;
+      transition: all 0.2s ease;
     }
-    .btn-app.enabled:active {
+    .btn-app:active {
       transform: scale(0.98);
     }
     @keyframes pulseGlow {
@@ -254,12 +244,12 @@ function renderCallbackHtml(rawToken: string) {
     </div>
 
     <div id="tokenActions" style="display: ${safeToken ? 'block' : 'none'};">
+      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer" onclick="copyTokenQuietly()">
+        📱 1-Tap Open in StokVigil App →
+      </a>
       <button class="btn-copy" id="copyBtn" onclick="copyToken()">
         📋 Copy Session Token
       </button>
-      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer">
-        🔒 1-Tap Open in StokVigil App
-      </a>
     </div>
 
     <a href="/${safeToken ? `?apisession=${encodeURIComponent(safeToken)}` : ""}" class="btn-portal" id="portalBtn" rel="noopener noreferrer" onclick="try { sessionStorage.setItem('stokvigil_pending_apisession', window._activeSessionToken || '${safeToken}'); } catch(_){}">
@@ -267,7 +257,7 @@ function renderCallbackHtml(rawToken: string) {
     </a>
 
     <div class="help-card" id="helpMsg">
-      📱 <strong>On Mobile App:</strong> Click <em>Copy Session Token</em> above to unlock 1-Tap App launch or paste into your app.
+      📱 <strong>On Mobile App:</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app, or tap <em>Copy Session Token</em> and paste into the app.
     </div>
   </div>
 
@@ -330,21 +320,12 @@ function renderCallbackHtml(rawToken: string) {
       }
     } catch (_) {}
 
-    let hasCopied = false;
-
-    function enableAppButton() {
-      if (hasCopied) return;
-      hasCopied = true;
-      const appBtn = document.getElementById('appBtn');
-      const helpMsg = document.getElementById('helpMsg');
-      if (appBtn) {
-        appBtn.classList.add('enabled');
-        appBtn.innerHTML = '📱 1-Tap Open in StokVigil App →';
-      }
-      if (helpMsg) {
-        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app with the token saved.';
-        helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
-        helpMsg.style.color = '#A7F3D0';
+    function copyTokenQuietly() {
+      const token = window._activeSessionToken || ${JSON.stringify(safeToken)};
+      if (!token) return;
+      fallbackCopy(token);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(token).catch(function() {});
       }
     }
 
@@ -352,23 +333,25 @@ function renderCallbackHtml(rawToken: string) {
       const token = window._activeSessionToken || ${JSON.stringify(safeToken)};
       if (!token) return;
       
-      const onSuccess = () => {
-        const btn = document.getElementById('copyBtn');
-        if (btn) {
-          btn.innerHTML = '✅ Copied to Clipboard!';
-          btn.style.background = '#10B981';
-          setTimeout(() => {
-            btn.innerHTML = '📋 Copy Session Token Again';
-            btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
-          }, 2500);
-        }
-        enableAppButton();
-      };
+      const btn = document.getElementById('copyBtn');
+      const helpMsg = document.getElementById('helpMsg');
+      if (btn) {
+        btn.innerHTML = '✅ Copied to Clipboard!';
+        btn.style.background = '#10B981';
+        setTimeout(() => {
+          btn.innerHTML = '📋 Copy Session Token Again';
+          btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
+        }, 3000);
+      }
+      if (helpMsg) {
+        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Switch back to StokVigil App and tap <em>PASTE</em>, or tap <em>1-Tap Open in StokVigil App</em> above.';
+        helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
+        helpMsg.style.color = '#A7F3D0';
+      }
 
+      fallbackCopy(token);
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(token).then(onSuccess).catch(() => fallbackCopy(token, onSuccess));
-      } else {
-        fallbackCopy(token, onSuccess);
+        navigator.clipboard.writeText(token).catch(function() {});
       }
     }
 
@@ -377,21 +360,25 @@ function renderCallbackHtml(rawToken: string) {
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
-        textArea.style.opacity = '0';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.width = '2em';
+        textArea.style.height = '2em';
+        textArea.style.padding = '0';
+        textArea.style.border = 'none';
+        textArea.style.outline = 'none';
+        textArea.style.boxShadow = 'none';
+        textArea.style.background = 'transparent';
         document.body.appendChild(textArea);
         textArea.focus();
         textArea.select();
         document.execCommand('copy');
         document.body.removeChild(textArea);
-        cb();
+        if (cb) cb();
       } catch (err) {
-        cb();
+        if (cb) cb();
       }
     }
-
-    document.addEventListener('copy', () => {
-      enableAppButton();
-    });
   </script>
 </body>
 </html>`;

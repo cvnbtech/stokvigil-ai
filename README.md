@@ -416,6 +416,8 @@ Users can permanently delete their account directly from the **Settings** page:
    ALLOWED_ORIGINS=https://yourapp.vercel.app,http://localhost:3000
    STOKVIGIL_BACKEND_URL=https://your-backend.run.app
    WEB_PORTAL_URL=https://yourapp.vercel.app
+   ICICI_MASTER_APP_KEY=your-icici-master-app-key
+   ICICI_MASTER_SECRET_KEY=your-icici-master-secret-key
    ```
 3. Run test suite (144 automated unit tests across 15 suites, including institutional engines, multi-broker adapters, quantitative upgrades, and real price-tracking accuracy verifiers):
    ```bash
@@ -457,8 +459,9 @@ Users can permanently delete their account directly from the **Settings** page:
 1. Navigate to `mobile_app/`:
    ```bash
    cd mobile_app
-   flutter run
+   flutter run --dart-define=SUPABASE_URL="https://your-project.supabase.co" --dart-define=SUPABASE_ANON_KEY="your-anon-key" --dart-define=BACKEND_URL="https://your-backend.run.app"
    ```
+   *Note: For release builds via CI/CD, [`.github/workflows/build_apk.yml`](.github/workflows/build_apk.yml) automatically extracts `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `STOKVIGIL_BACKEND_URL` from GitHub Secrets/Variables and compiles the release APK.*
 
 ## ⏰ Automated Indian Market Cron Workflows (`.github/workflows/`)
 
