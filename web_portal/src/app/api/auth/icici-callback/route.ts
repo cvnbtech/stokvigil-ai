@@ -12,7 +12,7 @@ function sanitizeToken(token: string): string {
   }
   cleaned = cleaned.trim();
   // Valid ICICI session tokens are alphanumeric with underscores, hyphens, dots, +, and = (Base64 padding)
-  if (!/^[a-zA-Z0-9_\-\.+=]{4,128}$/.test(cleaned)) {
+  if (!/^[-a-zA-Z0-9_.+=]{4,128}$/.test(cleaned)) {
     return "";
   }
   return cleaned;
@@ -21,19 +21,22 @@ function sanitizeToken(token: string): string {
 function extractApiSession(params: URLSearchParams | FormData | Record<string, any>): string {
   if (params instanceof URLSearchParams) {
     for (const [k, v] of params.entries()) {
-      if (k.toLowerCase() === "apisession" && v.trim()) {
+      const key = k.toLowerCase();
+      if ((key === "apisession" || key === "api_session") && v.trim()) {
         return v.trim();
       }
     }
   } else if (typeof (params as any)?.entries === "function") {
     for (const [k, v] of (params as FormData).entries()) {
-      if (k.toLowerCase() === "apisession" && typeof v === "string" && v.trim()) {
+      const key = k.toLowerCase();
+      if ((key === "apisession" || key === "api_session") && typeof v === "string" && v.trim()) {
         return v.trim();
       }
     }
   } else if (params && typeof params === "object") {
     for (const [k, v] of Object.entries(params)) {
-      if (k.toLowerCase() === "apisession" && typeof v === "string" && v.trim()) {
+      const key = k.toLowerCase();
+      if ((key === "apisession" || key === "api_session") && typeof v === "string" && v.trim()) {
         return v.trim();
       }
     }
@@ -346,7 +349,7 @@ function renderCallbackHtml(rawToken: string) {
             foundToken = foundToken.split(/apisession=/i)[1].split("&")[0];
           }
           foundToken = foundToken.trim();
-          if (/^[a-zA-Z0-9_\-\.+=]{4,128}$/.test(foundToken)) {
+          if (/^[-a-zA-Z0-9_.+=]{4,128}$/.test(foundToken)) {
             window._activeSessionToken = foundToken;
             var tInput = document.getElementById('tokenInput');
             if (tInput) tInput.value = foundToken;
@@ -465,27 +468,32 @@ function renderCallbackHtml(rawToken: string) {
     }
 
     function copyToken() {
-      var token = getToken();
-      var btn = document.getElementById('copyBtn');
+      try {
+        var token = getToken();
+        var btn = document.getElementById('copyBtn');
 
-      if (!token) {
-        if (btn) {
-          btn.innerHTML = '⚠️ No Token Available';
-          btn.style.background = '#EF4444';
+        if (!token) {
+          if (btn) {
+            btn.innerHTML = '⚠️ No Token Available';
+            btn.style.background = '#EF4444';
+          }
+          return;
         }
-        return;
-      }
 
-      // Execute synchronous copy FIRST to guarantee user activation on mobile
-      copyToClipboard(token);
+        // Execute synchronous copy FIRST to guarantee user activation on mobile
+        copyToClipboard(token);
 
-      showCopySuccess();
+        showCopySuccess();
 
-      // Ensure focus remains on the Copy button so it never jumps to the App button
-      if (btn) {
-        try {
-          btn.focus({ preventScroll: true });
-        } catch (_) {}
+        // Ensure focus remains on the Copy button so it never jumps to the App button
+        if (btn) {
+          try {
+            btn.focus({ preventScroll: true });
+          } catch (_) {}
+        }
+      } catch (err) {
+        console.error("copyToken error:", err);
+        showCopySuccess();
       }
     }
 
@@ -519,6 +527,17 @@ function renderCallbackHtml(rawToken: string) {
         helpMsg.style.color = '#A7F3D0';
       }
     }
+
+    try {
+      var copyBtnEl = document.getElementById('copyBtn');
+      if (copyBtnEl) {
+        copyBtnEl.addEventListener('click', copyToken);
+        copyBtnEl.addEventListener('touchend', function(e) {
+          e.preventDefault();
+          copyToken();
+        });
+      }
+    } catch (_) {}
 
     document.addEventListener('copy', function() {
       showCopySuccess();
