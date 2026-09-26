@@ -26,10 +26,28 @@ import pandas as pd
 from app.config import settings
 from app.vault import vault
 from app.auth import get_current_user_id, get_optional_user_id, verify_user_access, mask_id, _filter
-from app.agent_runner import evaluate_user_portfolio_and_watchlists, fetch_stock_financials, fetch_user_portfolio, sync_market_cache_for_all_active_symbols, reset_ai_scan_counter, compute_tactical_levels
+from app.agent_runner import (
+    evaluate_user_portfolio_and_watchlists,
+    fetch_stock_financials,
+    fetch_user_portfolio,
+    sync_market_cache_for_all_active_symbols,
+    reset_ai_scan_counter,
+    compute_tactical_levels,
+    invalidate_demat_portfolio_cache,
+    update_demat_portfolio_cache,
+)
 from app.market_cache import market_cache
 from app.macro_filter import fetch_pre_market_war_room_data, fetch_macro_market_regime, fetch_market_breadth_adr, get_sector_20d_return, SECTOR_INDEX_MAP
-from app.notifications import send_telegram_notification, send_fcm_notification, format_pre_market_war_room_telegram, format_post_market_summary_telegram, close_telegram_client
+from app.notifications import (
+    send_telegram_notification,
+    send_fcm_notification,
+    format_pre_market_war_room_telegram,
+    format_post_market_summary_telegram,
+    close_telegram_client,
+    start_telegram_worker,
+    stop_telegram_worker,
+    enqueue_telegram_notification,
+)
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.backtester import run_vectorized_strategy_backtest
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
@@ -218,13 +236,15 @@ def get_supabase() -> Client:
 
 @app.on_event("startup")
 async def startup_event():
-    """Initializes Supabase PgBouncer Connection Pool on Port 6543."""
+    """Initializes Supabase PgBouncer Connection Pool on Port 6543 and Telegram queue worker."""
     await init_db_pool()
+    start_telegram_worker()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Gracefully closes all connections in the database pool and HTTP clients on shutdown."""
+    """Gracefully closes all connections in the database pool, HTTP clients, and background workers on shutdown."""
+    await stop_telegram_worker()
     await close_db_pool()
     await close_telegram_client()
 
@@ -1639,6 +1659,8 @@ def get_user_portfolio(
         "secret_key": secret_key,
         "session_token": session_token
     })
+    if raw_holdings:
+        update_demat_portfolio_cache(user_id, raw_holdings)
     
     # High-Speed Parallel Financials & Market Pricing for 100+ stocks
     def _price_single_holding(h: Dict[str, Any]) -> Dict[str, Any]:
@@ -1845,24 +1867,92 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
         # Pre-fetch macro data snapshot once for all users in this scan cycle (sub-millisecond RAM cache hit)
         macro_snapshot = await asyncio.to_thread(fetch_macro_market_regime)
 
-        # Step 2: High-speed in-memory evaluation across all users (PgBouncer pool first, REST fallback)
-        pooled_users = await fetch_all("SELECT id FROM profiles")
-        if pooled_users is not None:
-            users = pooled_users
+        # Step 2: High-speed in-memory evaluation across all users (Batch pre-fetch)
+        # Prefetch profiles, watchlists, and active credentials in 3 bulk queries (O(1) roundtrips for 500+ users)
+        pooled_profiles = await fetch_all(
+            "SELECT id, email, fcm_device_token, fcm_enabled, telegram_chat_id, telegram_enabled, alert_sensitivity, execution_mode, demat_auto_sync FROM profiles"
+        )
+        if pooled_profiles is not None:
+            profiles_data = pooled_profiles
         else:
-            profiles_res = db.table("profiles").select("id").execute()
-            users = profiles_res.data or []
-        
+            profiles_res = db.table("profiles").select(
+                "id, email, fcm_device_token, fcm_enabled, telegram_chat_id, telegram_enabled, alert_sensitivity, execution_mode, demat_auto_sync"
+            ).execute()
+            profiles_data = profiles_res.data or []
+
+        pooled_watchlists = await fetch_all(
+            "SELECT user_id, symbol, is_auto_synced FROM user_watchlists WHERE symbol IS NOT NULL"
+        )
+        if pooled_watchlists is not None:
+            watchlists_data = pooled_watchlists
+        else:
+            try:
+                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced").not_.is_("symbol", "null").limit(50000).execute()
+                watchlists_data = watchlists_res.data or []
+            except Exception:
+                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced").limit(50000).execute()
+                watchlists_data = watchlists_res.data or []
+
+        pooled_creds = await fetch_all(
+            "SELECT user_id, encrypted_session_token, token_date, broker_id FROM user_credentials WHERE token_date = $1",
+            today_str
+        )
+        if pooled_creds is not None:
+            creds_data = pooled_creds
+        else:
+            creds_res = db.table("user_credentials").select(
+                "user_id, encrypted_session_token, token_date, broker_id"
+            ).eq("token_date", today_str).execute()
+            creds_data = creds_res.data or []
+
+        user_contexts: Dict[str, Dict[str, Any]] = {}
+        for p in profiles_data:
+            uid = str(p.get("id"))
+            user_contexts[uid] = {
+                "profile": p,
+                "symbols": set(),
+                "cred": None
+            }
+
+        for w in watchlists_data:
+            uid = str(w.get("user_id"))
+            sym = w.get("symbol")
+            if sym:
+                clean_s = sym.strip().upper()
+                if uid in user_contexts:
+                    user_contexts[uid]["symbols"].add(clean_s)
+                else:
+                    user_contexts[uid] = {
+                        "profile": {"id": uid},
+                        "symbols": {clean_s},
+                        "cred": None
+                    }
+
+        for c in creds_data:
+            uid = str(c.get("user_id"))
+            if uid in user_contexts:
+                user_contexts[uid]["cred"] = c
+            else:
+                user_contexts[uid] = {
+                    "profile": {"id": uid},
+                    "symbols": set(),
+                    "cred": c
+                }
+
+        users = profiles_data
         scanned_users = 0
         all_generated_alerts = []
         user_sem = asyncio.Semaphore(10)
 
         async def _evaluate_user_worker(u):
             nonlocal scanned_users
-            uid = u['id']
+            uid = str(u.get('id'))
+            preloaded_ctx = user_contexts.get(uid)
             async with user_sem:
                 try:
-                    alerts = await evaluate_user_portfolio_and_watchlists(uid, db, macro_data=macro_snapshot)
+                    alerts = await evaluate_user_portfolio_and_watchlists(
+                        uid, db, macro_data=macro_snapshot, preloaded_user_ctx=preloaded_ctx
+                    )
                     scanned_users += 1
                     return alerts or []
                 except Exception as user_err:
@@ -2016,10 +2106,11 @@ async def run_morning_token_reminder(
     verify_cron_secret(x_cron_secret)
 
     today_str = str(date.today())
-    creds_res = db.table("user_credentials").select("user_id, token_date").execute()
+    creds_res = db.table("user_credentials").select("user_id, token_date, encrypted_session_token, broker_id").execute()
     credentials_list = creds_res.data or []
 
     reminded_users = 0
+    synced_users = 0
     for cred in credentials_list:
         uid = cred.get("user_id")
         token_date = cred.get("token_date")
@@ -2050,10 +2141,33 @@ async def run_morning_token_reminder(
                     await send_telegram_notification(tg_id, tg_msg)
                 
                 reminded_users += 1
+        else:
+            # Active session today: Pre-sync Demat holdings at 08:50 AM morning workflow
+            # This completely decouples external broker polling from the 5-minute surveillance loop!
+            try:
+                raw_tok = cred.get("encrypted_session_token")
+                session_token = (vault.decrypt(raw_tok) if raw_tok else "").strip().strip('"').strip("'")
+                app_key = (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
+                secret_key = (settings.ICICI_MASTER_SECRET_KEY or "").strip().strip('"').strip("'")
+                broker_id = cred.get("broker_id") or "icici"
+                adapter = get_broker(broker_id)
+                m_holdings = await asyncio.to_thread(
+                    adapter.fetch_holdings,
+                    {"app_key": app_key, "secret_key": secret_key, "session_token": session_token}
+                )
+                if m_holdings:
+                    update_demat_portfolio_cache(uid, m_holdings)
+                    holding_syms = [h.get('symbol') for h in m_holdings if h.get('symbol')]
+                    if holding_syms:
+                        _async_sync_demat_to_watchlists(db, uid, holding_syms)
+                    synced_users += 1
+            except Exception as sync_err:
+                logger.debug(f"Morning pre-sync note for user {mask_id(uid)}: {sync_err}")
 
     return {
         "status": "completed",
         "reminded_users_count": reminded_users,
+        "synced_users_count": synced_users,
         "date": today_str
     }
 
@@ -2445,6 +2559,8 @@ def place_trade_order(
                         "secret_key": secret_key,
                         "session_token": session_token
                     })
+                    if user_holdings:
+                        update_demat_portfolio_cache(req.user_id, user_holdings)
                     req_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "")
                     has_holding = any(
                         (str(h.get("symbol", "")).upper().replace(".NS", "").replace(".BO", "") == req_sym or
@@ -2558,6 +2674,10 @@ def place_trade_order(
                 "response": order_resp,
                 "user_id": req.user_id
             }
+
+        # Invalidate portfolio caches on successful order execution
+        invalidate_demat_portfolio_cache(req.user_id)
+        _USER_PORTFOLIO_CACHE.pop(req.user_id, None)
 
         return order_resp
 

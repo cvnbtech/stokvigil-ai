@@ -1,3 +1,5 @@
+import asyncio
+import time
 import html as html_lib
 import json
 import logging
@@ -95,10 +97,74 @@ async def close_telegram_client() -> None:
         await _telegram_http_client.aclose()
         _telegram_http_client = None
 
+_TELEGRAM_LOCK = asyncio.Lock()
+_TELEGRAM_LAST_SEND_TIME: float = 0.0
+_TELEGRAM_MIN_INTERVAL: float = 0.04  # 40ms = max 25 msgs/sec (safe under Telegram global 30 msgs/sec limit)
+
+async def _throttle_telegram() -> None:
+    """Enforces a leaky-bucket minimum spacing between Telegram HTTP requests."""
+    global _TELEGRAM_LAST_SEND_TIME
+    async with _TELEGRAM_LOCK:
+        now = time.time()
+        elapsed = now - _TELEGRAM_LAST_SEND_TIME
+        if elapsed < _TELEGRAM_MIN_INTERVAL:
+            await asyncio.sleep(_TELEGRAM_MIN_INTERVAL - elapsed)
+        _TELEGRAM_LAST_SEND_TIME = time.time()
+
+# Background Leaky-Bucket Queue Consumer (25 msgs/sec maximum)
+_TELEGRAM_QUEUE: asyncio.Queue = asyncio.Queue()
+_TELEGRAM_WORKER_TASK: Optional[asyncio.Task] = None
+
+async def enqueue_telegram_notification(chat_id: str, formatted_html_text: str, reply_markup: Optional[dict] = None) -> None:
+    """Enqueues an alert for background delivery respecting Telegram rate limits."""
+    await _TELEGRAM_QUEUE.put((chat_id, formatted_html_text, reply_markup))
+
+async def telegram_worker() -> None:
+    """Consumes alerts from queue, respecting Telegram's 30 msgs/sec limit."""
+    while True:
+        try:
+            chat_id, text, markup = await _TELEGRAM_QUEUE.get()
+            try:
+                await send_telegram_notification(chat_id, text, markup)
+            except Exception as e:
+                logger.error(f"Error in telegram_worker sending alert to {mask_id(chat_id)}: {e}")
+            finally:
+                _TELEGRAM_QUEUE.task_done()
+            await asyncio.sleep(0.04)  # 25 requests per second maximum
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Unexpected error in telegram_worker: {e}")
+            await asyncio.sleep(0.04)
+
+def start_telegram_worker() -> Optional[asyncio.Task]:
+    """Starts the background telegram worker task if an event loop is active."""
+    global _TELEGRAM_WORKER_TASK
+    if _TELEGRAM_WORKER_TASK is None or _TELEGRAM_WORKER_TASK.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _TELEGRAM_WORKER_TASK = loop.create_task(telegram_worker())
+            logger.info("⚡ Background Telegram queue worker started (rate limit: 25 msgs/sec).")
+        except RuntimeError:
+            pass
+    return _TELEGRAM_WORKER_TASK
+
+async def stop_telegram_worker() -> None:
+    """Gracefully drains and stops the background telegram worker."""
+    global _TELEGRAM_WORKER_TASK
+    if _TELEGRAM_WORKER_TASK and not _TELEGRAM_WORKER_TASK.done():
+        _TELEGRAM_WORKER_TASK.cancel()
+        try:
+            await _TELEGRAM_WORKER_TASK
+        except asyncio.CancelledError:
+            pass
+        _TELEGRAM_WORKER_TASK = None
+
 async def send_telegram_notification(chat_id: str, formatted_html_text: str, reply_markup: Optional[dict] = None) -> bool:
     """
     Sends styled HTML Telegram market intelligence alert straight to Telegram chat.
     Uses Telegram Bot HTTP API with optional inline keyboard buttons.
+    Protected by Leaky-Bucket Rate Limiter (max 25 msgs/sec) and automatic HTTP 429 retry backoff.
     """
     if not chat_id:
         logger.warning("No Telegram Chat ID provided, skipping Telegram alert.")
@@ -120,8 +186,23 @@ async def send_telegram_notification(chat_id: str, formatted_html_text: str, rep
         payload["reply_markup"] = reply_markup
     
     try:
+        await _throttle_telegram()
         client = get_telegram_client()
         res = await client.post(url, json=payload)
+
+        # Handle Telegram HTTP 429 Too Many Requests (Rate limit backoff)
+        if res.status_code == 429:
+            retry_after = 1.0
+            try:
+                err_data = res.json()
+                retry_after = float(err_data.get("parameters", {}).get("retry_after", 1.0))
+            except Exception:
+                pass
+            logger.warning(f"Telegram 429 rate limit hit for Chat ID: {mask_id(chat_id)}. Backing off for {retry_after}s...")
+            await asyncio.sleep(retry_after)
+            await _throttle_telegram()
+            res = await client.post(url, json=payload)
+
         if res.status_code == 200:
             logger.info(f"Telegram alert sent to Chat ID: {mask_id(chat_id)}")
             return True

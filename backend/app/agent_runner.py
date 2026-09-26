@@ -262,9 +262,17 @@ _FINANCIALS_CACHE_TTL: float = 43200.0  # 12 hours (Quarter-invariant corporate 
 _NEWS_CACHE: Dict[str, Dict[str, Any]] = {}
 _NEWS_CACHE_TTL: float = 1800.0  # 30 minutes
 
-# User Demat Portfolio Cache: user_id -> {holdings, timestamp} (TTL: 240 seconds / 4 minutes)
+# User Demat Portfolio Cache: user_id -> {holdings, timestamp} (TTL: 14400 seconds / 4 hours)
 _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
-_DEMAT_PORTFOLIO_CACHE_TTL: float = 240.0
+_DEMAT_PORTFOLIO_CACHE_TTL: float = 14400.0  # 4 hours (session-invariant delivery holdings)
+
+def invalidate_demat_portfolio_cache(user_id: str) -> None:
+    """Invalidates cached Demat holdings for a user (e.g. after order placement)."""
+    _DEMAT_PORTFOLIO_CACHE.pop(user_id, None)
+
+def update_demat_portfolio_cache(user_id: str, holdings: List[Dict[str, Any]]) -> None:
+    """Updates cached Demat holdings for a user in RAM."""
+    _DEMAT_PORTFOLIO_CACHE[user_id] = {"timestamp": time.time(), "holdings": holdings}
 
 # Target 1 Reached Dispatch Cache: key -> timestamp (Prevents spamming Target 1 hit alerts)
 _TARGET_1_DISPATCHED_TODAY: Dict[str, float] = {}
@@ -1700,31 +1708,36 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
 async def evaluate_user_portfolio_and_watchlists(
     user_id: str, 
     supabase_client, 
-    macro_data: Optional[Dict[str, Any]] = None
+    macro_data: Optional[Dict[str, Any]] = None,
+    preloaded_user_ctx: Optional[Dict[str, Any]] = None
 ) -> List[dict]:
     """
     Evaluates all tracked stocks for a user across demat holdings and manual watchlists.
     Uses high-speed In-Memory Market Cache for sub-millisecond per-stock lookups.
     Dispatches FCM Push and rich Telegram notifications for high-conviction catalysts.
+    Supports preloaded_user_ctx to bypass per-user DB roundtrips in multi-user scans.
     """
     generated_alerts = []
     
-    # 1. Fetch user profile & notification settings (PgBouncer pool first, REST fallback)
+    # 1. Fetch user profile & notification settings (Preloaded context > PgBouncer pool > REST fallback)
     profile = None
-    try:
-        from app.db_pool import fetch_one, fetch_all
-        pooled_profile = await fetch_one("SELECT * FROM profiles WHERE id = $1", user_id)
-        if pooled_profile:
-            profile = pooled_profile
-    except Exception as pool_err:
-        logger.debug(f"Pooled profile query note for user {mask_id(user_id)}: {pool_err}")
+    if preloaded_user_ctx and preloaded_user_ctx.get("profile"):
+        profile = preloaded_user_ctx["profile"]
+    else:
+        try:
+            from app.db_pool import fetch_one
+            pooled_profile = await fetch_one("SELECT * FROM profiles WHERE id = $1", user_id)
+            if pooled_profile:
+                profile = pooled_profile
+        except Exception as pool_err:
+            logger.debug(f"Pooled profile query note for user {mask_id(user_id)}: {pool_err}")
 
-    if profile is None:
-        profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
-        if not profile_res.data:
-            logger.warning(f"Profile not found for user {mask_id(user_id)}")
-            return []
-        profile = profile_res.data[0]
+        if profile is None:
+            profile_res = supabase_client.table("profiles").select("*").eq("id", user_id).execute()
+            if not profile_res.data:
+                logger.warning(f"Profile not found for user {mask_id(user_id)}")
+                return []
+            profile = profile_res.data[0]
 
     fcm_token = profile.get("fcm_device_token")
     fcm_enabled = profile.get("fcm_enabled", False)
@@ -1732,35 +1745,41 @@ async def evaluate_user_portfolio_and_watchlists(
     telegram_enabled = profile.get("telegram_enabled", False)
     alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()
 
-    # 2. Fetch user's active watchlist (PgBouncer pool first, REST fallback)
+    # 2. Fetch user's active watchlist (Preloaded context > PgBouncer pool > REST fallback)
     symbols = set()
-    try:
-        from app.db_pool import fetch_all
-        pooled_watchlists = await fetch_all("SELECT symbol FROM user_watchlists WHERE user_id = $1", user_id)
-        if pooled_watchlists is not None:
-            symbols = set(item['symbol'] for item in pooled_watchlists if item.get('symbol'))
-    except Exception as pool_err:
-        logger.debug(f"Pooled watchlist query note for user {mask_id(user_id)}: {pool_err}")
+    if preloaded_user_ctx and preloaded_user_ctx.get("symbols") is not None:
+        symbols = set(preloaded_user_ctx["symbols"])
+    else:
+        try:
+            from app.db_pool import fetch_all
+            pooled_watchlists = await fetch_all("SELECT symbol FROM user_watchlists WHERE user_id = $1", user_id)
+            if pooled_watchlists is not None:
+                symbols = set(item['symbol'] for item in pooled_watchlists if item.get('symbol'))
+        except Exception as pool_err:
+            logger.debug(f"Pooled watchlist query note for user {mask_id(user_id)}: {pool_err}")
 
-    if not symbols:
-        watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
-        symbols = set(item['symbol'] for item in (watchlist_res.data or []) if item.get('symbol'))
+        if not symbols:
+            watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
+            symbols = set(item['symbol'] for item in (watchlist_res.data or []) if item.get('symbol'))
 
-    # 3. Check ICICI credentials and sync Demat holdings (PgBouncer pool first, REST fallback)
+    # 3. Check credentials and Demat holdings (Preloaded context > Cache > On-demand fetch)
     holdings_map = {}
     cred = None
-    try:
-        from app.db_pool import fetch_one
-        pooled_cred = await fetch_one("SELECT * FROM user_credentials WHERE user_id = $1", user_id)
-        if pooled_cred:
-            cred = pooled_cred
-    except Exception as pool_err:
-        logger.debug(f"Pooled cred query note for user {mask_id(user_id)}: {pool_err}")
+    if preloaded_user_ctx and "cred" in preloaded_user_ctx:
+        cred = preloaded_user_ctx["cred"]
+    else:
+        try:
+            from app.db_pool import fetch_one
+            pooled_cred = await fetch_one("SELECT * FROM user_credentials WHERE user_id = $1", user_id)
+            if pooled_cred:
+                cred = pooled_cred
+        except Exception as pool_err:
+            logger.debug(f"Pooled cred query note for user {mask_id(user_id)}: {pool_err}")
 
-    if cred is None:
-        cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
-        if cred_res.data:
-            cred = cred_res.data[0]
+        if cred is None:
+            cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
+            if cred_res.data:
+                cred = cred_res.data[0]
 
     if cred:
         today_str = str(date.today())
@@ -1774,26 +1793,12 @@ async def evaluate_user_portfolio_and_watchlists(
                 if (now - entry.get("timestamp", 0)) < _DEMAT_PORTFOLIO_CACHE_TTL:
                     cached_holdings = entry.get("holdings")
 
-            if cached_holdings is not None:
-                holdings = cached_holdings
-            else:
-                raw_tok = cred.get("encrypted_session_token")
-                session_token = (vault.decrypt(raw_tok) if raw_tok else "").strip().strip('"').strip("'")
-
-                # Pure Institutional Master App Model: Master keys reside exclusively in server configuration
-                app_key = (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
-                secret_key = (settings.ICICI_MASTER_SECRET_KEY or "").strip().strip('"').strip("'")
-
-                from app.brokers import get_broker
-                broker_id = cred.get("broker_id") or "icici"
-                adapter = get_broker(broker_id)
-                holdings = await asyncio.to_thread(
-                    adapter.fetch_holdings,
-                    {"app_key": app_key, "secret_key": secret_key, "session_token": session_token}
-                )
-                _DEMAT_PORTFOLIO_CACHE[user_id] = {"timestamp": now, "holdings": holdings}
-            
-            watchlist_upserts = []
+            holdings = cached_holdings or []
+            # Broker API polling is completely decoupled from the 5-minute surveillance loop.
+            # Demat holdings are synced exclusively when:
+            # 1. User opens the dashboard (GET /api/user/portfolio)
+            # 2. Morning reminder workflow at 08:50 AM (POST /api/cron/morning-token-reminder)
+            # 3. Order execution (POST /api/v1/orders/place)
             for h in holdings:
                 sym = h.get('symbol')
                 clean_s = h.get('clean_symbol') or (sym.replace(".BO", "").replace(".NS", "").strip().upper() if sym else "")
@@ -1803,18 +1808,6 @@ async def evaluate_user_portfolio_and_watchlists(
                     if clean_s:
                         symbols.add(clean_s)
                         holdings_map[clean_s] = h
-                    watchlist_upserts.append({
-                        "user_id": user_id,
-                        "symbol": clean_s or sym,
-                        "is_auto_synced": True
-                    })
-            if watchlist_upserts:
-                try:
-                    supabase_client.table("user_watchlists").upsert(
-                        watchlist_upserts, on_conflict="user_id,symbol"
-                    ).execute()
-                except Exception as e:
-                    logger.error(f"Error bulk syncing holdings to watchlist for user {mask_id(user_id)}: {e}")
         else:
             logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
 
