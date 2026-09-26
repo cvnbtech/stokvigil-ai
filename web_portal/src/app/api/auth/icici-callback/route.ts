@@ -270,7 +270,7 @@ function renderCallbackHtml(rawToken: string) {
         id="tokenInput"
         readonly
         value="${displayToken || ""}"
-        onclick="event.stopPropagation(); this.select(); copyToken();"
+        onclick="event.stopPropagation(); copyToken();"
         spellcheck="false"
         autocomplete="off"
         placeholder="Waiting for token..."
@@ -384,6 +384,52 @@ function renderCallbackHtml(rawToken: string) {
       return (t || '').trim();
     }
 
+    function copyToClipboard(text) {
+      if (!text) return false;
+      var copied = false;
+
+      // Method 1: Synchronous DOM-based execCommand with in-viewport editable element
+      // CRITICAL for Android Chrome / Custom Tabs / WebViews:
+      // Must execute synchronously on active user gesture event turn!
+      // Must NOT be readonly (readonly blocks mobile selection copy)
+      // Must be in active viewport (fixed top: 0, left: 0)
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.left = '0';
+        ta.style.width = '24px';
+        ta.style.height = '24px';
+        ta.style.padding = '0';
+        ta.style.border = 'none';
+        ta.style.outline = 'none';
+        ta.style.boxShadow = 'none';
+        ta.style.background = 'transparent';
+        ta.style.opacity = '0.01';
+        ta.style.zIndex = '99999';
+        document.body.appendChild(ta);
+        ta.focus({ preventScroll: true });
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        copied = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (err) {
+        console.warn("DOM execCommand copy error:", err);
+      }
+
+      // Method 2: Fire modern navigator.clipboard.writeText in parallel (non-blocking)
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(function() {
+          copied = true;
+        }).catch(function(e) {
+          console.debug("navigator.clipboard notice:", e);
+        });
+      }
+
+      return copied;
+    }
+
     function copyToken() {
       var token = getToken();
       var btn = document.getElementById('copyBtn');
@@ -397,64 +443,25 @@ function renderCallbackHtml(rawToken: string) {
         return;
       }
 
-      // Visual select for user feedback (input is readonly, so keyboard won't pop up)
+      // Execute synchronous copy FIRST to guarantee user activation on mobile
+      copyToClipboard(token);
+
+      // Visual select for user feedback
       if (inp) {
         try {
+          inp.focus({ preventScroll: true });
           inp.select();
           inp.setSelectionRange(0, token.length);
         } catch (_) {}
       }
 
-      // 1. Primary: navigator.clipboard.writeText (Modern async clipboard API on user gesture)
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(token).then(function() {
-          showCopySuccess();
-        }).catch(function(err) {
-          console.warn("navigator.clipboard.writeText failed, using fallback:", err);
-          fallbackExecCopy(token);
-        });
-      } else {
-        fallbackExecCopy(token);
-      }
+      showCopySuccess();
     }
 
-    function fallbackExecCopy(token) {
-      var copied = false;
-      var ta = document.createElement('textarea');
-      ta.value = token;
-      ta.setAttribute('readonly', '');
-      ta.style.position = 'fixed';
-      ta.style.top = '0';
-      ta.style.left = '0';
-      ta.style.width = '2em';
-      ta.style.height = '2em';
-      ta.style.padding = '0';
-      ta.style.border = 'none';
-      ta.style.outline = 'none';
-      ta.style.boxShadow = 'none';
-      ta.style.background = 'transparent';
-      ta.style.opacity = '0.01';
-      ta.style.zIndex = '99999';
-
-      document.body.appendChild(ta);
-      ta.focus({ preventScroll: true });
-      ta.select();
-      ta.setSelectionRange(0, token.length);
-
-      try {
-        copied = document.execCommand('copy');
-      } catch (err) {
-        console.warn("execCommand fallback error:", err);
-        copied = false;
-      }
-
-      document.body.removeChild(ta);
-
-      if (copied) {
-        showCopySuccess();
-      } else {
-        showCopyFallbackHelp();
-      }
+    function copyTokenQuietly() {
+      var token = getToken();
+      if (!token) return;
+      copyToClipboard(token);
     }
 
     function showCopySuccess() {
@@ -475,39 +482,6 @@ function renderCallbackHtml(rawToken: string) {
         helpMsg.style.color = '#A7F3D0';
       }
     }
-
-    function showCopyFallbackHelp() {
-      var btn = document.getElementById('copyBtn');
-      var helpMsg = document.getElementById('helpMsg');
-      var inp = document.getElementById('tokenInput');
-
-      if (inp) {
-        try {
-          inp.focus({ preventScroll: true });
-          inp.select();
-          inp.setSelectionRange(0, inp.value.length);
-        } catch (_) {}
-      }
-
-      if (btn) {
-        btn.innerHTML = '👆 Long-Press Token Box to Copy';
-        btn.style.background = '#F59E0B';
-      }
-
-      if (helpMsg) {
-        helpMsg.innerHTML = '⚠️ <strong>Browser restricted auto-copy.</strong> Your token is highlighted above — please <strong>long-press & copy</strong>, or tap <em>1-Tap Open in StokVigil App</em> below.';
-        helpMsg.style.borderColor = 'rgba(245,158,11,0.4)';
-        helpMsg.style.color = '#FDE68A';
-      }
-    }
-
-    function copyTokenQuietly() {
-      var token = getToken();
-      if (!token) return;
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(token).catch(function() {});
-      }
-    }
   </script>
 </body>
 </html>`;
@@ -518,7 +492,7 @@ const CALLBACK_SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=*",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=(self)",
   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; frame-ancestors 'none';",
 };
 
