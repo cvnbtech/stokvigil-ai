@@ -8,7 +8,6 @@
 ## 1. System Purpose & Pure Intelligence Guarantee
 StokVigil AI is an automated, unsleeping market surveillance watchtower operating strictly during Indian Stock Exchange hours (09:15 AM – 03:30 PM IST). 
 
-> 📖 **Unified Master Prompt & Algorithmic Blueprint**: See [`STOKVIGIL_MASTER_PROMPT.md`](./STOKVIGIL_MASTER_PROMPT.md) for the complete developer system prompt, mathematical formulations, prompt engineering contracts, and SEBI compliance guidelines.
 
 > **Mandatory Operational Constraint:**  
 > The system **does not execute unsolicited automated trades** and **does not issue SEBI-unregistered financial advisory tips** (e.g. "BUY AT 200, TARGET 250"). It fetches real-time data from ICICI Demat accounts (via Breeze API), NSE real-time tick feeds, Google News RSS, and Yahoo Finance, feeds the quantitative data into the Gemini AI Agent Engine, filters out market noise, and dispatches **purely factual data alerts & quantitative confluence setups** (RSI/MACD signals, VWAP, ATR dynamic stops, volume spikes, block/bulk deals, quarterly result deviations, debt shifts) directly to user mobile devices and Telegram chats. All projections are strictly labeled as **Tactical Resistance 1 (1.5x ATR Benchmark)** / **Expansion Resistance 2 (2.5x ATR Benchmark)** and **Tactical Support 1/2**, concluding with a mandatory **SEBI Non-Advisory Compliance Disclosure** affirming strictly analytical and educational surveillance.

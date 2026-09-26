@@ -26,6 +26,8 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
   bool _isSuccess = false;
   bool _hasExistingValidSession = false;
   String? _lastTokenDate;
+  DateTime? _loginLaunchedAt;
+  String? _clipboardBeforeLogin;
 
   @override
   void initState() {
@@ -92,7 +94,15 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _autoDetectClipboardToken();
+      if (_loginLaunchedAt != null) {
+        final elapsedSeconds = DateTime.now().difference(_loginLaunchedAt!).inSeconds;
+        if (elapsedSeconds <= 60) {
+          _autoDetectClipboardToken();
+        } else {
+          // 1-minute auto-detect window expired
+          _loginLaunchedAt = null;
+        }
+      }
     }
   }
 
@@ -106,12 +116,20 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
           clean = clean.split("apisession=")[1].split("&")[0];
         }
         clean = Uri.decodeComponent(clean).trim();
+
+        // Stale prevention: Do not auto-paste if clipboard content hasn't changed since clicking login
+        if (_clipboardBeforeLogin != null && clean == _clipboardBeforeLogin) {
+          return;
+        }
+
         // If clean looks like a valid ICICI session token and is not already set
         if (clean.length >= 4 && clean.length <= 128 && clean != _sessionTokenController.text.trim()) {
           if (RegExp(r'^[a-zA-Z0-9_\-\.+=]{4,128}$').hasMatch(clean)) {
             setState(() {
               _sessionTokenController.text = clean;
             });
+            // Successfully consumed auto-detect for this login cycle
+            _loginLaunchedAt = null;
             ErrorHandler.showSuccessSnackBar(context, "⚡ Session token auto-detected and pasted from clipboard!");
           }
         }
@@ -159,6 +177,14 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
         return;
       }
     }
+
+    // Capture baseline clipboard and start 1-minute auto-detect window
+    try {
+      final cur = await Clipboard.getData(Clipboard.kTextPlain);
+      _clipboardBeforeLogin = cur?.text?.trim();
+    } catch (_) {}
+    _loginLaunchedAt = DateTime.now();
+
     final url = Uri.parse(_loginUrl);
     try {
       final success = await launchUrl(url, mode: LaunchMode.externalApplication);
@@ -190,6 +216,9 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
 
     final user = SupabaseService().currentUser;
     if (user == null) {
+      try {
+        await Clipboard.setData(const ClipboardData(text: ''));
+      } catch (_) {}
       setState(() => _isSuccess = true);
       ErrorHandler.showSuccessSnackBar(context, "Demat connected successfully!");
       Future.delayed(const Duration(milliseconds: 1200), widget.onSaved);
@@ -210,6 +239,10 @@ class _IciciCredentialsScreenState extends State<IciciCredentialsScreen> with Wi
       });
 
       if (success) {
+        // Wipe clipboard once connected for institutional hygiene & stale token prevention
+        try {
+          await Clipboard.setData(const ClipboardData(text: ''));
+        } catch (_) {}
         if (mounted) {
           ErrorHandler.showSuccessSnackBar(context, "✅ Demat Connected & Synced (AES-256 Vault)");
         }

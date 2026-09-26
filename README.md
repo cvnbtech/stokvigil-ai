@@ -3,8 +3,6 @@
 
 StokVigil AI is an automated, unsleeping 5-minute market watchtower operating strictly during Indian Stock Exchange trading hours (09:15 AM to 03:30 PM IST). 
 
-> 📖 **Comprehensive Developer & Prompt Engineering Specification**: See [`STOKVIGIL_MASTER_PROMPT.md`](./STOKVIGIL_MASTER_PROMPT.md) for the complete line-by-line master system prompt, quantitative algorithms, prompt engineering directives, and SEBI compliance guidelines.
-
 ---
 
 ## 🛡️ Pure Intelligence & Quantitative Surveillance Guarantee
