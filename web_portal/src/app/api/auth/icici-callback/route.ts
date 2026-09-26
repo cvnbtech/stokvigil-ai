@@ -197,25 +197,38 @@ function renderCallbackHtml(rawToken: string) {
     }
     .btn-app {
       width: 100%;
-      padding: 14px 20px;
+      padding: 13px 18px;
       border-radius: 14px;
-      border: 1.5px solid rgba(139,92,246,0.85);
-      background: linear-gradient(135deg, rgba(139,92,246,0.25) 0%, rgba(99,102,241,0.2) 100%);
-      color: #EDE9FE;
-      font-size: 14px;
+      border: 1.5px dashed rgba(139,92,246,0.35);
+      background: rgba(139,92,246,0.05);
+      color: #64748B;
+      font-size: 13.5px;
       font-weight: 900;
-      cursor: pointer;
+      cursor: not-allowed;
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 8px;
       text-decoration: none;
       margin-bottom: 10px;
-      box-shadow: 0 0 20px rgba(139,92,246,0.35), 0 4px 12px rgba(0,0,0,0.5);
-      animation: pulseGlow 2s infinite ease-in-out;
-      transition: all 0.2s ease;
+      opacity: 0.45;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .btn-app:active {
+      transform: scale(0.98);
+    }
+    .btn-app.enabled {
+      opacity: 1;
+      pointer-events: auto;
+      cursor: pointer;
+      border: 1.5px solid rgba(139,92,246,0.85);
+      background: linear-gradient(135deg, rgba(139,92,246,0.25) 0%, rgba(99,102,241,0.2) 100%);
+      color: #EDE9FE;
+      box-shadow: 0 0 24px rgba(139,92,246,0.4), 0 4px 12px rgba(0,0,0,0.5);
+      animation: pulseGlow 2s infinite ease-in-out;
+    }
+    .btn-app.enabled:active {
       transform: scale(0.98);
     }
     @keyframes pulseGlow {
@@ -282,8 +295,8 @@ function renderCallbackHtml(rawToken: string) {
       <button class="btn-copy" id="copyBtn" onclick="copyToken()">
         📋 Copy Session Token
       </button>
-      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" rel="noopener noreferrer" onclick="copyTokenQuietly()">
-        📱 1-Tap Open in StokVigil App →
+      <a href="stokvigil://breeze-callback?apisession=${encodeURIComponent(safeToken)}" class="btn-app" id="appBtn" tabindex="-1" rel="noopener noreferrer">
+        🔒 1-Tap Open in StokVigil App
       </a>
     </div>
 
@@ -292,8 +305,7 @@ function renderCallbackHtml(rawToken: string) {
     </a>
 
     <div class="help-card" id="helpMsg">
-      📋 <strong>Step 1:</strong> Tap <em>Copy Session Token</em> to copy your key.<br>
-      📱 <strong>Step 2:</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app and sync credentials.
+      📱 <strong>On Mobile App:</strong> Click <em>Copy Session Token</em> above to unlock 1-Tap App launch or paste into your app.
     </div>
   </div>
 
@@ -384,47 +396,69 @@ function renderCallbackHtml(rawToken: string) {
       return (t || '').trim();
     }
 
+    function copyFromVisibleInput(text) {
+      var inp = document.getElementById('tokenInput');
+      if (!inp) return false;
+      var copied = false;
+      try {
+        inp.removeAttribute('readonly');
+        inp.value = text;
+        inp.focus({ preventScroll: true });
+        inp.select();
+        inp.setSelectionRange(0, text.length || 99999);
+        copied = document.execCommand('copy');
+        inp.setAttribute('readonly', 'readonly');
+        inp.blur();
+      } catch (e) {
+        copied = false;
+      }
+      return copied;
+    }
+
     function copyToClipboard(text) {
       if (!text) return false;
       var copied = false;
 
-      // Method 1: Synchronous DOM-based execCommand with in-viewport editable element
-      // CRITICAL for Android Chrome / Custom Tabs / WebViews:
-      // Must execute synchronously on active user gesture event turn!
-      // Must NOT be readonly (readonly blocks mobile selection copy)
-      // Must be in active viewport (fixed top: 0, left: 0)
-      try {
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.top = '0';
-        ta.style.left = '0';
-        ta.style.width = '24px';
-        ta.style.height = '24px';
-        ta.style.padding = '0';
-        ta.style.border = 'none';
-        ta.style.outline = 'none';
-        ta.style.boxShadow = 'none';
-        ta.style.background = 'transparent';
-        ta.style.opacity = '0.01';
-        ta.style.zIndex = '99999';
-        document.body.appendChild(ta);
-        ta.focus({ preventScroll: true });
-        ta.select();
-        ta.setSelectionRange(0, text.length);
-        copied = document.execCommand('copy');
-        document.body.removeChild(ta);
-      } catch (err) {
-        console.warn("DOM execCommand copy error:", err);
+      // Method 1: Modern navigator.clipboard API (standard on HTTPS)
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          navigator.clipboard.writeText(text).then(function() {
+            copied = true;
+          }).catch(function(e) {
+            console.debug("navigator.clipboard notice:", e);
+          });
+        } catch (_) {}
       }
 
-      // Method 2: Fire modern navigator.clipboard.writeText in parallel (non-blocking)
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(text).then(function() {
-          copied = true;
-        }).catch(function(e) {
-          console.debug("navigator.clipboard notice:", e);
-        });
+      // Method 2: Synchronous DOM copy from visible on-screen input
+      // Guaranteed to work across mobile browsers (Android Chrome / WebViews / Safari)
+      copied = copyFromVisibleInput(text) || copied;
+
+      // Method 3: In-viewport fallback textarea if needed
+      if (!copied) {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.top = '0';
+          ta.style.left = '0';
+          ta.style.width = '24px';
+          ta.style.height = '24px';
+          ta.style.padding = '0';
+          ta.style.border = 'none';
+          ta.style.outline = 'none';
+          ta.style.boxShadow = 'none';
+          ta.style.background = 'transparent';
+          ta.style.opacity = '0.01';
+          ta.style.zIndex = '99999';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0, text.length);
+          copied = document.execCommand('copy');
+          document.body.removeChild(ta);
+        } catch (err) {
+          console.warn("DOM execCommand copy error:", err);
+        }
       }
 
       return copied;
@@ -433,7 +467,6 @@ function renderCallbackHtml(rawToken: string) {
     function copyToken() {
       var token = getToken();
       var btn = document.getElementById('copyBtn');
-      var inp = document.getElementById('tokenInput');
 
       if (!token) {
         if (btn) {
@@ -446,16 +479,14 @@ function renderCallbackHtml(rawToken: string) {
       // Execute synchronous copy FIRST to guarantee user activation on mobile
       copyToClipboard(token);
 
-      // Visual select for user feedback
-      if (inp) {
+      showCopySuccess();
+
+      // Ensure focus remains on the Copy button so it never jumps to the App button
+      if (btn) {
         try {
-          inp.focus({ preventScroll: true });
-          inp.select();
-          inp.setSelectionRange(0, token.length);
+          btn.focus({ preventScroll: true });
         } catch (_) {}
       }
-
-      showCopySuccess();
     }
 
     function copyTokenQuietly() {
@@ -466,6 +497,7 @@ function renderCallbackHtml(rawToken: string) {
 
     function showCopySuccess() {
       var btn = document.getElementById('copyBtn');
+      var appBtn = document.getElementById('appBtn');
       var helpMsg = document.getElementById('helpMsg');
 
       if (btn) {
@@ -476,12 +508,21 @@ function renderCallbackHtml(rawToken: string) {
           btn.style.background = 'linear-gradient(90deg, #00B4D8 0%, #0284C7 35%, #6366F1 70%, #8B5CF6 100%)';
         }, 3000);
       }
+      if (appBtn) {
+        appBtn.classList.add('enabled');
+        appBtn.removeAttribute('tabindex');
+        appBtn.innerHTML = '📱 1-Tap Open in StokVigil App →';
+      }
       if (helpMsg) {
-        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Switch back to StokVigil App (it will auto-detect), or tap <em>1-Tap Open in StokVigil App</em> below.';
+        helpMsg.innerHTML = '✅ <strong>Session Token Copied!</strong> Tap <em>1-Tap Open in StokVigil App</em> to launch your app with the token saved.';
         helpMsg.style.borderColor = 'rgba(16,185,129,0.3)';
         helpMsg.style.color = '#A7F3D0';
       }
     }
+
+    document.addEventListener('copy', function() {
+      showCopySuccess();
+    });
   </script>
 </body>
 </html>`;
@@ -492,7 +533,7 @@ const CALLBACK_SECURITY_HEADERS = {
   "X-Frame-Options": "DENY",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=(self)",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), clipboard-write=*",
   "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; frame-ancestors 'none';",
 };
 
