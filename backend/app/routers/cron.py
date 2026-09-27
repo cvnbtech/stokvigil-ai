@@ -103,7 +103,7 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
 
         pooled_creds = await fetch_all(
             "SELECT * FROM user_credentials WHERE token_date = $1",
-            today_str
+            date.today()
         )
         if pooled_creds is not None:
             creds_data = pooled_creds

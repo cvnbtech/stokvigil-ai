@@ -147,14 +147,26 @@ async def get_db_connection() -> AsyncGenerator[Optional[Any], None]:
 def _normalize_param(arg: Any) -> Any:
     """
     Normalizes query arguments for asyncpg.
-    Converts valid UUID strings to uuid.UUID objects so PostgreSQL can match
-    UUID column types natively without type mismatch errors.
+    Converts:
+    - Valid UUID strings to uuid.UUID objects so PostgreSQL can match
+      UUID column types natively without type mismatch errors.
+    - Valid ISO date strings (YYYY-MM-DD) to datetime.date objects so
+      asyncpg's DATE codec can serialize them natively using .toordinal().
     """
     if isinstance(arg, str):
-        try:
-            return uuid.UUID(arg)
-        except (ValueError, AttributeError):
-            return arg
+        # 1. UUID string check (36 characters: 8-4-4-4-12)
+        if len(arg) == 36 and arg.count("-") == 4:
+            try:
+                return uuid.UUID(arg)
+            except (ValueError, AttributeError):
+                pass
+        # 2. ISO date string check (10 characters: YYYY-MM-DD)
+        elif len(arg) == 10 and arg[4] == '-' and arg[7] == '-':
+            try:
+                return date.fromisoformat(arg)
+            except (ValueError, AttributeError):
+                pass
+        return arg
     return arg
 
 

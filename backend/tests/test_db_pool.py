@@ -94,6 +94,27 @@ class TestDBPool(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_normalize_param("RELIANCE"), "RELIANCE")
         self.assertEqual(_normalize_param(100), 100)
 
+    def test_normalize_param_date(self):
+        """ISO date strings (YYYY-MM-DD) are converted to datetime.date for asyncpg codec compatibility."""
+        from app.db_pool import _normalize_param
+        from datetime import date
+
+        # ISO date string converted to datetime.date
+        date_str = "2026-09-27"
+        norm_date = _normalize_param(date_str)
+        self.assertIsInstance(norm_date, date)
+        self.assertEqual(norm_date, date(2026, 9, 27))
+        # Ensure toordinal() is callable without AttributeError
+        self.assertGreater(norm_date.toordinal(), 0)
+
+        # datetime.date object passed directly is preserved
+        today = date.today()
+        self.assertEqual(_normalize_param(today), today)
+
+        # Invalid date format strings preserved as-is without crashing
+        self.assertEqual(_normalize_param("2026-99-99"), "2026-99-99")
+        self.assertEqual(_normalize_param("not-a-date!"), "not-a-date!")
+
     def test_normalize_value_and_row(self):
         """Verifies UUID, datetime, Decimal, and JSON fields match Supabase REST contracts."""
         from app.db_pool import _normalize_row

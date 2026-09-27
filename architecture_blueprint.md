@@ -557,7 +557,7 @@ To sustain 100,000+ client requests without database connection exhaustion, data
    - Integrated routes: `GET /api/market/accuracy-ledger`, `GET /api/user/alerts`, `GET /api/user/accuracy-stats`, `GET /api/user/profile`, and `POST /api/cron/multi-user-scan`.
 3. **100% Data Contract Parity & Normalization**:
    - Automatic type serialization (`_normalize_row`) converts `uuid.UUID` to `str`, `datetime` to ISO-8601 strings, `Decimal` to `float`, and pre-parses JSON strings into Python dictionaries, matching PostgREST schema identically.
-   - Input normalization (`_normalize_param`) converts string UUID arguments into `uuid.UUID` objects for native B-tree index matching without SQL cast errors.
+   - Input normalization (`_normalize_param`) converts string UUID arguments into `uuid.UUID` objects for native B-tree index matching, and automatically parses ISO-8601 date strings (`YYYY-MM-DD`) into native Python `datetime.date` objects so `asyncpg` binary wire protocol codecs can serialize them using `.toordinal()` (eliminating `'str' object has no attribute 'toordinal'` DataErrors on PostgreSQL `DATE` columns like `token_date = $1`).
 4. **Health Telemetry (`GET /api/health/db`)**:
    - Live health check reporting pool readiness, driver (`pgbouncer-6543` vs `supabase-rest`), pool sizing (`min_size`, `max_size`, `idle_size`), and sub-millisecond `SELECT 1` ping.
 
@@ -668,9 +668,9 @@ G:\stokvigil-ai\
 │   │   ├── test_500_user_optimizations.py <-- 12 Multi-User Bulk Prefetch & Concurrency Tests
 │   │   ├── test_advanced_accuracy.py    <-- 6 Market Breadth ADR, Scrip Normalization & RAM Tick Tests
 │   │   ├── test_alert_edge_cases.py     <-- 2 Daily Fallback, Demat P&L, Target/SL Clamping Tests
-│   │   ├── test_api_endpoints.py        <-- 40 API, Auth, Modular Routers & 10K+ Hybrid Rate Limiter Tests
+│   │   ├── test_api_endpoints.py        <-- 44 API, Auth, Modular Routers, Security Hardening & Rate Limiter Tests
 │   │   ├── test_brokers.py              <-- 6 Pluggable Multi-Broker, Adapter Contracts & Registry Tests
-│   │   ├── test_db_pool.py              <-- 8 Connection Pool, PgBouncer Port 6543, Normalization Tests
+│   │   ├── test_db_pool.py              <-- 9 Connection Pool, PgBouncer Port 6543, Date/UUID Normalization Tests
 │   │   ├── test_financial_trade_flaws.py <-- 9 Trade Execution, Directional Levels, RMS Interception & SL-L Tests
 │   │   ├── test_gatekeeper_and_vsa.py   <-- 14 Gatekeeper, Dynamic F&O Discovery, Wyckoff VSA Tests
 │   │   ├── test_institutional_accuracy.py <-- 18 Volatility, TTM Squeeze, VWAP Bands & Zero-Default Tests
@@ -681,7 +681,7 @@ G:\stokvigil-ai\
 │   │   ├── test_portfolio_optimization.py <-- 3 Fundamentals Caching & Background Pre-Warming Tests
 │   │   ├── test_quantitative_upgrades.py <-- 7 Quantitative Upgrades, Hard Risk Veto & Demat SL Defense Tests
 │   │   └── test_real_accuracy_verifier.py <-- 7 Real-Time Price Tracking, Candle Outcome & Dynamic Win Rate Tests
-│   │   # Total: 159 automated unit tests across 16 test suites (100% passing)
+│   │   # Total: 160 automated unit tests across 16 test suites (100% passing)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile
