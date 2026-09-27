@@ -11,7 +11,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.macro_filter import fetch_market_breadth_adr, fetch_macro_market_regime
 from app.flow_tracker import fetch_delivery_and_fo_flow
-from app.agent_runner import compute_deterministic_confluence, resolve_isin_to_nse_symbol
+from app.engine.deterministic import compute_deterministic_confluence
+from app.engine.portfolio_sync import resolve_isin_to_nse_symbol
 from app.market_cache import market_cache
 
 

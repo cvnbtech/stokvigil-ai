@@ -60,7 +60,10 @@ class CryptoVault:
                 decrypted_bytes = self.fernet.decrypt(trimmed.encode('utf-8'))
                 return decrypted_bytes.decode('utf-8')
             except Exception as e:
-                logger.warning(f"Fernet decryption attempt failed: {e}")
+                logger.error(f"Vault Fernet decryption failure: {e}")
+                if settings.ENVIRONMENT == "production":
+                    raise ValueError("Decryption failed: Token is corrupt or untrusted.")
+                logger.warning("Returning unencrypted fallback in non-production mode.")
         
         # 2. Try Base64 URL-safe / Standard Decoding
         try:
@@ -72,7 +75,11 @@ class CryptoVault:
         except Exception:
             pass
 
-        # 3. Fallback: If already plaintext
+        # 3. Fallback: If already plaintext (permitted only in non-production environments)
+        if settings.ENVIRONMENT == "production":
+            logger.error("Vault rejection: Unencrypted plaintext token encountered in production mode.")
+            raise ValueError("Decryption failed: Token is corrupt or untrusted.")
+
         return trimmed
 
 # Singleton vault instance

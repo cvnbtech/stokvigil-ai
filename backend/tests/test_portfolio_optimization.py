@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 os.environ["ENVIRONMENT"] = "test"
 os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 
-from app.main import (
+from app.routers.auth import (
     _get_holding_fundamentals,
     _async_pre_warm_holding_fundamentals,
     _FUNDAMENTALS_CACHE,
@@ -35,7 +35,7 @@ class TestPortfolioOptimization(unittest.TestCase):
             "debt_to_equity": 0.38
         }
 
-        with patch("app.main.fetch_stock_financials", return_value=mock_fin) as mock_fetch:
+        with patch("app.routers.auth.fetch_stock_financials", return_value=mock_fin) as mock_fetch:
             # 1. First synchronous call on cold cache: returns (None, None) immediately without blocking
             pe, de = _get_holding_fundamentals("RELIANCE", now)
             self.assertIsNone(pe)
@@ -68,8 +68,8 @@ class TestPortfolioOptimization(unittest.TestCase):
             }
         }
 
-        with patch("app.main.market_cache.get_stock", return_value=mock_market_pack):
-            with patch("app.main.fetch_stock_financials") as mock_fetch:
+        with patch("app.routers.auth.market_cache.get_stock", return_value=mock_market_pack):
+            with patch("app.routers.auth.fetch_stock_financials") as mock_fetch:
                 pe, de = _get_holding_fundamentals("TCS", now)
                 self.assertEqual(pe, 32.10)
                 self.assertEqual(de, 0.15)
@@ -106,13 +106,13 @@ class TestPortfolioOptimization(unittest.TestCase):
         def mock_fin_fn(sym):
             return mock_fin_map.get(sym, {})
 
-        with patch("app.main.verify_user_access"), \
-             patch("app.main.settings.ICICI_MASTER_APP_KEY", "TEST_MASTER_APP_KEY"), \
-             patch("app.main.settings.ICICI_MASTER_SECRET_KEY", "TEST_MASTER_SECRET_KEY"), \
-             patch("app.main.vault.decrypt", return_value="decrypted_val"), \
-             patch("app.main.fetch_user_portfolio", return_value=mock_holdings), \
-             patch("app.main._fetch_single_stock_quote", side_effect=mock_quote_fn), \
-             patch("app.main.fetch_stock_financials", side_effect=mock_fin_fn):
+        with patch("app.routers.auth.verify_user_access"), \
+             patch("app.routers.auth.settings.ICICI_MASTER_APP_KEY", "TEST_MASTER_APP_KEY"), \
+             patch("app.routers.auth.settings.ICICI_MASTER_SECRET_KEY", "TEST_MASTER_SECRET_KEY"), \
+             patch("app.routers.auth.vault.decrypt", return_value="decrypted_val"), \
+             patch("app.brokers.icici_adapter.fetch_user_portfolio", return_value=mock_holdings), \
+             patch("app.routers.auth._fetch_single_stock_quote", side_effect=mock_quote_fn), \
+             patch("app.routers.auth.fetch_stock_financials", side_effect=mock_fin_fn):
 
             # 1. Cold fetch: returns immediately with prices and P&L, zero synchronous fundamentals delay
             result = get_user_portfolio(

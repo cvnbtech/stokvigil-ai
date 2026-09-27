@@ -28,7 +28,7 @@ from app.macro_filter import (
     fetch_market_breadth_adr,
     SECTOR_INDEX_MAP
 )
-from app.agent_runner import (
+from app.engine.deterministic import (
     get_adaptive_weights,
     compute_tactical_levels,
     compute_deterministic_confluence
@@ -272,7 +272,7 @@ class TestInstitutionalAccuracy(unittest.TestCase):
     def test_financials_4hour_cache_and_dual_exchange(self):
         """Corporate fundamentals must cache for 4 hours and normalize NSE/BSE tickers."""
         import time
-        from app.agent_runner import fetch_stock_financials, _FINANCIALS_CACHE, _normalize_canonical_key
+        from app.engine.data_fetcher import fetch_stock_financials, _FINANCIALS_CACHE, _normalize_canonical_key
 
         # Test canonical normalization
         self.assertEqual(_normalize_canonical_key("TCS.NS"), "TCS")
@@ -318,7 +318,7 @@ class TestInstitutionalAccuracy(unittest.TestCase):
     def test_news_15min_cache_and_normalization(self):
         """Google News RSS must cache for 15 minutes and share across exchanges."""
         import time
-        from app.agent_runner import fetch_stock_news, _NEWS_CACHE
+        from app.engine.data_fetcher import fetch_stock_news, _NEWS_CACHE
 
         mock_headlines = [
             {"title": "TestCo bags $50M AI contract", "link": "https://news.com/1", "published": "2026-09-15"}

@@ -97,8 +97,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
       }
       if (token != null && token.isNotEmpty) {
         token = Uri.decodeComponent(token).trim();
-        // Place token in system clipboard for immediate redundancy
-        Clipboard.setData(ClipboardData(text: token));
+        // In-memory token delivery strictly to credential setup (zero clipboard sniffing exposure)
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _openCredentialsSetup(initialToken: token);

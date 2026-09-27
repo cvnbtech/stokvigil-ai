@@ -13,7 +13,7 @@ os.environ["ENCRYPTION_KEY"] = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app.agent_runner import (
+from app.engine.deterministic import (
     compute_deterministic_confluence,
     check_has_active_catalyst
 )
@@ -314,7 +314,7 @@ class TestQuantitativeUpgrades(unittest.TestCase):
         - If the user holds the stock in Demat, product auto-resolves to 'cash' (CNC).
         - If the user does not hold the stock in Demat, product auto-resolves to 'margin' (MIS intraday short).
         """
-        from app.main import PlaceOrderRequest
+        from app.schemas.orders import PlaceOrderRequest
 
         # 1. Verify schema accepts optional product field
         req_custom = PlaceOrderRequest(

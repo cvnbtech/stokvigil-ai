@@ -4,6 +4,7 @@ from datetime import date
 from typing import Dict, Any, List, Optional
 from app.config import settings
 from app.brokers.base import BaseBrokerAdapter
+from app.engine.portfolio_sync import fetch_user_portfolio
 
 logger = logging.getLogger("stokvigil.brokers.icici")
 
@@ -93,13 +94,6 @@ class IciciBrokerAdapter(BaseBrokerAdapter):
             logger.warning("Missing ICICI credentials for portfolio fetch.")
             return []
 
-        # Delegate to portfolio parser in app.main (if mocked during tests) or app.agent_runner
-        import sys
-        main_mod = sys.modules.get("app.main")
-        if main_mod and hasattr(main_mod, "fetch_user_portfolio"):
-            return main_mod.fetch_user_portfolio(app_key, secret_key, session_token)
-
-        from app.agent_runner import fetch_user_portfolio
         return fetch_user_portfolio(app_key, secret_key, session_token)
 
     def place_order(

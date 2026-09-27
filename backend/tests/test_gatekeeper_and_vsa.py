@@ -8,7 +8,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 # Ensure backend root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from app.agent_runner import check_has_active_catalyst, compute_deterministic_confluence
+from app.engine.deterministic import check_has_active_catalyst, compute_deterministic_confluence
 from app.flow_tracker import fetch_delivery_and_fo_flow
 from app.notifications import build_telegram_inline_keyboard
 

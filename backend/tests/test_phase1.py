@@ -11,7 +11,7 @@ from app.main import app, get_supabase
 from app.config import settings
 from app.macro_filter import fetch_pre_market_war_room_data
 from app.notifications import format_pre_market_war_room_telegram
-from app.agent_runner import compute_deterministic_confluence
+from app.engine.deterministic import compute_deterministic_confluence
 
 
 class MockDBResult:
@@ -127,8 +127,8 @@ class TestPhase1Features(unittest.TestCase):
         self.assertEqual(res.status_code, 403)
 
         # 3. Accept valid secret and execute briefing
-        with patch("app.main.send_telegram_notification") as mock_tg, \
-             patch("app.main.send_fcm_notification") as mock_fcm:
+        with patch("app.routers.cron.send_telegram_notification") as mock_tg, \
+             patch("app.routers.cron.send_fcm_notification") as mock_fcm:
             mock_tg.return_value = True
             mock_fcm.return_value = True
             res = self.client.post(

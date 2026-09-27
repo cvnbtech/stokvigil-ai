@@ -17,15 +17,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from pydantic import ValidationError
 from fastapi import HTTPException
 
-from app.agent_runner import compute_tactical_levels
+from app.engine.deterministic import compute_tactical_levels
 from app.notifications import format_telegram_alert
-from app.main import (
-    PlaceOrderRequest,
-    snap_to_exchange_tick,
-    is_indian_market_open,
-    get_market_session_status,
-    place_trade_order,
-)
+from app.schemas.orders import PlaceOrderRequest, snap_to_exchange_tick
+from app.core.dependencies import is_indian_market_open, get_market_session_status
+from app.routers.orders import place_trade_order
 
 
 class TestFinancialTradeFlaws(unittest.TestCase):
@@ -185,8 +181,8 @@ class TestFinancialTradeFlaws(unittest.TestCase):
         self.assertTrue(len(msg) > 0)
         self.assertIsInstance(is_indian_market_open(), bool)
 
-    @patch("app.main.fetch_user_portfolio")
-    @patch("app.main.vault")
+    @patch("app.brokers.icici_adapter.fetch_user_portfolio")
+    @patch("app.routers.orders.vault")
     def test_place_order_broker_rms_rejection_handling(self, mock_vault, mock_portfolio):
         """Flaw 2: Breeze silent RMS 500 error must raise HTTP 422 rather than masking as success."""
         mock_vault.decrypt.side_effect = lambda x: f"decrypted_{x}"
@@ -230,8 +226,8 @@ class TestFinancialTradeFlaws(unittest.TestCase):
             self.assertIn("Broker RMS rejected order", ctx.exception.detail)
             self.assertIn("RMS: Margin Shortage", ctx.exception.detail)
 
-    @patch("app.main.fetch_user_portfolio")
-    @patch("app.main.vault")
+    @patch("app.brokers.icici_adapter.fetch_user_portfolio")
+    @patch("app.routers.orders.vault")
     def test_place_order_unheld_sell_sebi_notice(self, mock_vault, mock_portfolio):
         """Flaw 4: Selling unheld shares must be routed as margin with mandatory SEBI notice."""
         mock_vault.decrypt.side_effect = lambda x: f"decrypted_{x}"

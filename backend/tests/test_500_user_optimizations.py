@@ -17,13 +17,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 import pytest
 from app.notifications import _throttle_telegram, _TELEGRAM_MIN_INTERVAL
-from app.agent_runner import (
+from app.engine.portfolio_sync import (
     _DEMAT_PORTFOLIO_CACHE,
     _DEMAT_PORTFOLIO_CACHE_TTL,
     update_demat_portfolio_cache,
     invalidate_demat_portfolio_cache,
-    evaluate_user_portfolio_and_watchlists,
 )
+from app.agent_runner import evaluate_user_portfolio_and_watchlists
 
 
 class TestTelegramRateLimiter:
@@ -235,7 +235,8 @@ class TestMultiUserScanBulkOrchestration:
 
     @pytest.mark.asyncio
     async def test_multi_user_scan_bulk_prefetches_and_evaluates(self):
-        from app.main import execute_multi_user_market_scan, _USER_PORTFOLIO_CACHE
+        from app.routers.cron import execute_multi_user_market_scan
+        from app.routers.auth import _USER_PORTFOLIO_CACHE
 
         mock_db = MagicMock()
         mock_profiles = [
@@ -260,10 +261,10 @@ class TestMultiUserScanBulkOrchestration:
                 return mock_creds
             return []
 
-        with patch("app.main.fetch_all", side_effect=mock_fetch_all), \
-             patch("app.main.sync_market_cache_for_all_active_symbols", new_callable=AsyncMock) as mock_sync_cache, \
-             patch("app.main.fetch_macro_market_regime", return_value={"regime": "NEUTRAL"}), \
-             patch("app.main.evaluate_user_portfolio_and_watchlists", new_callable=AsyncMock) as mock_eval:
+        with patch("app.routers.cron.fetch_all", side_effect=mock_fetch_all), \
+             patch("app.routers.cron.sync_market_cache_for_all_active_symbols", new_callable=AsyncMock) as mock_sync_cache, \
+             patch("app.routers.cron.fetch_macro_market_regime", return_value={"regime": "NEUTRAL"}), \
+             patch("app.routers.cron.evaluate_user_portfolio_and_watchlists", new_callable=AsyncMock) as mock_eval:
 
             mock_sync_cache.return_value = 3
             mock_eval.return_value = [{"alert": "BUY_SIGNAL"}]
@@ -284,7 +285,7 @@ class TestMultiUserScanBulkOrchestration:
 
     def test_order_placement_invalidates_both_caches(self):
         """Verifies that placing an order clears both demat cache and user portfolio response cache."""
-        from app.main import _USER_PORTFOLIO_CACHE
+        from app.routers.auth import _USER_PORTFOLIO_CACHE
         user_id = "trader-999"
 
         # Seed caches
@@ -304,7 +305,7 @@ class TestMultiUserScanBulkOrchestration:
     @pytest.mark.asyncio
     async def test_morning_reminder_presyncs_demat_for_active_today_sessions(self):
         """Verifies 08:50 AM morning workflow pre-syncs Demat holdings for users with valid today tokens."""
-        from app.main import run_morning_token_reminder
+        from app.routers.cron import run_morning_token_reminder
 
         user_id = "user-active-today"
         today_str = str(date.today())
@@ -318,10 +319,10 @@ class TestMultiUserScanBulkOrchestration:
             }]
         )
 
-        with patch("app.main.verify_cron_secret"), \
-             patch("app.main.vault.decrypt", return_value="decrypted_token"), \
-             patch("app.main.get_broker") as mock_get_broker, \
-             patch("app.main._async_sync_demat_to_watchlists"):
+        with patch("app.routers.cron.verify_cron_secret"), \
+             patch("app.routers.cron.vault.decrypt", return_value="decrypted_token"), \
+             patch("app.routers.cron.get_broker") as mock_get_broker, \
+             patch("app.routers.cron._async_sync_demat_to_watchlists"):
 
             mock_adapter = MagicMock()
             mock_adapter.fetch_holdings.return_value = [{"symbol": "INFY", "quantity": 10}]

@@ -552,7 +552,7 @@ class TestApiEndpoints(unittest.TestCase):
 
     # 28. Security & Integrity: Order Placement Concurrent In-Flight Conflict
     def test_28_order_placement_concurrent_conflict(self):
-        from app.main import _ORDER_IDEMPOTENCY_CACHE, _ORDER_IDEMPOTENCY_LOCK
+        from app.schemas.orders import _ORDER_IDEMPOTENCY_CACHE, _ORDER_IDEMPOTENCY_LOCK
         import time
 
         flight_key = "custom:test-user-123:inflight-key-999"
@@ -615,7 +615,7 @@ class TestApiEndpoints(unittest.TestCase):
 
     # 31. Security: Rate Limiter Proxy IP Extraction & Pruning
     def test_31_rate_limiter_proxy_ip_extraction_and_pruning(self):
-        from app.main import _extract_client_ip, _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
+        from app.core.rate_limiter import _extract_client_ip, _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
         from unittest.mock import MagicMock
         import time
 
@@ -648,14 +648,14 @@ class TestApiEndpoints(unittest.TestCase):
 
     # 32. Security: Rate Limiter Memory Cap / Hard Capacity Eviction
     def test_32_rate_limiter_max_capacity_eviction(self):
-        from app.main import _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
+        from app.core.rate_limiter import _prune_rate_limit_buckets, _RATE_LIMIT_BUCKETS
         import time
         now = time.time()
         # Seed 1050 buckets with active timestamps
         for i in range(1050):
             _RATE_LIMIT_BUCKETS[f"flood_ip_{i}"] = [now]
 
-        with patch("app.main._RATE_LIMIT_MAX_BUCKETS", 1000):
+        with patch("app.core.rate_limiter._RATE_LIMIT_MAX_BUCKETS", 1000):
             _prune_rate_limit_buckets(now)
             # Eviction should have reduced the count below 1000
             self.assertLessEqual(len(_RATE_LIMIT_BUCKETS), 1000)
@@ -683,7 +683,7 @@ class TestApiEndpoints(unittest.TestCase):
 
     # 34. Security: Rate Limiter Proxy IP Spoofing Prevention
     def test_34_rate_limiter_spoofing_prevention(self):
-        from app.main import _extract_client_ip, _sanitize_ip, _is_trusted_proxy
+        from app.core.rate_limiter import _extract_client_ip, _sanitize_ip, _is_trusted_proxy
         from unittest.mock import MagicMock
 
         # Untrusted public direct connection attempting to spoof loopback via X-Forwarded-For
@@ -726,7 +726,7 @@ class TestApiEndpoints(unittest.TestCase):
                 app.dependency_overrides[get_current_user_id] = orig_override
 
     # 36. Backtesting Authenticated Execution
-    @patch("app.main.run_vectorized_strategy_backtest")
+    @patch("app.routers.market.run_vectorized_strategy_backtest")
     def test_36_backtest_authenticated_success(self, mock_backtest):
         mock_backtest.return_value = {
             "status": "success",
@@ -745,6 +745,83 @@ class TestApiEndpoints(unittest.TestCase):
         res_post = self.client.post("/api/market/backtest", json={"symbol": "RELIANCE", "period": "6m"})
         self.assertEqual(res_post.status_code, 200)
         self.assertEqual(res_post.json()["win_rate_pct"], 75.0)
+
+    # 37. Security: Unverified JWT Rate-Limiter Spoofing Prevention (VULN-02)
+    def test_37_unverified_jwt_rate_limiter_spoofing_prevention(self):
+        import base64
+        import json
+        from app.core.rate_limiter import check_rate_limit, _RATE_LIMIT_BUCKETS
+        from unittest.mock import MagicMock
+
+        # Craft an unverified forged JWT payload with victim's sub
+        victim_id = "victim-uuid-999"
+        header_b64 = base64.urlsafe_b64encode(json.dumps({"alg": "HS256"}).encode()).decode().rstrip("=")
+        payload_b64 = base64.urlsafe_b64encode(json.dumps({"sub": victim_id}).encode()).decode().rstrip("=")
+        forged_jwt = f"{header_b64}.{payload_b64}.forged_signature"
+
+        req = MagicMock()
+        req.headers = {"authorization": f"Bearer {forged_jwt}"}
+        req.client.host = "198.51.100.55"
+
+        orig_env = settings.ENVIRONMENT
+        try:
+            settings.ENVIRONMENT = "production"
+            # check_rate_limit should NOT assign to usr:victim-uuid-999 because token is unverified
+            check_rate_limit(req)
+            self.assertNotIn(f"usr:{victim_id}", _RATE_LIMIT_BUCKETS)
+            self.assertIn("198.51.100.55", _RATE_LIMIT_BUCKETS)
+        finally:
+            settings.ENVIRONMENT = orig_env
+            _RATE_LIMIT_BUCKETS.pop(f"usr:{victim_id}", None)
+            _RATE_LIMIT_BUCKETS.pop("198.51.100.55", None)
+
+    # 38. Security: CryptoVault Fail-Closed in Production Mode (VULN-05)
+    def test_38_vault_fail_closed_in_production(self):
+        from app.vault import CryptoVault
+        orig_env = settings.ENVIRONMENT
+        orig_key = settings.ENCRYPTION_KEY
+        try:
+            settings.ENVIRONMENT = "production"
+            settings.ENCRYPTION_KEY = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+            prod_vault = CryptoVault()
+
+            # Corrupted Fernet token must raise ValueError in production
+            corrupted_fernet = "gAAAAABinvalid_corrupted_ciphertext_payload_12345"
+            with self.assertRaises(ValueError):
+                prod_vault.decrypt(corrupted_fernet)
+
+            # Raw unencrypted plaintext token must raise ValueError in production
+            with self.assertRaises(ValueError):
+                prod_vault.decrypt("unencrypted_plain_token_123")
+        finally:
+            settings.ENVIRONMENT = orig_env
+            settings.ENCRYPTION_KEY = orig_key
+
+    # 39. Security: Supabase Auth Client Anon Key Enforcement in Production (VULN-06)
+    def test_39_auth_client_anon_key_enforcement(self):
+        import app.auth as auth_mod
+        orig_env = settings.ENVIRONMENT
+        orig_anon = settings.SUPABASE_ANON_KEY
+        orig_client = auth_mod._auth_client
+        try:
+            settings.ENVIRONMENT = "production"
+            settings.SUPABASE_ANON_KEY = ""
+            auth_mod._auth_client = None
+            with self.assertRaises(RuntimeError):
+                auth_mod.get_auth_client()
+        finally:
+            settings.ENVIRONMENT = orig_env
+            settings.SUPABASE_ANON_KEY = orig_anon
+            auth_mod._auth_client = orig_client
+
+    # 40. Security: Defensive HTTP Headers Present on API Responses (VULN-08)
+    def test_40_http_security_headers_present(self):
+        res = self.client.get("/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers.get("X-Content-Type-Options"), "nosniff")
+        self.assertEqual(res.headers.get("X-Frame-Options"), "DENY")
+        self.assertEqual(res.headers.get("X-XSS-Protection"), "1; mode=block")
+        self.assertEqual(res.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin")
 
 
 if __name__ == "__main__":

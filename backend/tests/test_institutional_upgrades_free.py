@@ -32,7 +32,7 @@ from app.macro_filter import (
     SECTOR_MAP,
     BSE_SCRIP_SECTOR_MAP
 )
-from app.agent_runner import compute_tactical_levels
+from app.engine.deterministic import compute_tactical_levels
 from app.notifications import format_telegram_alert, format_post_market_summary_telegram
 from app.backtester import (
     _resolve_exchange_candidates,

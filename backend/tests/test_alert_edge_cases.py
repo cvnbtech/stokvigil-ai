@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 from app.technical_engine import fetch_multi_timeframe_technicals
-from app.agent_runner import compute_deterministic_confluence
+from app.engine.deterministic import compute_deterministic_confluence
 
 
 class TestAlertEdgeCases(unittest.TestCase):

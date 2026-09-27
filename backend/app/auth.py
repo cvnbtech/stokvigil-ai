@@ -13,8 +13,14 @@ _auth_client: Optional[Client] = None
 def get_auth_client() -> Client:
     global _auth_client
     if _auth_client is None:
-        key = settings.SUPABASE_ANON_KEY or settings.SUPABASE_SERVICE_ROLE_KEY
-        _auth_client = create_client(settings.SUPABASE_URL, key)
+        anon_key = (settings.SUPABASE_ANON_KEY or "").strip().strip('"').strip("'")
+        if not anon_key:
+            if settings.ENVIRONMENT == "production":
+                logger.critical("FATAL: SUPABASE_ANON_KEY is required for client JWT validation in production.")
+                raise RuntimeError("FATAL SECURITY CONFIGURATION: SUPABASE_ANON_KEY is required for auth client in production.")
+            logger.warning("SUPABASE_ANON_KEY unconfigured; falling back to service-role key in non-production.")
+            anon_key = settings.SUPABASE_SERVICE_ROLE_KEY or "dummy-anon-key"
+        _auth_client = create_client(settings.SUPABASE_URL, anon_key)
     return _auth_client
 
 def get_current_user_id(authorization: Optional[str] = Header(None)) -> Optional[str]:
