@@ -616,7 +616,8 @@ G:\stokvigil-ai\
 │       ├── 20260906_fii_dii_flows.sql
 │       ├── 20260911_prune_old_alerts_cron.sql <-- 30-Day Alert Retention & pg_cron Schedule
 │       ├── 20260919_drop_not_null_broker_keys.sql <-- Master App Publisher Model
-│       └── 20260920_fii_dii_service_role_policy.sql <-- Service Role Write Policy on fii_dii_flows
+│       ├── 20260920_fii_dii_service_role_policy.sql <-- Service Role Write Policy on fii_dii_flows
+│       └── 20260927_add_broker_id_to_user_credentials.sql <-- Multi-Broker broker_id Column Migration
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py

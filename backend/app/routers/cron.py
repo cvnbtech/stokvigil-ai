@@ -102,16 +102,18 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
                 watchlists_data = watchlists_res.data or []
 
         pooled_creds = await fetch_all(
-            "SELECT user_id, encrypted_session_token, token_date, broker_id FROM user_credentials WHERE token_date = $1",
+            "SELECT * FROM user_credentials WHERE token_date = $1",
             today_str
         )
         if pooled_creds is not None:
             creds_data = pooled_creds
         else:
-            creds_res = db.table("user_credentials").select(
-                "user_id, encrypted_session_token, token_date, broker_id"
-            ).eq("token_date", today_str).execute()
+            creds_res = db.table("user_credentials").select("*").eq("token_date", today_str).execute()
             creds_data = creds_res.data or []
+
+        for c in creds_data:
+            if "broker_id" not in c or not c.get("broker_id"):
+                c["broker_id"] = "icici"
 
         user_contexts: Dict[str, Dict[str, Any]] = {}
         for p in profiles_data:
@@ -220,8 +222,11 @@ async def run_morning_token_reminder(
     verify_cron_secret(x_cron_secret)
 
     today_str = str(date.today())
-    creds_res = db.table("user_credentials").select("user_id, token_date, encrypted_session_token, broker_id").execute()
+    creds_res = db.table("user_credentials").select("*").execute()
     credentials_list = creds_res.data or []
+    for cred in credentials_list:
+        if "broker_id" not in cred or not cred.get("broker_id"):
+            cred["broker_id"] = "icici"
 
     reminded_users = 0
     synced_users = 0

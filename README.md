@@ -418,6 +418,7 @@ Users can permanently delete their account directly from the **Settings** page:
    - `supabase/migrations/20260911_prune_old_alerts_cron.sql` (Automated 30-day alert retention policy via `pg_cron` & `prune_historical_stok_alerts`)
    - `supabase/migrations/20260919_drop_not_null_broker_keys.sql` (Pure Master App Publisher Model)
    - `supabase/migrations/20260920_fii_dii_service_role_policy.sql` (Explicit Service Role write policy on `fii_dii_flows`)
+   - `supabase/migrations/20260927_add_broker_id_to_user_credentials.sql` (Multi-broker `broker_id` column on `user_credentials`)
 3. Copy your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### 2. Backend Deployment (FastAPI on Cloud Run / Local)

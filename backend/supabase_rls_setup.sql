@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS public.user_credentials (
     encrypted_secret_key TEXT,
     encrypted_session_token TEXT NOT NULL,
     token_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    broker_id TEXT DEFAULT 'icici',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
