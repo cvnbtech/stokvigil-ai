@@ -156,7 +156,10 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
               ),
             ),
           ),
-          pages[_currentIndex],
+          IndexedStack(
+            index: _currentIndex,
+            children: pages,
+          ),
         ],
       ),
       bottomNavigationBar: Container(

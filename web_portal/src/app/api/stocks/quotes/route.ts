@@ -46,7 +46,7 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
     for (const host of hosts) {
       try {
         const url = `https://${host}/v8/finance/chart/${encodeURIComponent(cleanSym)}${suffix}?range=1d&interval=1d`;
-        const res = await fetch(url, { headers, cache: "no-store" });
+        const res = await fetch(url, { headers, cache: "no-store", signal: AbortSignal.timeout(2500) });
         if (!res.ok) continue;
 
         const data = await res.json();
@@ -67,6 +67,57 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
         // Preserve tactical levels from previous cache if available
         const prevCached = quoteCache.get(sym)?.data || quoteCache.get(cleanSym)?.data;
 
+        // Calculate authentic Camarilla Equation Pivots from live market session volatility
+        const hVal = dayHigh ?? price;
+        const lVal = dayLow ?? price;
+        const cPrev = Number(prev);
+        const trueRange = Math.max(hVal - lVal, Math.abs(hVal - cPrev), Math.abs(lVal - cPrev));
+        const hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
+
+        const h3 = cPrev + (trueRange * 1.1 / 4.0);
+        const h4 = cPrev + (trueRange * 1.1 / 2.0);
+        const l3 = cPrev - (trueRange * 1.1 / 4.0);
+        const l4 = cPrev - (trueRange * 1.1 / 2.0);
+
+        let target: string | null = prevCached?.target || null;
+        let stop_loss: string | null = prevCached?.stop_loss || null;
+        let signal: string = prevCached?.signal || "MONITORING";
+        let signal_type: string = prevCached?.signal_type || "monitoring";
+
+        if (hasRealVol) {
+          if (price >= h4) {
+            signal = "STRONG_BUY";
+            signal_type = "strong_buy";
+            target = `₹${(h4 + (trueRange * 0.5)).toFixed(2)}`;
+            stop_loss = `₹${h3.toFixed(2)}`;
+          } else if (price >= h3) {
+            signal = "BUY";
+            signal_type = "buy";
+            target = `₹${h4.toFixed(2)}`;
+            stop_loss = `₹${l3.toFixed(2)}`;
+          } else if (price <= l4) {
+            signal = "STOP_LOSS_EXIT";
+            signal_type = "danger";
+            target = `₹${l3.toFixed(2)}`;
+            stop_loss = `₹${l4.toFixed(2)}`;
+          } else if (price <= l3) {
+            signal = "SELL";
+            signal_type = "sell";
+            target = `₹${l4.toFixed(2)}`;
+            stop_loss = `₹${h3.toFixed(2)}`;
+          } else if (price >= cPrev) {
+            signal = "ACCUMULATE";
+            signal_type = "accumulate";
+            target = `₹${h3.toFixed(2)}`;
+            stop_loss = `₹${l3.toFixed(2)}`;
+          } else {
+            signal = "HOLD";
+            signal_type = "hold";
+            target = `₹${h3.toFixed(2)}`;
+            stop_loss = `₹${l3.toFixed(2)}`;
+          }
+        }
+
         return {
           symbol: sym,
           name,
@@ -76,10 +127,10 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
           is_positive: chgPct >= 0,
           day_high: dayHigh,
           day_low: dayLow,
-          target: prevCached?.target || null,
-          stop_loss: prevCached?.stop_loss || null,
-          signal: prevCached?.signal || "MONITORING",
-          signal_type: prevCached?.signal_type || "monitoring"
+          target,
+          stop_loss,
+          signal,
+          signal_type
         };
       } catch {
         // Try next host/suffix
@@ -123,36 +174,38 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ quotes: quotesMap });
   }
 
-  // Tier 1: Try Python FastAPI Backend (STOKVIGIL_BACKEND_URL or http://localhost:8000)
-  const backendUrl = (process.env.STOKVIGIL_BACKEND_URL || "http://localhost:8000").replace(/\/+$/, "");
-  try {
-    const backendRes = await fetch(
-      `${backendUrl}/api/stocks/quotes?symbols=${encodeURIComponent(missingSymbols.join(","))}`,
-      { signal: AbortSignal.timeout(8000), cache: "no-store" }
-    );
-    if (backendRes.ok) {
-      const backendData = await backendRes.json();
-      const bQuotes = backendData.quotes || {};
-      for (const [sym, q] of Object.entries(bQuotes)) {
-        if (q && typeof q === "object" && (q as any).price > 0) {
-          const typedQ = q as StockQuote;
-          quotesMap[sym] = typedQ;
-          quoteCache.set(sym, { data: typedQ, timestamp: now });
-          const cleanK = (typedQ as any).clean_symbol || sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
-          if (cleanK) {
-            quotesMap[cleanK] = typedQ;
-            quoteCache.set(cleanK, { data: typedQ, timestamp: now });
-          }
-          const fullK = (typedQ as any).full_symbol;
-          if (fullK) {
-            quotesMap[fullK] = typedQ;
-            quoteCache.set(fullK, { data: typedQ, timestamp: now });
+  // Tier 1: Try Python FastAPI Backend strictly if configured in environment
+  const backendUrl = (process.env.STOKVIGIL_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/+$/, "");
+  if (backendUrl) {
+    try {
+      const backendRes = await fetch(
+        `${backendUrl}/api/stocks/quotes?symbols=${encodeURIComponent(missingSymbols.join(","))}`,
+        { signal: AbortSignal.timeout(2500), cache: "no-store" }
+      );
+      if (backendRes.ok) {
+        const backendData = await backendRes.json();
+        const bQuotes = backendData.quotes || {};
+        for (const [sym, q] of Object.entries(bQuotes)) {
+          if (q && typeof q === "object" && (q as any).price > 0) {
+            const typedQ = q as StockQuote;
+            quotesMap[sym] = typedQ;
+            quoteCache.set(sym, { data: typedQ, timestamp: now });
+            const cleanK = (typedQ as any).clean_symbol || sym.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+            if (cleanK) {
+              quotesMap[cleanK] = typedQ;
+              quoteCache.set(cleanK, { data: typedQ, timestamp: now });
+            }
+            const fullK = (typedQ as any).full_symbol;
+            if (fullK) {
+              quotesMap[fullK] = typedQ;
+              quoteCache.set(fullK, { data: typedQ, timestamp: now });
+            }
           }
         }
       }
+    } catch {
+      // Backend offline, unreachable, or timed out; will fall back to Tier 2
     }
-  } catch {
-    // Backend offline, unreachable, or timed out; will fall back to Tier 2
   }
 
   // Tier 2: Resilient direct Yahoo Finance fetch for any missing symbols

@@ -23,6 +23,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   bool _autoSync = false;
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
   Timer? _searchDebounce;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
@@ -30,6 +31,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     _searchController.addListener(_onSearchChanged);
     _loadWatchlist();
     _subscribeToWatchlist();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _refreshQuotesOnly();
+    });
   }
 
   void _onSearchChanged() {
@@ -60,6 +64,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchChanged);
     _watchlistSub?.cancel();
@@ -67,11 +72,62 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     super.dispose();
   }
 
+  void _applyQuoteToItem(Map<String, dynamic> item, Map<String, dynamic> q) {
+    final price = (q['price'] as num? ?? 0.0).toDouble();
+    item['price'] = price;
+    final num? chgVal = q['change_pct'] as num?;
+    final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
+    final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
+    item['is_positive'] = isPos;
+    item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
+    if (q['name'] != null && q['name'].toString().isNotEmpty) {
+      item['name'] = q['name'];
+    }
+    if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
+      item['exchange'] = q['exchange'];
+    }
+    item['signal'] = q['signal'];
+    item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0')
+        ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}")
+        : null;
+    item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0')
+        ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}")
+        : null;
+  }
+
   void _subscribeToWatchlist() {
     _watchlistSub = SupabaseService().streamWatchlist().listen((liveData) {
       if (mounted) {
         setState(() {
-          _watchlist = liveData;
+          final updated = <Map<String, dynamic>>[];
+          for (final item in liveData) {
+            final sym = (item['symbol']?.toString() ?? '').toUpperCase();
+            final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
+
+            // Find existing item in memory to preserve live quotes
+            final existing = _watchlist.firstWhere(
+              (w) => (w['symbol']?.toString() ?? '').toUpperCase() == sym ||
+                     (w['symbol']?.toString() ?? '').toUpperCase() == cleanSym,
+              orElse: () => <String, dynamic>{},
+            );
+            final cached = ApiService.getCachedQuote(cleanSym) ?? ApiService.getCachedQuote(sym);
+
+            final merged = Map<String, dynamic>.from(item);
+            if (existing.isNotEmpty && (existing['price'] as num? ?? 0) > 0) {
+              merged['price'] = existing['price'];
+              merged['chg'] = existing['chg'];
+              merged['is_positive'] = existing['is_positive'];
+              merged['signal'] = existing['signal'];
+              merged['target'] = existing['target'];
+              merged['stop_loss'] = existing['stop_loss'];
+              merged['name'] = existing['name'] ?? merged['name'];
+              merged['exchange'] = existing['exchange'] ?? merged['exchange'];
+            } else if (cached != null && (cached['price'] as num? ?? 0) > 0) {
+              _applyQuoteToItem(merged, cached);
+            }
+            updated.add(merged);
+          }
+          _watchlist = updated;
           _isLoading = false;
         });
       }
@@ -79,6 +135,31 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   }
 
   List<Map<String, dynamic>> _dematHoldings = [];
+
+  Future<void> _refreshQuotesOnly() async {
+    if (!mounted || _watchlist.isEmpty) return;
+    final symbols = _watchlist
+        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (symbols.isEmpty) return;
+    try {
+      final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
+      if (!mounted) return;
+      setState(() {
+        for (var item in _watchlist) {
+          final sym = (item['symbol']?.toString() ?? '').toUpperCase();
+          final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
+          final q = liveQuotes[sym] ?? liveQuotes[cleanSym];
+          if (q != null && q is Map<String, dynamic>) {
+            _applyQuoteToItem(item, q);
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint("Error refreshing quotes: $e");
+    }
+  }
 
   Future<void> _loadWatchlist() async {
     final user = SupabaseService().currentUser;
@@ -91,7 +172,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
+    if (_watchlist.isEmpty) {
+      setState(() => _isLoading = true);
+    }
     try {
       final profile = await SupabaseService().fetchUserProfile();
       if (profile != null) {
@@ -99,9 +182,17 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       }
     } catch (_) {}
 
-    // Step 1: Instantly load cached/persisted watchlist from Supabase (< 100ms)
+    // Step 1: Instantly load cached/persisted watchlist from Supabase & L1 memory (< 10ms)
     final data = await SupabaseService().fetchWatchlist();
     if (mounted) {
+      for (final item in data) {
+        final sym = (item['symbol']?.toString() ?? '').toUpperCase();
+        final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
+        final cached = ApiService.getCachedQuote(cleanSym) ?? ApiService.getCachedQuote(sym);
+        if (cached != null) {
+          _applyQuoteToItem(item, cached);
+        }
+      }
       setState(() {
         _watchlist = data;
         _isLoading = false; // Screen is immediately interactive and visible!
@@ -109,44 +200,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     }
 
     // Step 2: Fetch real-time live quotes in background and update smoothly
-    final symbols = data
-        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (symbols.isNotEmpty) {
-      try {
-        final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
-        for (var item in data) {
-          final sym = (item['symbol']?.toString() ?? '').toUpperCase();
-          if (liveQuotes.containsKey(sym)) {
-            final q = liveQuotes[sym] as Map<String, dynamic>;
-            final price = (q['price'] as num? ?? 0.0).toDouble();
-            item['price'] = price;
-            final num? chgVal = q['change_pct'] as num?;
-            final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
-            final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
-            item['is_positive'] = isPos;
-            item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
-            if (q['name'] != null && q['name'].toString().isNotEmpty) {
-              item['name'] = q['name'];
-            }
-            if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
-              item['exchange'] = q['exchange'];
-            }
-            item['signal'] = q['signal'];
-            item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0') ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}") : null;
-            item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0') ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}") : null;
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _watchlist = List.from(data);
-          });
-        }
-      } catch (e) {
-        debugPrint("Error fetching live quotes for watchlist: $e");
-      }
-    }
+    await _refreshQuotesOnly();
 
     // Step 3: Run Demat portfolio sync in background without blocking UI
     if (_autoSync) {
@@ -636,7 +690,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
           // WATCHLIST CARDS LIST
           // ─────────────────────────────────────────────
           Expanded(
-            child: _isLoading
+            child: _isLoading && displayedList.isEmpty
                     ? const Center(child: CircularProgressIndicator(color: AppTheme.cyan))
                     : displayedList.isEmpty
                         ? Center(
@@ -661,10 +715,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                               ),
                             ),
                           )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            itemCount: displayedList.length + 1,
-                            itemBuilder: (context, index) {
+                        : RefreshIndicator(
+                            onRefresh: _loadWatchlist,
+                            color: AppTheme.cyan,
+                            backgroundColor: AppTheme.cardBackground,
+                            child: ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              itemCount: displayedList.length + 1,
+                              itemBuilder: (context, index) {
                               if (index == displayedList.length) {
                                 return Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),

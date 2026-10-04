@@ -17,6 +17,14 @@ import DeleteAccountModal from "../components/modals/DeleteAccountModal";
 import ShareAlphaCardModal, { AlphaCardData } from "../components/ShareAlphaCardModal";
 import LightweightCandleChart from "../components/LightweightCandleChart";
 
+// Client-side module-level L1 cache for instant SWR (<2ms) render
+const clientQuoteCache: Record<string, any> = {};
+
+function getCachedClientQuote(symbol: string): any {
+  const clean = symbol.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+  return clientQuoteCache[clean] || clientQuoteCache[symbol.trim().toUpperCase()];
+}
+
 export default function App() {
   const [screen, setScreen] = useState<"auth" | "app">("auth");
   const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
@@ -337,67 +345,65 @@ export default function App() {
       try {
         const { data } = await supabase.from('user_watchlists').select('*').eq('user_id', uid).order('created_at', { ascending: false });
         if (data && data.length > 0) {
-          const symbols = data.map((w: any) => w.symbol.toUpperCase());
-          let quotesMap: Record<string, any> = {};
+          const mapWatchlistItems = (rawItems: any[], quotesMap: Record<string, any>) => {
+            return rawItems.map((w: any) => {
+              const rawSym = (w.symbol || "").toUpperCase();
+              const cleanSym = rawSym.replace(/\.(BO|NS)$/i, "").trim();
+              const q = quotesMap[cleanSym] || quotesMap[rawSym] || getCachedClientQuote(cleanSym) || {};
+              const price = q.price !== undefined ? q.price : 0;
+              const rawChg = q.change_pct;
+              const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
+              const isPos = chgPct >= 0;
+              const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
+              const hasRealPrice = price > 0;
+              const signal = (hasRealPrice && q.signal && q.signal !== "--") ? q.signal : "--";
+              const signalType = (hasRealPrice && q.signal_type) ? q.signal_type : "none";
+              const target = (hasRealPrice && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
+              const sl = (hasRealPrice && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
 
-          try {
-            let res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
-              signal: AbortSignal.timeout(8000)
+              return {
+                id: w.id,
+                symbol: cleanSym,
+                fullSymbol: rawSym,
+                exchange: exch,
+                name: q.name || cleanSym,
+                auto: w.is_auto_synced || false,
+                price,
+                chg: hasRealPrice ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
+                isPositive: isPos,
+                signal,
+                signalType,
+                target,
+                sl
+              };
             });
-            if (!res.ok) {
-              res = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
-                signal: AbortSignal.timeout(10000)
-              });
-            }
+          };
+
+          // Step 1: Render immediately from SWR memory cache (< 2ms)
+          setWatchlist(mapWatchlistItems(data, clientQuoteCache));
+
+          // Step 2: Fetch fresh quotes from Next.js API route in background (no dead localhost retries)
+          const symbols = data.map((w: any) => (w.symbol || "").toUpperCase());
+          try {
+            const res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+              signal: AbortSignal.timeout(3500)
+            });
             if (res.ok) {
               const qData = await res.json();
-              quotesMap = qData.quotes || {};
+              const freshQuotes = qData.quotes || {};
+              for (const [k, v] of Object.entries(freshQuotes)) {
+                if (v && typeof v === "object") {
+                  clientQuoteCache[k] = v;
+                  const cleanK = k.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+                  if (cleanK) clientQuoteCache[cleanK] = v;
+                }
+              }
+              // Smooth in-place state update
+              setWatchlist(mapWatchlistItems(data, clientQuoteCache));
             }
           } catch (qErr) {
-            try {
-              const directRes = await fetch(`${BACKEND_URL}/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
-                signal: AbortSignal.timeout(10000)
-              });
-              if (directRes.ok) {
-                const qData = await directRes.json();
-                quotesMap = qData.quotes || {};
-              }
-            } catch (directErr) {
-              console.warn("Error fetching live batch stock quotes:", directErr);
-            }
+            console.warn("Background quotes refresh:", qErr);
           }
-
-          setWatchlist(data.map((w: any) => {
-            const rawSym = w.symbol.toUpperCase();
-            const cleanSym = rawSym.replace(/\.(BO|NS)$/i, "").trim();
-            const q = quotesMap[cleanSym] || quotesMap[rawSym] || {};
-            const price = q.price !== undefined ? q.price : 0;
-            const rawChg = q.change_pct;
-            const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
-            const isPos = chgPct >= 0;
-            const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
-            const hasRealPrice = price > 0;
-            const signal = (hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING") ? q.signal : "--";
-            const signalType = (hasRealPrice && q.signal_type) ? q.signal_type : "none";
-            const target = (hasRealPrice && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
-            const sl = (hasRealPrice && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
-
-            return {
-              id: w.id,
-              symbol: cleanSym,
-              fullSymbol: rawSym,
-              exchange: exch,
-              name,
-              auto: w.is_auto_synced || false,
-              price,
-              chg: hasRealPrice ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
-              isPositive: isPos,
-              signal,
-              signalType,
-              target,
-              sl
-            };
-          }));
           return;
         }
       } catch (e) {
@@ -806,6 +812,25 @@ export default function App() {
     const cleanRaw = raw.replace(/\.(BO|NS)$/i, "").trim();
 
     if (user?.id && supabase) {
+      setWatchlist(prev => [
+        {
+          id: Date.now().toString(),
+          symbol: cleanRaw,
+          fullSymbol: raw,
+          exchange: raw.endsWith('.BO') ? 'BSE' : 'NSE',
+          name: stockName && stockName !== raw ? stockName : cleanRaw,
+          auto: false,
+          price: livePrice,
+          chg: livePrice > 0 ? "+0.00%" : "--",
+          isPositive: true,
+          signal: "--",
+          signalType: "none",
+          target: "--",
+          sl: "--"
+        },
+        ...prev.filter(p => p.symbol !== cleanRaw)
+      ]);
+
       await supabase.from('user_watchlists').upsert({
         user_id: user.id,
         symbol: cleanRaw,
@@ -817,13 +842,15 @@ export default function App() {
         {
           id: Date.now().toString(),
           symbol: cleanRaw,
+          fullSymbol: raw,
+          exchange: raw.endsWith('.BO') ? 'BSE' : 'NSE',
           name: stockName && stockName !== raw ? stockName : cleanRaw,
           auto: false,
           price: livePrice,
           chg: livePrice > 0 ? "+0.00%" : "--",
           isPositive: true,
-          signal: "MONITORING",
-          signalType: "monitoring",
+          signal: "--",
+          signalType: "none",
           target: "--",
           sl: "--"
         },
@@ -833,11 +860,9 @@ export default function App() {
   };
 
   const removeTicker = async (id: string) => {
+    setWatchlist(prev => prev.filter(w => w.id !== id));
     if (user?.id && supabase) {
       await supabase.from('user_watchlists').delete().eq('id', id);
-      loadWatchlistData(user.id);
-    } else {
-      setWatchlist(prev => prev.filter(w => w.id !== id));
     }
   };
 

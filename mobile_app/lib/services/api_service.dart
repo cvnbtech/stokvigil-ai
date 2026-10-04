@@ -7,6 +7,26 @@ import '../models/models.dart';
 import 'supabase_service.dart';
 
 class ApiService {
+  // Static L1 In-Memory Cache for 0ms SWR (Stale-While-Revalidate) screen rendering
+  static final Map<String, Map<String, dynamic>> _quotesCache = {};
+  static final Map<String, DateTime> _quotesCacheTimestamps = {};
+
+  static Map<String, dynamic>? getCachedQuote(String symbol) {
+    final clean = symbol.trim().toUpperCase().replaceAll(RegExp(r'\.(BO|NS)$'), '');
+    return _quotesCache[clean] ?? _quotesCache[symbol.trim().toUpperCase()];
+  }
+
+  static Map<String, Map<String, dynamic>> getAllCachedQuotes() {
+    return Map.unmodifiable(_quotesCache);
+  }
+
+  static void setCachedQuote(String symbol, Map<String, dynamic> quote) {
+    final clean = symbol.trim().toUpperCase().replaceAll(RegExp(r'\.(BO|NS)$'), '');
+    _quotesCache[clean] = quote;
+    _quotesCache[symbol.trim().toUpperCase()] = quote;
+    _quotesCacheTimestamps[clean] = DateTime.now();
+  }
+
   static String get baseUrl {
     const configured = String.fromEnvironment(
       'BACKEND_URL',
@@ -18,13 +38,8 @@ class ApiService {
     if (configured.isNotEmpty && !configured.contains('xxxx.a.run.app')) {
       return configured.replaceAll(RegExp(r'/+$'), '');
     }
-    if (kDebugMode) {
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        return 'http://10.0.2.2:8000';
-      }
-      return 'http://localhost:8000';
-    }
-    return configured.isNotEmpty ? configured.replaceAll(RegExp(r'/+$'), '') : 'http://localhost:8000';
+    // Purely environment-driven: Return empty if not configured in environment (no dummy localhost)
+    return '';
   }
 
   Map<String, String> _getAuthHeaders() {
@@ -166,28 +181,49 @@ class ApiService {
     final quotes = <String, dynamic>{};
     final missing = <String>[];
 
-    // Tier 1: Fetch from backend (incorporates AI signals, targets & stop loss if available)
-    try {
-      final q = Uri.encodeComponent(clean.join(','));
-      final res = await http
-          .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
-          .timeout(const Duration(seconds: 8));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final bQuotes = Map<String, dynamic>.from(data['quotes'] ?? {});
-        for (final sym in clean) {
-          if (bQuotes.containsKey(sym) && bQuotes[sym] is Map && (bQuotes[sym]['price'] as num? ?? 0) > 0) {
-            quotes[sym] = bQuotes[sym];
-          } else {
-            missing.add(sym);
+    // Check L1 In-Memory SWR Cache first
+    for (final sym in clean) {
+      final cached = getCachedQuote(sym);
+      if (cached != null && (cached['price'] as num? ?? 0) > 0) {
+        quotes[sym] = cached;
+      }
+    }
+
+    // Tier 1: Fetch from backend ONLY if backend URL is configured in the environment
+    if (baseUrl.isNotEmpty) {
+      try {
+        final q = Uri.encodeComponent(clean.join(','));
+        final res = await http
+            .get(Uri.parse('$baseUrl/api/stocks/quotes?symbols=$q'))
+            .timeout(const Duration(milliseconds: 2500));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          final bQuotes = Map<String, dynamic>.from(data['quotes'] ?? {});
+          for (final sym in clean) {
+            if (bQuotes.containsKey(sym) && bQuotes[sym] is Map && (bQuotes[sym]['price'] as num? ?? 0) > 0) {
+              final qData = Map<String, dynamic>.from(bQuotes[sym]);
+              quotes[sym] = qData;
+              setCachedQuote(sym, qData);
+            } else if (!quotes.containsKey(sym)) {
+              missing.add(sym);
+            }
+          }
+        } else {
+          for (final sym in clean) {
+            if (!quotes.containsKey(sym)) missing.add(sym);
           }
         }
-      } else {
-        missing.addAll(clean);
+      } catch (e) {
+        debugPrint("API backend quotes fetch skipped/failed ($e), falling back directly");
+        for (final sym in clean) {
+          if (!quotes.containsKey(sym)) missing.add(sym);
+        }
       }
-    } catch (e) {
-      debugPrint("API backend quotes fetch failed or offline: $e");
-      missing.addAll(clean);
+    } else {
+      // Pure environment-driven: No backend URL configured, 0ms latency straight to Tier 2
+      for (final sym in clean) {
+        if (!quotes.containsKey(sym)) missing.add(sym);
+      }
     }
 
     // Tier 2: Direct Yahoo Finance fallback for any still-missing symbols
@@ -196,6 +232,7 @@ class ApiService {
         final directQuote = await _fetchDirectYahooQuote(sym);
         if (directQuote != null) {
           quotes[sym] = directQuote;
+          setCachedQuote(sym, directQuote);
         }
       }));
     }
@@ -210,12 +247,14 @@ class ApiService {
       'Accept': 'application/json, text/plain, */*',
     };
 
+    final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '').trim();
+
     for (final suffix in ['.NS', '.BO']) {
       final exch = suffix == '.NS' ? 'NSE' : 'BSE';
       for (final host in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
         try {
-          final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(sym)}$suffix?range=1d&interval=1d');
-          final res = await http.get(url, headers: headers).timeout(const Duration(seconds: 4));
+          final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(cleanSym)}$suffix?range=1d&interval=1d');
+          final res = await http.get(url, headers: headers).timeout(const Duration(milliseconds: 2500));
           if (res.statusCode == 200) {
             final data = jsonDecode(res.body);
             final resList = data['chart']?['result'] as List?;
@@ -226,7 +265,7 @@ class ApiService {
                 final price = (p as num).toDouble();
                 final prev = (meta?['chartPreviousClose'] ?? meta?['previousClose'] ?? price) as num;
                 final chgPct = prev > 0 ? (((price - prev.toDouble()) / prev.toDouble()) * 100) : 0.0;
-                final name = (meta?['shortName'] ?? meta?['longName'] ?? '$sym ($exch)').toString();
+                final name = (meta?['shortName'] ?? meta?['longName'] ?? '$cleanSym ($exch)').toString();
                 final dayHigh = meta?['regularMarketDayHigh'] != null ? (meta!['regularMarketDayHigh'] as num).toDouble() : null;
                 final dayLow = meta?['regularMarketDayLow'] != null ? (meta!['regularMarketDayLow'] as num).toDouble() : null;
 
@@ -237,13 +276,52 @@ class ApiService {
                 final double trueRange = math.max(hVal - lVal, math.max((hVal - cPrev).abs(), (lVal - cPrev).abs()));
                 final bool hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
 
-                final String? targetStr = hasRealVol ? '₹${(cPrev + (trueRange * 1.1 / 4.0)).toStringAsFixed(2)}' : null;
-                final String? slStr = hasRealVol ? '₹${(cPrev - (trueRange * 1.1 / 2.0)).toStringAsFixed(2)}' : null;
-                final String? signalStr = hasRealVol ? 'HOLD' : null;
-                final String? signalTypeStr = hasRealVol ? 'hold' : null;
+                final double h3 = cPrev + (trueRange * 1.1 / 4.0);
+                final double h4 = cPrev + (trueRange * 1.1 / 2.0);
+                final double l3 = cPrev - (trueRange * 1.1 / 4.0);
+                final double l4 = cPrev - (trueRange * 1.1 / 2.0);
+
+                String? targetStr;
+                String? slStr;
+                String? signalStr;
+                String? signalTypeStr;
+
+                if (hasRealVol) {
+                  if (price >= h4) {
+                    signalStr = 'STRONG_BUY';
+                    signalTypeStr = 'strong_buy';
+                    targetStr = '₹${(h4 + (trueRange * 0.5)).toStringAsFixed(2)}';
+                    slStr = '₹${h3.toStringAsFixed(2)}';
+                  } else if (price >= h3) {
+                    signalStr = 'BUY';
+                    signalTypeStr = 'buy';
+                    targetStr = '₹${h4.toStringAsFixed(2)}';
+                    slStr = '₹${l3.toStringAsFixed(2)}';
+                  } else if (price <= l4) {
+                    signalStr = 'STOP_LOSS_EXIT';
+                    signalTypeStr = 'danger';
+                    targetStr = '₹${l3.toStringAsFixed(2)}';
+                    slStr = '₹${l4.toStringAsFixed(2)}';
+                  } else if (price <= l3) {
+                    signalStr = 'SELL';
+                    signalTypeStr = 'sell';
+                    targetStr = '₹${l4.toStringAsFixed(2)}';
+                    slStr = '₹${h3.toStringAsFixed(2)}';
+                  } else if (price >= cPrev) {
+                    signalStr = 'ACCUMULATE';
+                    signalTypeStr = 'accumulate';
+                    targetStr = '₹${h3.toStringAsFixed(2)}';
+                    slStr = '₹${l3.toStringAsFixed(2)}';
+                  } else {
+                    signalStr = 'HOLD';
+                    signalTypeStr = 'hold';
+                    targetStr = '₹${h3.toStringAsFixed(2)}';
+                    slStr = '₹${l3.toStringAsFixed(2)}';
+                  }
+                }
 
                 return {
-                  'symbol': sym,
+                  'symbol': cleanSym,
                   'name': name,
                   'exchange': exch,
                   'price': double.parse(price.toStringAsFixed(2)),
@@ -255,7 +333,7 @@ class ApiService {
                   'stop_loss': slStr,
                   'signal': signalStr,
                   'signal_type': signalTypeStr,
-                  'disclaimer': 'Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise.',
+                  'disclaimer': 'Authentic mathematical Camarilla Equation pivots (H3/H4/L3/L4) from live market volatility.',
                 };
               }
             }
