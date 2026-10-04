@@ -62,3 +62,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Internal Master Specifications
+STOKVIGIL_MASTER_PROMPT.md

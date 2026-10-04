@@ -177,13 +177,9 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
     sl_price = parse_tactical_price(sl_str)
 
     alert_dt = parse_iso_datetime(alert.get("created_at"))
-    is_bearish = bias in ["SELL_WATCH", "STRONG_SELL", "DISTRIBUTION"]
+    is_bearish = bias in ["SELL_WATCH", "STRONG_SELL", "DISTRIBUTION", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT"]
 
-    # Default fallback values
-    fallback_outcome = "TARGET_1_REACHED" if score >= 75 else "STOP_LOSS_DEFENDED"
-    fallback_max_gain = round(rr_val * 1.8, 1)
-
-    # If no candle data or unparseable prices, use deterministic fallback
+    # Zero Dummy / Zero Hallucination: If no candle data or unparseable prices, signal is pending real-time candle ingestion
     if candles_df is None or candles_df.empty or not entry_price or not target_price or not sl_price or not alert_dt:
         return {
             "id": alert.get("id"),
@@ -196,11 +192,11 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
             "target_1": target_str,
             "stop_loss": sl_str,
             "risk_reward": rr_str,
-            "outcome": fallback_outcome,
-            "max_gain_pct": fallback_max_gain,
+            "outcome": "PENDING_CANDLE_DATA",
+            "max_gain_pct": 0.0,
             "hold_duration_hours": None,
             "created_at": alert.get("created_at"),
-            "verified_by": "HEURISTIC_BACKTEST"
+            "verified_by": "PENDING_MARKET_INGESTION"
         }
 
     # Slice candles occurring at or after alert creation
@@ -227,11 +223,11 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
             "target_1": target_str,
             "stop_loss": sl_str,
             "risk_reward": rr_str,
-            "outcome": fallback_outcome,
-            "max_gain_pct": fallback_max_gain,
+            "outcome": "OPEN_MONITORING",
+            "max_gain_pct": 0.0,
             "hold_duration_hours": None,
             "created_at": alert.get("created_at"),
-            "verified_by": "FALLBACK"
+            "verified_by": "REAL_CANDLE_VERIFICATION"
         }
 
     outcome = "OPEN_MONITORING"
@@ -321,12 +317,7 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
         except Exception:
             pass
 
-    # If outcome is still OPEN_MONITORING because neither target nor SL was breached yet:
-    # Check if target was touched or if it remains active
-    if outcome == "OPEN_MONITORING":
-        # If trade has positive gain and achieved significant move towards target, mark as open
-        # But ensure AuditLedgerView compatibility
-        outcome = "OPEN_MONITORING" if max_peak_gain < 1.0 else "TARGET_1_REACHED"
+    # If neither target nor SL was breached yet, signal remains genuinely OPEN_MONITORING
 
     return {
         "id": alert.get("id"),
@@ -340,7 +331,7 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
         "stop_loss": sl_str,
         "risk_reward": rr_str,
         "outcome": outcome,
-        "max_gain_pct": max_peak_gain if max_peak_gain > 0 else fallback_max_gain,
+        "max_gain_pct": max_peak_gain,
         "hold_duration_hours": hold_hours,
         "created_at": alert.get("created_at"),
         "verified_by": "REAL_CANDLE_VERIFICATION"

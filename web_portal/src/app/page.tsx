@@ -239,7 +239,7 @@ export default function App() {
               };
             }
 
-            const bias = rawSnap.action_bias || "HOLD_NEUTRAL";
+            const bias = a.action_bias || rawSnap.action_bias || a.alert_type || "HOLD_NEUTRAL";
             let tPrice = rawSnap.tactical_levels?.target_1;
             let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
 
@@ -262,10 +262,19 @@ export default function App() {
             const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
             const vixVal = macroData.india_vix || rawSnap.india_vix || null;
 
+            const biasUpper = bias.toUpperCase();
             let sigType = "buy";
-            if (bias.includes("SELL")) sigType = "sell";
-            else if (bias.includes("TRAILING")) sigType = "med";
-            else if ((a.impact_score || 0) >= 80) sigType = "strong_buy";
+            if (biasUpper.includes("CAPITAL_PRESERVATION") || biasUpper.includes("CAPITAL PRESERVATION")) {
+              sigType = "capital_preservation_exit";
+            } else if (biasUpper.includes("MIS_SHORT") || biasUpper.includes("INTRADAY_MIS")) {
+              sigType = "intraday_mis_short";
+            } else if (biasUpper.includes("SELL")) {
+              sigType = "sell";
+            } else if (biasUpper.includes("TRAILING")) {
+              sigType = "med";
+            } else if ((a.impact_score || 0) >= 80) {
+              sigType = "strong_buy";
+            }
 
             const hasRealFactors = rawSnap.factor_breakdown &&
               typeof rawSnap.factor_breakdown === 'object' &&

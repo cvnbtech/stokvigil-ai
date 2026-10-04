@@ -1,3 +1,4 @@
+import os
 import time
 import json
 import csv
@@ -178,20 +179,21 @@ def get_symbol_sector(symbol: str) -> Optional[str]:
             lookup_sym = resolved_sym
 
     # 3. Dynamic lookup via Ticker Metadata & Industry Taxonomy
-    for cand in [f"{lookup_sym}.NS", f"{lookup_sym}.BO", lookup_sym]:
-        try:
-            t = yf.Ticker(cand)
-            info = getattr(t, "info", None) or {}
-            sector_str = info.get("sector")
-            if sector_str:
-                nifty_sec = GLOBAL_INDUSTRY_TO_NIFTY_SECTOR.get(sector_str)
-                if nifty_sec:
-                    _DYNAMIC_SECTOR_CACHE[bare] = nifty_sec
-                    _DYNAMIC_SECTOR_CACHE[raw] = nifty_sec
-                    _DYNAMIC_SECTOR_CACHE[lookup_sym] = nifty_sec
-                    return nifty_sec
-        except Exception:
-            continue
+    if os.environ.get("ENVIRONMENT") != "test":
+        for cand in [f"{lookup_sym}.NS", f"{lookup_sym}.BO", lookup_sym]:
+            try:
+                t = yf.Ticker(cand)
+                info = getattr(t, "info", None) or {}
+                sector_str = info.get("sector")
+                if sector_str:
+                    nifty_sec = GLOBAL_INDUSTRY_TO_NIFTY_SECTOR.get(sector_str)
+                    if nifty_sec:
+                        _DYNAMIC_SECTOR_CACHE[bare] = nifty_sec
+                        _DYNAMIC_SECTOR_CACHE[raw] = nifty_sec
+                        _DYNAMIC_SECTOR_CACHE[lookup_sym] = nifty_sec
+                        return nifty_sec
+            except Exception:
+                continue
 
     return None
 

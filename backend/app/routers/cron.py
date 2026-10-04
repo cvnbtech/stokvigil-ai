@@ -276,9 +276,7 @@ async def run_morning_token_reminder(
                 )
                 if m_holdings:
                     update_demat_portfolio_cache(uid, m_holdings)
-                    holding_syms = [h.get('symbol') for h in m_holdings if h.get('symbol')]
-                    if holding_syms:
-                        _async_sync_demat_to_watchlists(db, uid, holding_syms)
+                    _async_sync_demat_to_watchlists(db, uid, m_holdings)
                     synced_users += 1
             except Exception as sync_err:
                 logger.debug(f"Morning pre-sync note for user {mask_id(uid)}: {sync_err}")

@@ -67,7 +67,10 @@ The backend is organized into high-cohesion, low-coupling packages, replacing le
 
 Every 5 minutes during Indian market hours (09:15–15:30 IST), StokVigil AI executes a **2-Tier Institutional Surveillance Loop**:
 
-$$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\text{flow}} \times \text{Flow}) + (W_{\text{forensics}} \times \text{Forensics}) + (W_{\text{news}} \times \text{News})$$
+$$\text{Confluence Score} = \sum_{k \in \text{Available}} W_k' \times \text{Factor}_k, \quad \text{where } W_k' = \frac{W_k}{\sum_{j \in \text{Available}} W_j}$$
+
+- **Dynamic Available-Weight Re-Normalization**: Rather than injecting static `50.0` neutral points when external metrics (order flow, forensic balance sheets, news catalysts) are unavailable, active factor weights dynamically re-scale to 100% over authentically available indicators only. This eliminates up to 22.5 phantom points and guarantees that weak stocks are never artificially buoyed by default scores.
+- **Immutable Mathematical Sovereignty**: All numerical calculations, confluence scores, tactical targets, and stop-losses are calculated with 100% deterministic mathematical sovereignty. Google Gemini AI is quarantined strictly to qualitative narrative text and is physically prohibited from altering any numerical output.
 
 ### Regime-Adaptive Dynamic Weights Matrix:
 To emulate top quantitative hedge funds, the Confluence Engine dynamically adapts factor weightings based on the real-time macro regime (`India VIX` and `Market Breadth ADR`):
@@ -157,9 +160,12 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
    - Filters official NSE option chain records strictly by current near-month/weekly expiry (`records["expiryDates"][0]`), eliminating far-month illiquid options from distorting Put-Call Ratio (PCR) and Max Pain.
 8. **Universal Sensitivity Delivery Gate**:
    - Fixed sensitivity filtering so users configured with `ALL` sensitivity receive all valid actionable alerts, breakdowns, and capital preservation stop-loss defenses.
-9. **Two-Way 200 EMA Macro Trend Anchor**:
-   - *The Market Reality*: Counter-trend breakouts suffer high statistical failure rates. Longs triggered in a macro bear trend or breakdown shorts triggered in a macro bull rally frequently trap retail traders.
-   - *Two-Way Macro Anchor*: Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, any `SELL_WATCH` breakdown setup is vetoed to `HOLD_NEUTRAL`. All trades are forced to align with the primary institutional trend tide.
+9. **Two-Way 200 EMA Macro Trend Anchor & Supply Shock Override**:
+    - *The Market Reality*: Counter-trend breakouts suffer high statistical failure rates. Longs triggered in a macro bear trend or breakdown shorts triggered in a macro bull rally frequently trap retail traders.
+    - *Two-Way Macro Anchor*: Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, standard `SELL_WATCH` setups are vetoed to `HOLD_NEUTRAL`.
+    - *Severe Supply Shock Override*: If a stock trading above its 200 EMA suffers a severe intraday breakdown ($\le -3.5\%$, VWAP breach, or Camarilla $L_4$ break), the macro bull filter is overridden:
+      - **Demat Portfolio Holdings**: Triggers immediate `CAPITAL_PRESERVATION_EXIT` to protect investor capital.
+      - **Unheld Equities**: Routes as `INTRADAY_MIS_SHORT` with mandatory SEBI 3:15 PM auto-square-off statutory notice.
 10. **15-Minute Candle Close Confirmation & Wick Rejection Engine**:
     - *The Market Reality*: Mid-bar false breakout wicks (e.g. testing the ORB high or resistance for 30 seconds before reversing sharply) cause devastating repainting whipsaws.
     - *Candle Close Verification*: Evaluates breakout catalysts (`BULLISH_ORB_BREAKOUT`, `PRICE_BREAKOUT`) strictly at the 15-minute candle close boundary (`is_15m_candle_closed` & `candle_close_confirmed`). Filters out long upper/lower wick rejections (`ORB_UPPER_WICK_REJECTION`, `ORB_LOWER_WICK_REJECTION`), ensuring that only price bars closing decisively beyond resistance trigger alerts.
@@ -180,13 +186,28 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
     - Automated daily closing bell scorecard dispatched at 03:45 PM IST. Summarizes benchmark closing levels (NIFTY 50, SENSEX, India VIX), Cash Market Breadth (ADR), FII/DII institutional cash turnover, sector rotation leaders/laggards, and the day's algorithmic Target 1 mathematical hit rate.
 18. **Public Audited Accuracy & Transparency Ledger (`/transparency` & `/api/market/accuracy-ledger`)**:
     - Real price-tracking accuracy verification engine powered by `accuracy_verifier.py` (`batch_verify_alerts`). Replaces speculative heuristics and hardcoded win rates with true historical OHLCV candle verification: checks whether subsequent exchange ticks hit Tactical Resistance 1 (1.5x ATR Benchmark) prior to breaching the protective stop-loss floor (or inverse for shorts). Signals are classified as `TARGET_1_REACHED`, `STOP_LOSS_HIT`, or `OPEN_MONITORING`, tracking precise peak gains (`max_gain_pct`) and hold duration in hours. Dynamically computes cumulative win rate %, target hit rate %, and average risk-to-reward ratio with zero mock defaults and zero PII exposure. Embedded within the **Settings / Control Center** screen on Web and Mobile, as well as the dedicated public route (`/transparency`).
+19. **Immutable Mathematical Sovereignty**:
+    - Gemini AI LLM output is quarantined strictly to narrative text fields (`alert_title`, `holding_guidance`, `growth_outlook_summary`). The LLM is physically prohibited from modifying mathematical numbers, confluence scores, ATR targets, stop-losses, or action biases.
+20. **Anchored VWAP $+2.5\sigma$ Mean-Reversion Exhaustion Trap Detection**:
+    - Vetoes long breakout chases when price extends $> +2\sigma$ above intraday VWAP with 15m RSI $\ge 76.0$. Automatically downgrades `BUY_WATCH` to `HOLD_NEUTRAL` (`Exhaustion Trap Veto`), preventing retail traders from chasing FOMO peaks.
+21. **Demat Portfolio Cost Basis Persistence & Midnight Token Expiry Recovery**:
+    - Persists `average_buy_price` and `quantity` into `user_watchlists` via database migration `20261004_persist_demat_cost_basis.sql`. Synchronizes live holding basis on broker connect, and automatically restores user cost basis when daily ICICI Breeze tokens expire at midnight.
+22. **Asymmetric Macro Crash State Latch with VIX Hysteresis**:
+    - Prevents alert suppression during catastrophic market crashes. When India VIX $\ge 22.0$ or market breadth collapses into severe distribution ($\text{ADR} < 0.60$), the engine activates a crash defense latch, remaining active until VIX cools below $\le 19.5$, preventing flip-flopping during market sell-offs.
+23. **Zero Dummy ATR & Volatility Suspension**:
+    - Completely eliminates static 1.5% and 2% ATR fallbacks. If authentic volatility range is unavailable, tactical levels are strictly returned as `None` and actionable signals are suspended (`has_actionable_signal = False`).
+    - Uses exact algebraic Camarilla range derivation: $(H_4 - L_4) / 2.2 = (H - L)$.
+24. **Audited Accuracy Verifier Zero-Dummy Engine**:
+    - Replaces synthetic `"TARGET_1_REACHED"` with `"PENDING_CANDLE_DATA"` and `0.0%` max gain when real candle data is unavailable. Eradicates false coercion of $+1.0\%$ moves into target reached; trades where price did not reach Target 1 remain genuinely `OPEN_MONITORING`.
 
 ---
 
 ### 5. Strict Zero-Default Policy (Pure Data Integrity Guarantee)
 > **Core Operational Rule:** *"Dont display default values if we dont recieve actual values"*
 * **Elimination of Fabricated Defaults**: The system never substitutes arbitrary dummy values (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, dummy `₹100.0` stock prices, or synthetic win rates like `71.2%`). All performance stats and sector resolutions are 100% dynamic in real-time with zero hardcoded stock dictionaries (`_BSE_SCRIP_CACHE`).
-* **Live Quotes & Watchlist Zero-Default Invariant**: The engine never fabricates synthetic volatility (`true_range = price * 0.015`), placeholder targets (`+2.5%` / `-1.5%`), or hardcoded `'MONITORING'` / `'HOLD'` initial states when real-time values are absent. If market feeds fail, prices are $\le 0$, or session candle volatility is zero, the backend strictly returns `null` for `target`, `stop_loss`, `signal`, and `signal_type`.
+* **Zero Dummy ATR & Actionable Signal Suspension**: Static percentage ATR fallbacks (`price * 0.02` or `price * 0.015`) are completely eradicated. If neither authentic 14-period ATR nor true session range $(H - L)$ or Opening Range is available, `compute_tactical_levels` returns `None`, and the confluence engine suspends actionable signals (`has_actionable_signal = False`), explicitly documenting `"Tactical execution levels suspended: Authentic price volatility (ATR) unavailable."`
+* **Dynamic Weight Re-Normalization (Zero Phantom Points)**: Missing flow, forensic, or news factors do NOT inject static `50.0` points. Weights are dynamically re-normalized over authentically available indicators only: $W_i' = W_i / \sum W_{\text{active}}$.
+* **Live Quotes & Watchlist Zero-Default Invariant**: The engine never fabricates synthetic volatility, placeholder targets (`+2.5%` / `-1.5%`), or hardcoded `'MONITORING'` / `'HOLD'` initial states when real-time values are absent. If market feeds fail, prices are $\le 0$, or session candle volatility is zero, the backend strictly returns `null` for `target`, `stop_loss`, `signal`, and `signal_type`.
 * **Graceful Null Propagation**: If market feeds or tick histories are insufficient (e.g. illiquid stock, exchange holiday, or non-F&O cash equity), functions return clean `None` (JSON `null`) and `"DATA_UNAVAILABLE"`.
 * **Telegram & UI Suppression**:
   - `format_telegram_alert` completely omits the `📐 Tactical Risk-Reward Levels` section if tactical levels are `None` or invalid.

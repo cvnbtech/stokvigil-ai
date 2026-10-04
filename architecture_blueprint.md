@@ -197,12 +197,14 @@ To operate with institutional precision, the deterministic confluence engine exe
    - Evaluates sub-tick high/low/close equality ($|H - L| < 10^{-4}$ and $|C - L| < 10^{-4}$) coupled with significant price expansion ($|\Delta P| \ge 1.90\%$), classifying frozen order books as `UPPER_CIRCUIT` or `LOWER_CIRCUIT`.
 
 ### 2.1.4d The 13 Critical Quantitative Upgrades & Institutional Execution Realities
-To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 13 critical algorithmic upgrades:
+To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 19 critical algorithmic upgrades:
 
 ```mermaid
 graph TD
     A["Raw Market Ingestion (NSE & BSE)"] --> B{"Supply Shock Breach?"}
-    B -- "Change <= -3.5% & VWAP Break & L4 Floor Breach" --> C["Hard Risk Veto (Score <= 28, Bias: SELL_WATCH)"]
+    B -- "Change <= -3.5% & VWAP Break & L4 Floor Breach" --> C{"Held in Demat?"}
+    C -- "Yes" --> C1["Demat Capital Defense (CAPITAL_PRESERVATION_EXIT)"]
+    C -- "No" --> C2["Intraday Short (INTRADAY_MIS_SHORT + 3:15 PM Notice)"]
     B -- "No Severe Shock" --> D{"Demat Position Risk?"}
     D -- "Unrealized P&L <= -3.5%" --> E["Demat Capital Defense (TRAILING_SL_ALERT)"]
     D -- "P&L Stable" --> F{"Target 1 Benchmark Reached?"}
@@ -211,8 +213,11 @@ graph TD
     H -- "Change >= +5.0% & 15m ORB Closed & No Wick Rejection" --> I["Momentum Surge Multiplier (+6 Points, PRICE_BREAKOUT)"]
     H -- "Normal Flow" --> J{"Macro 200 EMA Trend Alignment?"}
     J -- "Counter-Trend to 200 EMA" --> K["Macro Trend Veto (Forced HOLD_NEUTRAL)"]
-    J -- "Trend Aligned" --> L["Regime-Adaptive Confluence Engine"]
-    C --> M["Tier-1 Anti-Fatigue Dispatch Bypass"]
+    J -- "Trend Aligned" --> J1{"VWAP +2σ Exhaustion Trap?"}
+    J1 -- "Yes: Price > VWAP+2σ & RSI >= 76" --> J2["Exhaustion Trap Veto (Forced HOLD_NEUTRAL)"]
+    J1 -- "No" --> L["Dynamic Available-Weight Confluence Engine (Sovereign Math)"]
+    C1 --> M["Tier-1 Anti-Fatigue Dispatch Bypass"]
+    C2 --> M
     E --> M
     G --> M
     I --> M
@@ -240,8 +245,11 @@ graph TD
    - Restricts NSE option chain calculations strictly to `records["expiryDates"][0]`, eliminating far-month illiquid contracts from skewing Put-Call Ratios and Max Pain.
 8. **Universal Sensitivity Delivery Gate**:
    - Fixed the alert sensitivity filtering state machine so users configured with `ALL` sensitivity reliably receive all valid actionable alerts, breakdowns, and capital preservation stop-loss defenses.
-9. **Two-Way 200 EMA Macro Trend Anchor**:
-   - Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, any `SELL_WATCH` breakdown setup is vetoed to `HOLD_NEUTRAL`. Trades are strictly anchored to the institutional primary trend.
+9. **Two-Way 200 EMA Macro Trend Anchor & Severe Supply Shock Override**:
+   - Evaluates the stock's position relative to the Daily 200 Exponential Moving Average (`is_above_200_ema`). If price is below the 200 EMA, any `BUY_WATCH` setup is vetoed to `HOLD_NEUTRAL`. Conversely, if price is above the 200 EMA, standard `SELL_WATCH` breakdown setups are vetoed to `HOLD_NEUTRAL`.
+   - **Severe Supply Shock Override**: If a stock trading above its 200 EMA suffers a severe intraday breakdown ($\le -3.5\%$, VWAP breach, or Camarilla $L_4$ floor break), the macro bull filter is bypassed:
+     - For Demat portfolio holdings, it triggers an immediate `CAPITAL_PRESERVATION_EXIT` to protect capital.
+     - For non-held equities, it routes as `INTRADAY_MIS_SHORT` with mandatory SEBI 3:15 PM auto-square-off statutory notice.
 10. **15-Minute Candle Close Confirmation & Wick Rejection Engine**:
     - Evaluates breakout catalysts (`BULLISH_ORB_BREAKOUT`, `PRICE_BREAKOUT`) strictly at the 15-minute candle close boundary (`is_15m_candle_closed` & `candle_close_confirmed`). Filters out long upper/lower wick rejections (`ORB_UPPER_WICK_REJECTION`, `ORB_LOWER_WICK_REJECTION`), preventing false intra-bar breakout whipsaws and repainting traps.
 11. **Target 1 Achieved & Trail-to-Cost Lifecycle Alert (`TARGET_1_TRAIL_ALERT`)**:
@@ -251,11 +259,25 @@ graph TD
       > *"Tactical levels are non-advisory mathematical projections based on 1.5x and 2.5x Average True Range (ATR) volatility bands and prior session Camarilla pivots, strictly for risk management and educational tracking."*
 13. **Stop-Loss Limit (`SL-L`) Execution Routing & SEBI/NSE `SL-M` Ban Enforcement**:
     - Enforces full compliance with SEBI and NSE circulars that strictly prohibit Stop-Loss Market (`SL-M`) orders in equity derivatives. Validates stop orders in `app/routers/orders.py` and `app/schemas/orders.py`: any stop order submitted as `MARKET` is rejected with `HTTP 422 Unprocessable Entity`. Stop orders must be placed as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
+14. **Immutable Mathematical Sovereignty**:
+    - Gemini AI LLM output is quarantined strictly to narrative text fields (`alert_title`, `holding_guidance`, `growth_outlook_summary`). The LLM is physically prohibited from modifying mathematical numbers, confluence scores, ATR targets, stop-losses, or action biases.
+15. **Anchored VWAP $+2.5\sigma$ Mean-Reversion Exhaustion Trap Detection**:
+    - Vetoes long breakout chases when price extends $> +2\sigma$ above intraday VWAP with 15m RSI $\ge 76.0$. Automatically downgrades `BUY_WATCH` to `HOLD_NEUTRAL` (`Exhaustion Trap Veto`), preventing retail traders from chasing FOMO peaks.
+16. **Demat Portfolio Cost Basis Persistence & Midnight Token Expiry Recovery**:
+    - Persists `average_buy_price` and `quantity` into `user_watchlists` via database migration `20261004_persist_demat_cost_basis.sql`. Synchronizes live holding basis on broker connect, and automatically restores user cost basis when daily ICICI Breeze tokens expire at midnight.
+17. **Asymmetric Macro Crash State Latch with VIX Hysteresis**:
+    - Prevents alert suppression during catastrophic market crashes. When India VIX $\ge 22.0$ or market breadth collapses into severe distribution ($\text{ADR} < 0.60$), the engine activates a crash defense latch, remaining active until VIX cools below $\le 19.5$, preventing flip-flopping during market sell-offs.
+18. **Zero Dummy ATR & Volatility Suspension**:
+    - Completely eliminates static 1.5% and 2% ATR fallbacks. If authentic volatility range is unavailable, tactical levels are strictly returned as `None` and actionable signals are suspended (`has_actionable_signal = False`).
+    - Uses exact algebraic Camarilla range derivation: $(H_4 - L_4) / 2.2 = (H - L)$.
+19. **Audited Accuracy Verifier Zero-Dummy Engine**:
+    - Replaces synthetic `"TARGET_1_REACHED"` with `"PENDING_CANDLE_DATA"` and `0.0%` max gain when real candle data is unavailable. Eradicates false coercion of $+1.0\%$ moves into target reached; trades where price did not reach Target 1 remain genuinely `OPEN_MONITORING`.
 
-### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting (`app/engine/deterministic.py`)
-Rather than static weightings, factor weights adapt dynamically to real-time market regimes:
-$$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\text{flow}} \times \text{Flow}) + (W_{\text{forensics}} \times \text{Forensics}) + (W_{\text{news}} \times \text{News})$$
+### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting & Weight Re-Normalization (`app/engine/deterministic.py`)
+Rather than static weightings or arbitrary default placeholders, factor weights adapt dynamically to real-time market regimes and available data:
+$$\text{Confluence Score} = \sum_{k \in \text{Available}} W_k' \times \text{Factor}_k, \quad \text{where } W_k' = \frac{W_k}{\sum_{j \in \text{Available}} W_j}$$
 
+- **Dynamic Available-Weight Re-Normalization**: Rather than injecting static `50.0` neutral points when external metrics (order flow, forensic balance sheets, news catalysts) are unavailable, active factor weights dynamically re-scale to 100% over authentically available indicators only. This eliminates up to 22.5 phantom points and guarantees that weak stocks are never artificially buoyed by default scores.
 - **High Volatility / Market Distribution Regime** ($\text{India VIX} > 16.5$ or $\text{ADR} < 0.80$):  
   $\rightarrow$ Shifts to **Defensive Posture**: **35% Order Flow + 35% Forensic Health + 15% Technicals + 15% News**. Prioritizes balance sheet strength and real institutional absorption to prevent bull-trap drawdowns.
 - **Bull Momentum Trend Regime** ($\text{India VIX} \le 14.5$ and $\text{ADR} \ge 1.20$):  
@@ -266,7 +288,9 @@ $$\text{Confluence Score} = (W_{\text{tech}} \times \text{Technical}) + (W_{\tex
 ### 2.1.4c Strict Zero-Default Policy (Pure Data Integrity Guarantee)
 > **Core Architectural Invariant:** *"Dont display default values if we dont recieve actual values"*
 - **Zero Fabricated Defaults**: Eliminates fake fallback defaults across the entire system (`50.0` RSI, `20.0` ADX, `52.0%` delivery, `1.0` PCR, `₹0.00` tactical levels, fake `24500.0` / `80000.0` index prices, `14.5` VIX, fake `+1,270.60 Cr` synthetic institutional FII/DII proxy, fake 5-session history deltas, or dummy `₹100.0` stock prices).
-- **Live Quotes & Watchlist Zero-Default Invariant**: The engine never fabricates synthetic volatility (`true_range = price * 0.015`), placeholder targets (`+2.5%` / `-1.5%`), or hardcoded `'MONITORING'` / `'HOLD'` initial states when real-time values are absent. If market feeds fail, prices are $\le 0$, or session candle volatility is zero, the backend strictly returns `null` for `target`, `stop_loss`, `signal`, and `signal_type`.
+- **Zero Dummy ATR & Actionable Signal Suspension**: Static percentage ATR fallbacks (`price * 0.02` or `price * 0.015`) are completely eradicated. If neither authentic 14-period ATR nor true session range $(H - L)$ or Opening Range is available, `compute_tactical_levels` returns `None`, and the confluence engine suspends actionable signals (`has_actionable_signal = False`), explicitly documenting `"Tactical execution levels suspended: Authentic price volatility (ATR) unavailable."`
+- **Dynamic Weight Re-Normalization (Zero Phantom Points)**: Missing flow, forensic, or news factors do NOT inject static `50.0` points. Weights are dynamically re-normalized over authentically available indicators only: $W_i' = W_i / \sum W_{\text{active}}$.
+- **Live Quotes & Watchlist Zero-Default Invariant**: The engine never fabricates synthetic volatility, placeholder targets (`+2.5%` / `-1.5%`), or hardcoded `'MONITORING'` / `'HOLD'` initial states when real-time values are absent. If market feeds fail, prices are $\le 0$, or session candle volatility is zero, the backend strictly returns `null` for `target`, `stop_loss`, `signal`, and `signal_type`.
 - **Clean Null Propagation**: When data is missing or candle history is insufficient, functions return clean `None` (JSON `null`).
 - **Telegram & UI Suppression**:
   - `format_telegram_alert` completely omits the `📐 Tactical Risk-Reward Levels` section if tactical levels are `None` or invalid.

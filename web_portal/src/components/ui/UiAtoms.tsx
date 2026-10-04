@@ -214,7 +214,7 @@ export function Badge({ label, color = "cyan" }: { label: string; color?: "cyan"
   );
 }
 
-export function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | "none" | string }) {
+export function SignalBadge({ signal, type }: { signal: string; type?: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | "none" | "capital_preservation_exit" | "intraday_mis_short" | string }) {
   if (!signal || signal === "--" || type === "none") {
     return (
       <div style={{
@@ -227,51 +227,91 @@ export function SignalBadge({ signal, type }: { signal: string; type?: "strong_b
     );
   }
 
-  const isStrong = type === "strong_buy";
-  const isBuy = type === "buy";
-  const isSell = type === "sell";
-  const isHold = type === "hold" || type === "neutral";
+  const sigUpper = (signal || "").toUpperCase();
+  const typeLower = (type || "").toLowerCase();
 
-  const bg = isStrong
-    ? "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.25))"
-    : isBuy
-      ? "rgba(6,182,212,0.18)"
-      : isSell
-        ? "rgba(245,158,11,0.18)"
-        : isHold
-          ? "rgba(234,179,8,0.18)"
-          : "rgba(148,163,184,0.15)";
+  const isCapExit = sigUpper.includes("CAPITAL_PRESERVATION") || sigUpper.includes("CAPITAL PRESERVATION") || typeLower.includes("capital_preservation");
+  const isMisShort = sigUpper.includes("MIS_SHORT") || sigUpper.includes("MIS SHORT") || sigUpper.includes("INTRADAY_MIS") || sigUpper.includes("INTRADAY MIS") || typeLower.includes("mis_short");
+  const isStrong = type === "strong_buy" || sigUpper.includes("STRONG BUY");
+  const isBuy = type === "buy" || sigUpper === "BUY" || sigUpper.includes("ACCUMULATE");
+  const isSell = type === "sell" || sigUpper === "SELL" || sigUpper.includes("PROFIT BOOK");
+  const isHold = type === "hold" || type === "neutral" || sigUpper.includes("HOLD");
 
-  const border = isStrong
-    ? "rgba(16,185,129,0.5)"
-    : isBuy
-      ? "rgba(6,182,212,0.4)"
-      : isSell
-        ? "rgba(245,158,11,0.4)"
-        : isHold
-          ? "rgba(234,179,8,0.4)"
-          : "rgba(148,163,184,0.3)";
+  const bg = isCapExit
+    ? "linear-gradient(135deg, rgba(239,68,68,0.28), rgba(185,28,28,0.22))"
+    : isMisShort
+      ? "linear-gradient(135deg, rgba(245,158,11,0.25), rgba(217,119,6,0.2))"
+      : isStrong
+        ? "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.25))"
+        : isBuy
+          ? "rgba(6,182,212,0.18)"
+          : isSell
+            ? "rgba(239,68,68,0.18)"
+            : isHold
+              ? "rgba(234,179,8,0.18)"
+              : "rgba(148,163,184,0.15)";
 
-  const color = isStrong ? C.emerald : isBuy ? C.cyan : isSell ? C.amber : isHold ? "#EAB308" : C.gray2;
+  const border = isCapExit
+    ? "rgba(239,68,68,0.8)"
+    : isMisShort
+      ? "rgba(245,158,11,0.7)"
+      : isStrong
+        ? "rgba(16,185,129,0.5)"
+        : isBuy
+          ? "rgba(6,182,212,0.4)"
+          : isSell
+            ? "rgba(239,68,68,0.4)"
+            : isHold
+              ? "rgba(234,179,8,0.4)"
+              : "rgba(148,163,184,0.3)";
+
+  const color = isCapExit
+    ? C.rose
+    : isMisShort
+      ? C.amber
+      : isStrong
+        ? C.emerald
+        : isBuy
+          ? C.cyan
+          : isSell
+            ? C.rose
+            : isHold
+              ? "#EAB308"
+              : C.gray2;
+
+  const boxShadow = isCapExit
+    ? "0 0 14px rgba(239,68,68,0.55)"
+    : isMisShort
+      ? "0 0 10px rgba(245,158,11,0.35)"
+      : isStrong
+        ? "0 0 10px rgba(16,185,129,0.3)"
+        : "none";
 
   return (
     <div style={{
       background: bg, border: `1.5px solid ${border}`,
       borderRadius: 10, padding: "3px 9px",
       display: "inline-flex", alignItems: "center", gap: 5,
-      boxShadow: isStrong ? "0 0 10px rgba(16,185,129,0.3)" : "none",
+      boxShadow,
     }}>
-      <div style={{
-        width: 6, height: 6, borderRadius: "50%",
-        background: color,
-        boxShadow: `0 0 6px ${color}`,
-      }} className={isStrong ? "pulse-live" : ""} />
+      {isCapExit ? (
+        <span className="pulse-shield" style={{ fontSize: 11, lineHeight: 1 }}>🛡️</span>
+      ) : isMisShort ? (
+        <span style={{ fontSize: 11, lineHeight: 1, color: C.amber }}>⚡</span>
+      ) : (
+        <div style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: color,
+          boxShadow: `0 0 6px ${color}`,
+        }} className={isStrong ? "pulse-live" : ""} />
+      )}
       <span style={{ fontSize: 10.5, fontWeight: 900, color, letterSpacing: "0.04em" }}>
         {signal}
       </span>
     </div>
   );
 }
+
 
 export function Divider({ label }: { label?: string }) {
   if (!label) return <div style={{ height: 1, background: C.border, margin: "4px 0" }} />;

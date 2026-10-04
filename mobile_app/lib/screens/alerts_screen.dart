@@ -178,6 +178,12 @@ Automated surveillance via StokVigil AI 🛡️''';
 
   String _getSignalLabel(StokAlert alert) {
     final bias = alert.actionBias.toUpperCase();
+    if (bias.contains('CAPITAL_PRESERVATION') || bias.contains('CAPITAL PRESERVATION')) {
+      return 'CAPITAL PRESERVATION EXIT';
+    }
+    if (bias.contains('MIS_SHORT') || bias.contains('INTRADAY_MIS') || bias.contains('MIS SHORT')) {
+      return 'INTRADAY MIS SHORT';
+    }
     if (bias.contains('BUY') || bias.contains('ACCUMULATE')) return 'ACCUMULATE / BUY';
     if (bias.contains('SELL')) return 'PROFIT BOOK / SELL';
     if (bias.contains('TRAILING')) return 'TRAILING SL TRIGGER';
@@ -193,8 +199,14 @@ Automated surveillance via StokVigil AI 🛡️''';
 
   String _getSignalType(StokAlert alert) {
     final bias = alert.actionBias.toUpperCase();
+    if (bias.contains('CAPITAL_PRESERVATION') || bias.contains('CAPITAL PRESERVATION')) {
+      return 'capital_preservation_exit';
+    }
+    if (bias.contains('MIS_SHORT') || bias.contains('INTRADAY_MIS') || bias.contains('MIS SHORT')) {
+      return 'intraday_mis_short';
+    }
     if (bias.contains('BUY') || bias.contains('ACCUMULATE')) return 'strong_buy';
-    if (bias.contains('SELL')) return 'hold';
+    if (bias.contains('SELL')) return 'sell';
     if (bias.contains('TRAILING')) return 'med';
     
     final cat = alert.catalystType.toUpperCase();
@@ -207,6 +219,14 @@ Automated surveillance via StokVigil AI 🛡️''';
   @override
   Widget build(BuildContext context) {
     final filteredList = _alerts.where((a) {
+      if (_selectedFilter == 'defense') {
+        final b = a.actionBias.toUpperCase();
+        return b.contains('CAPITAL_PRESERVATION') ||
+            b.contains('MIS_SHORT') ||
+            b.contains('INTRADAY_MIS') ||
+            a.alertTitle.toUpperCase().contains('CAPITAL') ||
+            a.alertTitle.toUpperCase().contains('MIS');
+      }
       if (_selectedFilter == 'high') return a.impactScore >= 80;
       if (_selectedFilter == 'earnings') {
         return a.catalystType == 'EARNINGS_BEAT' ||
@@ -277,6 +297,7 @@ Automated surveillance via StokVigil AI 🛡️''';
               child: Row(
                 children: [
                   _buildFilterChip('all', '⚡ All Alerts'),
+                  _buildFilterChip('defense', '🛡️ Capital Defense'),
                   _buildFilterChip('high', '🔥 High Impact'),
                   _buildFilterChip('trailing', '🟡 Trailing SL'),
                   _buildFilterChip('earnings', '📈 Earnings'),
@@ -332,6 +353,8 @@ Automated surveillance via StokVigil AI 🛡️''';
 
                             final signalLabel = _getSignalLabel(alert);
                             final signalType = _getSignalType(alert);
+                            final isCapExit = signalType == 'capital_preservation_exit' || alert.actionBias.toUpperCase().contains('CAPITAL_PRESERVATION');
+                            final isMisShort = signalType == 'intraday_mis_short' || alert.actionBias.toUpperCase().contains('MIS_SHORT');
                             
                             // Sanitize dummy ₹100.00 fallback from historical database alerts
                             final isDummy100 = (alert.target1 == "₹100.00" || alert.target1 == "100.0" || alert.target1 == "100" || alert.target1 == "-") && 
@@ -355,7 +378,11 @@ Automated surveillance via StokVigil AI 🛡️''';
 
                             return GlassCard(
                               margin: const EdgeInsets.only(bottom: 16),
-                              borderColor: isHigh ? AppTheme.borderCyan : AppTheme.cardBorder,
+                              borderColor: isCapExit
+                                  ? AppTheme.dangerRose
+                                  : isMisShort
+                                      ? AppTheme.secondaryAmber
+                                      : (isHigh ? AppTheme.borderCyan : AppTheme.cardBorder),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -433,6 +460,96 @@ Automated surveillance via StokVigil AI 🛡️''';
                                     ],
                                   ),
                                   const SizedBox(height: 12),
+
+                                  // Capital Preservation Exit High-Urgency Defense Box
+                                  if (isCapExit) ...[
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.dangerRose.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: AppTheme.dangerRose.withOpacity(0.5), width: 1.2),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(Icons.shield, color: AppTheme.dangerRose, size: 20),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: const [
+                                                Text(
+                                                  "CRITICAL: CAPITAL PRESERVATION DEFENSE",
+                                                  style: TextStyle(
+                                                    color: AppTheme.dangerRose,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w900,
+                                                    letterSpacing: 0.3,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 3),
+                                                Text(
+                                                  "Severe breakdown detected below tactical support / 200 EMA with supply shock. Standard hold rules overridden to protect invested principal.",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 11,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+
+                                  // SEBI Regulatory Auto-Square-off Warning Box
+                                  if (isMisShort) ...[
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.secondaryAmber.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: AppTheme.secondaryAmber.withOpacity(0.5), width: 1.2),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(Icons.warning_amber_rounded, color: AppTheme.secondaryAmber, size: 20),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: const [
+                                                Text(
+                                                  "STATUTORY NOTICE: INTRADAY MIS SHORT (SEBI RMS)",
+                                                  style: TextStyle(
+                                                    color: AppTheme.secondaryAmber,
+                                                    fontSize: 11.5,
+                                                    fontWeight: FontWeight.w900,
+                                                    letterSpacing: 0.3,
+                                                  ),
+                                                ),
+                                                SizedBox(height: 3),
+                                                Text(
+                                                  "Intraday Margin Intraday Square-off (MIS) setup. SEBI & Broker RMS mandate compulsory auto-square-off at 03:15 PM IST today. Positions not closed will be liquidated at market rate.",
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 11,
+                                                    height: 1.35,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
 
                                   // Demat Position Banner (if user holds stock)
                                   if (alert.dematPosition != null) ...[

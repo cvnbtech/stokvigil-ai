@@ -29,6 +29,11 @@ export default function AlertsTab({
   const filteredAlerts = alerts.filter(a => {
     if (alertFilter === "all") return true;
     if (alertFilter === "high") return a.impact >= 80;
+    if (alertFilter === "defense") {
+      return a.signalType === "capital_preservation_exit" ||
+             a.signalType === "intraday_mis_short" ||
+             (a.signal && (a.signal.toLowerCase().includes("preservation") || a.signal.toLowerCase().includes("mis")));
+    }
     if (alertFilter === "earnings") return a.catalyst?.toLowerCase().includes("earning") || a.title?.toLowerCase().includes("earning");
     if (alertFilter === "breakout") return a.catalyst?.toLowerCase().includes("breakout") || a.title?.toLowerCase().includes("breakout");
     if (alertFilter === "volume") return a.catalyst?.toLowerCase().includes("volume") || a.title?.toLowerCase().includes("volume");
@@ -53,6 +58,15 @@ export default function AlertsTab({
             icon: (c: string) => (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                 <path d="M4 6H20M4 12H20M4 18H20" stroke={c} strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
+            )
+          },
+          {
+            id: "defense",
+            label: "Capital Defense & MIS",
+            icon: (c: string) => (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={c} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             )
           },
@@ -113,6 +127,7 @@ export default function AlertsTab({
             )
           },
         ].map(chip => {
+
           const isActive = alertFilter === chip.id;
           const chipColor = isActive ? C.cyan : C.gray1;
           return (
@@ -192,56 +207,131 @@ export default function AlertsTab({
           </div>
         </div>
       ) : (
-        filteredAlerts.map(a => (
-          <div key={a.id} style={{
-            background: C.bgCard, border: `1px solid ${C.border}`,
-            borderLeft: `3.5px solid ${a.signalType === "strong_buy" ? C.emerald : a.signalType === "sell" ? C.amber : C.cyan}`,
-            borderRadius: 18, padding: 16,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
-          }}>
-            {/* Top Badge & Action Signal Row */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <SignalBadge signal={a.signal} type={a.signalType} />
-                <Badge label={`${a.impact}% CONFIDENCE`} color={a.impactColor} />
+        filteredAlerts.map(a => {
+          const sigUpper = (a.signal || "").toUpperCase();
+          const isCapExit = a.signalType === "capital_preservation_exit" ||
+                            sigUpper.includes("CAPITAL_PRESERVATION") ||
+                            sigUpper.includes("CAPITAL PRESERVATION");
+          const isMisShort = a.signalType === "intraday_mis_short" ||
+                             sigUpper.includes("MIS_SHORT") ||
+                             sigUpper.includes("MIS SHORT") ||
+                             sigUpper.includes("INTRADAY_MIS");
+
+          const borderLeftColor = isCapExit
+            ? C.rose
+            : isMisShort
+              ? C.amber
+              : a.signalType === "strong_buy"
+                ? C.emerald
+                : a.signalType === "sell"
+                  ? C.rose
+                  : C.cyan;
+
+          return (
+            <div key={a.id} style={{
+              background: isCapExit
+                ? "linear-gradient(180deg, rgba(239,68,68,0.08), rgba(13,17,30,0.95))"
+                : isMisShort
+                  ? "linear-gradient(180deg, rgba(245,158,11,0.08), rgba(13,17,30,0.95))"
+                  : C.bgCard,
+              border: `1px solid ${isCapExit ? "rgba(239,68,68,0.45)" : isMisShort ? "rgba(245,158,11,0.4)" : C.border}`,
+              borderLeft: `4px solid ${borderLeftColor}`,
+              borderRadius: 18, padding: 16,
+              boxShadow: isCapExit
+                ? "0 8px 30px rgba(239,68,68,0.18)"
+                : isMisShort
+                  ? "0 8px 24px rgba(245,158,11,0.14)"
+                  : "0 8px 24px rgba(0,0,0,0.3)",
+            }}>
+              {/* Top Badge & Action Signal Row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <SignalBadge signal={a.signal} type={a.signalType} />
+                  <Badge
+                    label={`${a.impact}% CONFIDENCE`}
+                    color={isCapExit ? "rose" : isMisShort ? "amber" : a.impactColor}
+                  />
+                </div>
+                <span style={{ fontSize: 10, color: C.gray2, fontWeight: 600 }}>{a.time}</span>
               </div>
-              <span style={{ fontSize: 10, color: C.gray2, fontWeight: 600 }}>{a.time}</span>
-            </div>
 
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: C.white, marginBottom: 10, lineHeight: 1.4 }}>
-              <span style={{
-                color: a.exchange === "BSE" || a.symbol?.endsWith(".BO") ? C.amber : C.cyan,
-                marginRight: 6
-              }}>
-                [{(a.symbol || "").replace(/\.(BO|NS)$/i, '')}]
-              </span>
-              <span style={{
-                fontSize: 9.5, fontWeight: 800,
-                color: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? C.amber : C.cyan,
-                background: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
-                border: `1px solid ${(a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
-                borderRadius: 4, padding: "1px 5px", marginRight: 8, verticalAlign: "middle"
-              }}>
-                {a.exchange || (a.symbol?.endsWith(".BO") ? "BSE" : "NSE")}
-              </span>
-              {a.title}
-            </div>
-
-            {/* ICICI Demat Position Banner */}
-            {a.dematPosition && (
-              <div style={{
-                background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
-                borderRadius: 10, padding: "7px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8
-              }}>
-                <span style={{ fontSize: 13 }}>💼</span>
-                <span style={{ fontSize: 11.5, fontWeight: 700, color: C.white }}>
-                  ICICI Demat: {a.dematPosition.quantity} Qty @ Avg ₹{Number(a.dematPosition.average_buy_price).toFixed(1)}
-                  {a.dematPosition.unrealized_pnl_pct != null
-                    ? ` (P&L: ${a.dematPosition.unrealized_pnl_pct >= 0 ? '+' : ''}${a.dematPosition.unrealized_pnl_pct}%)`
-                    : ''}
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: C.white, marginBottom: 10, lineHeight: 1.4 }}>
+                <span style={{
+                  color: a.exchange === "BSE" || a.symbol?.endsWith(".BO") ? C.amber : C.cyan,
+                  marginRight: 6
+                }}>
+                  [{(a.symbol || "").replace(/\.(BO|NS)$/i, '')}]
                 </span>
+                <span style={{
+                  fontSize: 9.5, fontWeight: 800,
+                  color: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? C.amber : C.cyan,
+                  background: (a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.12)" : "rgba(6,182,212,0.12)",
+                  border: `1px solid ${(a.exchange === "BSE" || a.symbol?.endsWith(".BO")) ? "rgba(245,158,11,0.3)" : "rgba(6,182,212,0.3)"}`,
+                  borderRadius: 4, padding: "1px 5px", marginRight: 8, verticalAlign: "middle"
+                }}>
+                  {a.exchange || (a.symbol?.endsWith(".BO") ? "BSE" : "NSE")}
+                </span>
+                {a.title}
               </div>
-            )}
+
+              {/* High-Urgency Capital Preservation Exit Defense Box */}
+              {isCapExit && (
+                <div style={{
+                  background: "rgba(239,68,68,0.12)",
+                  border: "1.5px solid rgba(239,68,68,0.5)",
+                  borderRadius: 12, padding: "10px 14px", marginBottom: 12,
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  boxShadow: "0 0 16px rgba(239,68,68,0.2)"
+                }}>
+                  <span className="pulse-shield" style={{ fontSize: 18, lineHeight: 1 }}>🛡️</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.rose, letterSpacing: "0.03em" }}>
+                      CRITICAL: CAPITAL PRESERVATION DEFENSE TRIGGERED
+                    </div>
+                    <div style={{ fontSize: 11, color: C.white, marginTop: 3, lineHeight: 1.45 }}>
+                      Severe breakdown detected below tactical support / 200 EMA with supply shock. Standard hold rules overridden to protect invested principal.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SEBI MIS Short Auto-Square-Off Regulatory Warning Box */}
+              {isMisShort && (
+                <div style={{
+                  background: "rgba(245,158,11,0.12)",
+                  border: "1.5px solid rgba(245,158,11,0.5)",
+                  borderRadius: 12, padding: "10px 14px", marginBottom: 12,
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  boxShadow: "0 0 14px rgba(245,158,11,0.18)"
+                }}>
+                  <span style={{ fontSize: 18, lineHeight: 1 }}>⚡</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: C.amber, letterSpacing: "0.03em" }}>
+                      STATUTORY NOTICE: INTRADAY MIS SHORT (SEBI RMS)
+                    </div>
+                    <div style={{ fontSize: 11, color: C.white, marginTop: 3, lineHeight: 1.45 }}>
+                      Intraday Margin Intraday Square-off (MIS) setup. SEBI & Broker RMS mandate compulsory auto-square-off at <strong style={{ color: C.amber }}>03:15 PM IST</strong> today. Unclosed positions will be liquidated at prevailing market price.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ICICI Demat Position Banner */}
+              {a.dematPosition && (
+                <div style={{
+                  background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
+                  borderRadius: 10, padding: "7px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8
+                }}>
+                  <span style={{ fontSize: 13 }}>💼</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: C.white }}>
+                    ICICI Demat: {a.dematPosition.quantity} Qty @ Avg ₹{Number(a.dematPosition.average_buy_price).toFixed(1)}
+                    {a.dematPosition.unrealized_pnl_pct != null
+                      ? ` (P&L: ${a.dematPosition.unrealized_pnl_pct >= 0 ? '+' : ''}${a.dematPosition.unrealized_pnl_pct}%)`
+                      : ''}
+                  </span>
+                </div>
+              )}
+
 
             <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 12 }}>
               {a.reasons.map((r: string, i: number) => (
@@ -403,8 +493,9 @@ export default function AlertsTab({
               </button>
             </div>
           </div>
-        ))
-      )}
+        );
+      })
+    )}
     </div>
   );
 }

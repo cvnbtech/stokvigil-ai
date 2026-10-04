@@ -59,6 +59,91 @@ logger = logging.getLogger("stokvigil.agent_runner")
 _TARGET_1_DISPATCHED_TODAY: Dict[str, float] = {}
 _MAX_AI_CALLS_PER_SCAN: int = getattr(settings, "MAX_AI_CALLS_PER_SCAN", 15)
 
+# Systemic Risk / Macro Crash State Latch with VIX Hysteresis
+_MACRO_CRASH_DISPATCHED_DATE: Optional[str] = None
+_MACRO_LAST_DISPATCHED_VIX: float = 0.0
+
+
+async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], supabase_client) -> bool:
+    """
+    Evaluates macro market conditions for systemic distribution/crash regimes.
+    Dispatches high-priority broadcast with asymmetric state latch & VIX hysteresis
+    to prevent threshold whiplash and alert spamming.
+    """
+    global _MACRO_CRASH_DISPATCHED_DATE, _MACRO_LAST_DISPATCHED_VIX
+    if not macro_data:
+        return False
+
+    today = str(date.today())
+    nifty_chg = macro_data.get("nifty_change_pct")
+    vix = macro_data.get("india_vix")
+    adr = macro_data.get("adr_ratio")
+
+    nifty_val = float(nifty_chg) if nifty_chg is not None else 0.0
+    vix_val = float(vix) if vix is not None else 0.0
+    adr_val = float(adr) if adr is not None else 1.0
+
+    is_severe_macro_crash = (nifty_val <= -1.25) or (adr_val <= 0.45 and vix_val >= 16.5)
+    if not is_severe_macro_crash:
+        return False
+
+    # Check State Latch & Hysteresis
+    if _MACRO_CRASH_DISPATCHED_DATE == today:
+        if _MACRO_LAST_DISPATCHED_VIX > 0 and vix_val >= (_MACRO_LAST_DISPATCHED_VIX * 1.15):
+            logger.info(f"Macro Crash Escalation Triggered: VIX surged from {_MACRO_LAST_DISPATCHED_VIX} to {vix_val} (+15%). Dispatched secondary broadcast.")
+            _MACRO_LAST_DISPATCHED_VIX = vix_val
+        else:
+            logger.info(f"Macro Crash broadcast suppressed by intraday state latch (Date: {today}, VIX: {vix_val}).")
+            return False
+    else:
+        _MACRO_CRASH_DISPATCHED_DATE = today
+        _MACRO_LAST_DISPATCHED_VIX = vix_val
+
+    logger.warning(f"🚨 SYSTEMIC RISK BROADCAST: Nifty {nifty_val:+.2f}%, ADR {adr_val:.2f}, VIX {vix_val:.1f}")
+
+    alert_title = f"Macro Risk Alert: Broad Market Distribution (Nifty {nifty_val:+.1f}%)"
+    body = (
+        f"Broad market distribution active (Breadth ADR: {adr_val:.2f}, India VIX: {vix_val:.1f}). "
+        "Defensive regime engaged. New long breakouts suspended. Review Demat trailing stop-losses."
+    )
+
+    try:
+        from app.db_pool import fetch_all
+        users = await fetch_all("SELECT id, fcm_device_token, telegram_chat_id, telegram_enabled FROM profiles WHERE fcm_device_token IS NOT NULL OR (telegram_enabled = true AND telegram_chat_id IS NOT NULL)")
+        if users is None:
+            u_res = supabase_client.table("profiles").select("id, fcm_device_token, telegram_chat_id, telegram_enabled").execute()
+            users = u_res.data or []
+
+        for u in users:
+            token = u.get("fcm_device_token")
+            tg_id = u.get("telegram_chat_id")
+            tg_on = u.get("telegram_enabled")
+            if token:
+                try:
+                    await send_fcm_notification(
+                        token,
+                        alert_title,
+                        body,
+                        {"type": "MACRO_DISTRIBUTION", "nifty_change": str(nifty_val), "india_vix": str(vix_val)}
+                    )
+                except Exception as fcm_err:
+                    logger.debug(f"Macro broadcast FCM note for user {mask_id(u.get('id', ''))}: {fcm_err}")
+            if tg_on and tg_id:
+                try:
+                    tg_msg = (
+                        f"🚨 <b>{alert_title}</b>\n\n"
+                        f"{body}\n\n"
+                        f"📊 <b>Regime Metrics</b>: Nifty: <code>{nifty_val:+.2f}%</code> | ADR: <code>{adr_val:.2f}</code> | VIX: <code>{vix_val:.1f}</code>\n"
+                        "🛡️ <i>StokVigil Capital Preservation Protocol Active.</i>"
+                    )
+                    await send_telegram_notification(tg_id, tg_msg)
+                except Exception as tg_err:
+                    logger.debug(f"Macro broadcast Telegram note: {tg_err}")
+        return True
+    except Exception as b_err:
+        logger.error(f"Error in macro risk broadcast: {b_err}")
+        return False
+
 
 # ==========================================
 # 5-MINUTE MULTI-TENANT SURVEILLANCE RUNNER
@@ -280,6 +365,10 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     Executes 100% deterministic RAM math for all symbols with 0 Gemini calls in Step 1.
     """
     macro_data = await asyncio.to_thread(fetch_macro_market_regime)
+    try:
+        await evaluate_and_dispatch_macro_risk_alert(macro_data, supabase_client)
+    except Exception as macro_alert_err:
+        logger.warning(f"Note on macro risk broadcast evaluation: {macro_alert_err}")
     symbols = []
     try:
         from app.db_pool import fetch_all
@@ -366,22 +455,25 @@ async def evaluate_user_portfolio_and_watchlists(
     telegram_enabled = profile.get("telegram_enabled", False)
     alert_sensitivity = (profile.get("alert_sensitivity") or "HIGH").upper()
 
-    # 2. Fetch user's active watchlist
+    # 2. Fetch user's active watchlist and persistent Demat holdings
     symbols = set()
+    cached_demat_rows = []
     if preloaded_user_ctx and preloaded_user_ctx.get("symbols") is not None:
         symbols = set(preloaded_user_ctx["symbols"])
     else:
         try:
             from app.db_pool import fetch_all
-            pooled_watchlists = await fetch_all("SELECT symbol FROM user_watchlists WHERE user_id = $1", user_id)
+            pooled_watchlists = await fetch_all("SELECT symbol, average_buy_price, quantity, is_auto_synced FROM user_watchlists WHERE user_id = $1", user_id)
             if pooled_watchlists is not None:
                 symbols = set(item['symbol'] for item in pooled_watchlists if item.get('symbol'))
+                cached_demat_rows = [item for item in pooled_watchlists if item.get('is_auto_synced') and item.get('average_buy_price')]
         except Exception as pool_err:
             logger.debug(f"Pooled watchlist query note for user {mask_id(user_id)}: {pool_err}")
 
         if not symbols:
-            watchlist_res = supabase_client.table("user_watchlists").select("symbol").eq("user_id", user_id).execute()
+            watchlist_res = supabase_client.table("user_watchlists").select("symbol, average_buy_price, quantity, is_auto_synced").eq("user_id", user_id).execute()
             symbols = set(item['symbol'] for item in (watchlist_res.data or []) if item.get('symbol'))
+            cached_demat_rows = [item for item in (watchlist_res.data or []) if item.get('is_auto_synced') and item.get('average_buy_price')]
 
     # 3. Check credentials and Demat holdings
     holdings_map = {}
@@ -425,7 +517,45 @@ async def evaluate_user_portfolio_and_watchlists(
                         symbols.add(clean_s)
                         holdings_map[clean_s] = h
         else:
-            logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Scanning watchlist symbols only.")
+            logger.info(f"ICICI Session Token for user {mask_id(user_id)} is from {token_date} (expired today {today_str}). Loading persistent Demat cost basis from database.")
+            for row in cached_demat_rows:
+                sym = row.get("symbol")
+                if sym:
+                    clean_s = sym.replace(".BO", "").replace(".NS", "").strip().upper()
+                    avg_p = float(row.get("average_buy_price") or 0.0)
+                    qty = int(row.get("quantity") or 0)
+                    h_obj = {
+                        "symbol": sym,
+                        "clean_symbol": clean_s,
+                        "average_price": avg_p,
+                        "quantity": qty,
+                        "is_persisted_snapshot": True
+                    }
+                    symbols.add(sym)
+                    holdings_map[sym] = h_obj
+                    if clean_s:
+                        symbols.add(clean_s)
+                        holdings_map[clean_s] = h_obj
+    elif cached_demat_rows:
+        logger.info(f"No broker credentials found for user {mask_id(user_id)}, but persistent Demat cost basis found in watchlists. Loading {len(cached_demat_rows)} positions.")
+        for row in cached_demat_rows:
+            sym = row.get("symbol")
+            if sym:
+                clean_s = sym.replace(".BO", "").replace(".NS", "").strip().upper()
+                avg_p = float(row.get("average_buy_price") or 0.0)
+                qty = int(row.get("quantity") or 0)
+                h_obj = {
+                    "symbol": sym,
+                    "clean_symbol": clean_s,
+                    "average_price": avg_p,
+                    "quantity": qty,
+                    "is_persisted_snapshot": True
+                }
+                symbols.add(sym)
+                holdings_map[sym] = h_obj
+                if clean_s:
+                    symbols.add(clean_s)
+                    holdings_map[clean_s] = h_obj
 
     if macro_data is None:
         macro_data = await asyncio.to_thread(fetch_macro_market_regime)
@@ -463,18 +593,18 @@ async def evaluate_user_portfolio_and_watchlists(
                         else:
                             pnl_pct = 0.0
                         raw_rsi = technicals.get("rsi_15m")
-                        rsi_15m = float(raw_rsi) if raw_rsi is not None else 50.0
+                        rsi_15m = float(raw_rsi) if raw_rsi is not None else None
                         
                         if pnl_pct <= -3.5:
-                            analysis["action_bias"] = "TRAILING_SL_ALERT"
+                            analysis["action_bias"] = "CAPITAL_PRESERVATION_EXIT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
-                            analysis["alert_title"] = f"{symbol}: Stop-Loss Defense Trigger (P&L: {pnl_pct:+.1f}%)"
+                            analysis["alert_title"] = f"{symbol}: Capital Preservation Exit Trigger (P&L: {pnl_pct:+.1f}%)"
                             analysis["holding_guidance"] = f"CRITICAL RISK DEFENSE: Position down {pnl_pct:+.1f}%. Immediate capital preservation stop-loss active."
                             drivers = list(analysis.get("confluence_drivers", []))
                             drivers.insert(0, f"Portfolio Risk: Position dropped {pnl_pct:+.1f}%. Protective stop-loss breach.")
                             analysis["confluence_drivers"] = drivers
-                        elif pnl_pct >= 5.0 and rsi_15m > 72.0:
+                        elif pnl_pct >= 5.0 and rsi_15m is not None and rsi_15m > 72.0:
                             analysis["action_bias"] = "TRAILING_SL_ALERT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
@@ -568,7 +698,7 @@ async def evaluate_user_portfolio_and_watchlists(
                         logger.debug(f"Target 1 check note for {symbol}: {t1_err}")
                 
                 should_dispatch = False
-                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or confluence_score <= 35)
+                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or confluence_score <= 35)
 
                 if alert_sensitivity == "HIGH":
                     should_dispatch = (confluence_score >= 80) or is_breakdown_or_sl
@@ -581,7 +711,7 @@ async def evaluate_user_portfolio_and_watchlists(
                 if not should_dispatch:
                     return None
 
-                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
+                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
                 allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
                 
                 if not allowed:
@@ -603,12 +733,16 @@ async def evaluate_user_portfolio_and_watchlists(
                             holding_info=holding_info
                         )
                         if ai_res and isinstance(ai_res, dict):
-                            analysis.update(ai_res)
-                            alert_title = analysis.get("alert_title") or alert_title
-                            catalyst_type = analysis.get("catalyst_category") or catalyst_type
-                            confluence_drivers = analysis.get("confluence_drivers") or confluence_drivers
-                            tactical_levels = analysis.get("tactical_levels") or tactical_levels
-                            holding_guidance = analysis.get("holding_guidance") or holding_guidance
+                            # IMMUTABLE MATHEMATICAL SOVEREIGNTY:
+                            # Gemini AI is strictly restricted to qualitative analytical narrative.
+                            # It is physically blocked from altering mathematical numbers, scores, and tactical levels!
+                            if ai_res.get("alert_title"):
+                                alert_title = str(ai_res["alert_title"]).strip()
+                            if ai_res.get("holding_guidance"):
+                                holding_guidance = str(ai_res["holding_guidance"]).strip()
+                            if ai_res.get("growth_outlook_summary"):
+                                analysis["growth_outlook_summary"] = str(ai_res["growth_outlook_summary"]).strip()
+                            # Mathematical sovereignty: tactical_levels, confluence_score, and action_bias remain 100% deterministic!
                     except Exception as ai_enrich_err:
                         logger.warning(f"AI enrichment fallback note for {symbol}: {ai_enrich_err}")
 

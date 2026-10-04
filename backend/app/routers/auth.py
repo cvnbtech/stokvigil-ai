@@ -3,7 +3,7 @@ import concurrent.futures
 import logging
 import time
 from datetime import date
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Union
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from supabase import Client
@@ -53,18 +53,44 @@ _FUNDAMENTALS_CACHE: Dict[str, Dict[str, Any]] = {}
 _FUNDAMENTALS_CACHE_TTL = 86400.0  # 24 hours
 
 
-def _async_sync_demat_to_watchlists(db: Client, user_id: str, symbols: List[str]):
-    """Background task to sync Demat holdings to user_watchlists without blocking HTTP response."""
-
-    if not symbols:
+def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbols: Union[List[Dict[str, Any]], List[str]]):
+    """
+    Background task to sync Demat holdings (including average cost basis & quantity)
+    to user_watchlists without blocking HTTP response.
+    """
+    if not holdings_or_symbols:
         return
     try:
-        sync_payload = [
-            {"user_id": user_id, "symbol": s.replace(".BO", "").replace(".NS", "").strip().upper(), "is_auto_synced": True}
-            for s in symbols if s
-        ]
-        db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
-        logger.info(f"Background auto-synced {len(symbols)} Demat holdings to user_watchlists for user {mask_id(user_id)}")
+        sync_payload = []
+        for item in holdings_or_symbols:
+            if isinstance(item, dict):
+                raw_sym = item.get("symbol") or item.get("clean_symbol") or ""
+                if not raw_sym:
+                    continue
+                clean_sym = raw_sym.replace(".BO", "").replace(".NS", "").strip().upper()
+                avg_price = float(item.get("average_price") or item.get("avg_price") or 0.0)
+                qty = int(item.get("quantity") or item.get("qty") or 0)
+                row = {
+                    "user_id": user_id,
+                    "symbol": clean_sym,
+                    "is_auto_synced": True,
+                }
+                if avg_price > 0:
+                    row["average_buy_price"] = avg_price
+                if qty > 0:
+                    row["quantity"] = qty
+                sync_payload.append(row)
+            elif isinstance(item, str) and item.strip():
+                clean_sym = item.replace(".BO", "").replace(".NS", "").strip().upper()
+                sync_payload.append({
+                    "user_id": user_id,
+                    "symbol": clean_sym,
+                    "is_auto_synced": True
+                })
+
+        if sync_payload:
+            db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
+            logger.info(f"Background auto-synced {len(sync_payload)} Demat holdings with cost-basis to user_watchlists for user {mask_id(user_id)}")
     except Exception as sync_err:
         logger.warning(f"Note on background auto-syncing Demat holdings: {sync_err}")
 
@@ -539,8 +565,7 @@ def get_user_portfolio(
     total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
 
     if detailed_holdings:
-        holding_syms = [h['symbol'] for h in detailed_holdings]
-        background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, holding_syms)
+        background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, detailed_holdings)
 
         missing_fund_syms = [
             h.get('clean_symbol') or h['symbol'] for h in detailed_holdings

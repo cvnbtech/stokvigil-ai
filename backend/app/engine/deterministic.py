@@ -50,11 +50,11 @@ def compute_tactical_levels(
     """
     if current_price is None or float(current_price) <= 0:
         return None
-
     price = float(current_price)
-    atr = float(atr_val or (price * 0.015))
-    if atr <= 0:
-        atr = price * 0.015
+
+    if atr_val is None or float(atr_val) <= 0:
+        return None
+    atr = float(atr_val)
 
     # Determine risk budget (defaults to ₹2,000 or 1% of Demat portfolio)
     budget = 2000.0
@@ -65,9 +65,9 @@ def compute_tactical_levels(
         if demat_val and float(demat_val) > 0:
             budget = max(500.0, round(float(demat_val) * 0.01, 2))
 
-    is_sell = action_bias in ["SELL_WATCH"]
+    is_sell = action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT"]
 
-    # 1. Bearish Breakdown / Short Setup (SELL_WATCH)
+    # 1. Bearish Breakdown / Short Setup (SELL_WATCH / INTRADAY_MIS_SHORT)
     if is_sell:
         if vwap_val is not None and vwap_val > 0:
             entry_min = round(min(price, vwap_val), 2)
@@ -189,7 +189,7 @@ def compute_deterministic_confluence(
     macro_data: Dict[str, Any],
     forensics: Dict[str, Any],
     financials: Dict[str, Any],
-    news_items: List[Dict[str, Any]],
+    news_items: Optional[List[Dict[str, Any]]] = None,
     holding_info: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
@@ -210,10 +210,22 @@ def compute_deterministic_confluence(
     raw_atr = technicals.get("atr_14")
     if raw_atr is not None and float(raw_atr) > 0:
         atr_val = float(raw_atr)
-    elif has_real_price:
-        atr_val = max(1.0, round(current_price * 0.02, 2))
+    elif technicals.get("day_high") is not None and technicals.get("day_low") is not None and float(technicals["day_high"]) > float(technicals["day_low"]):
+        atr_val = round(float(technicals["day_high"]) - float(technicals["day_low"]), 2)
+    elif technicals.get("orb_high_15m") is not None and technicals.get("orb_low_15m") is not None and float(technicals["orb_high_15m"]) > float(technicals["orb_low_15m"]):
+        atr_val = round((float(technicals["orb_high_15m"]) - float(technicals["orb_low_15m"])) * 1.5, 2)
+    elif technicals.get("camarilla_pivots") and isinstance(technicals["camarilla_pivots"], dict) and technicals["camarilla_pivots"].get("h4") is not None and technicals["camarilla_pivots"].get("l4") is not None:
+        try:
+            cam_h4 = float(technicals["camarilla_pivots"]["h4"])
+            cam_l4 = float(technicals["camarilla_pivots"]["l4"])
+            if cam_h4 > cam_l4:
+                atr_val = round((cam_h4 - cam_l4) / 2.2, 2)
+            else:
+                atr_val = None
+        except (ValueError, TypeError):
+            atr_val = None
     else:
-        atr_val = 0.0
+        atr_val = None
 
     demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
     if holding_info:
@@ -242,43 +254,47 @@ def compute_deterministic_confluence(
         }
 
     raw_ts = technicals.get("technical_score")
-    tech_score = float(raw_ts) if raw_ts is not None else 50.0
-    raw_fs = flow_data.get("flow_score")
-    flow_score = float(raw_fs) if raw_fs is not None else 50.0
-    raw_fors = forensics.get("forensic_score")
-    forensic_score = float(raw_fors) if raw_fors is not None else 50.0
+    raw_fs = flow_data.get("flow_score") if flow_data else None
+    raw_fors = forensics.get("forensic_score") if forensics else None
     
-    news_score = 50
     catalyst_category = "TECHNICAL_BREAKOUT"
     alert_title = f"{symbol}: Technical & Momentum Update"
     confluence_drivers = []
-    
-    for item in news_items:
+    news_score = 0
+    has_news = False
+
+    for item in (news_items or []):
         title_upper = item.get('title', '').upper()
         if "BLOCK DEAL" in title_upper or "BULK DEAL" in title_upper:
-            news_score += 35
+            news_score = max(news_score, 88)
             catalyst_category = "BLOCK_DEAL"
             alert_title = f"{symbol}: Institutional Block/Bulk Deal Reported"
             confluence_drivers.append(f"Exchange Filing: {item['title']}")
+            has_news = True
             break
         elif any(k in title_upper for k in ["PROFIT", "REVENUE", "Q1", "Q2", "Q3", "Q4", "EARNINGS"]):
-            news_score += 30
+            news_score = max(news_score, 82)
             catalyst_category = "EARNINGS_BEAT"
             alert_title = f"{symbol}: Quarterly Earnings & Financial Catalyst"
             confluence_drivers.append(f"Financial Disclosure: {item['title']}")
+            has_news = True
             break
+        elif title_upper:
+            news_score = max(news_score, 65)
+            has_news = True
 
-    vsa_regime = flow_data.get("vsa_regime", "NORMAL_VOLUME_SPREAD")
-    if vsa_regime == "SMART_MONEY_ABSORPTION":
+    flow_score_val = float(raw_fs) if raw_fs is not None else None
+    vsa_regime = flow_data.get("vsa_regime", "NORMAL_VOLUME_SPREAD") if flow_data else "NORMAL_VOLUME_SPREAD"
+    if vsa_regime == "SMART_MONEY_ABSORPTION" and flow_score_val is not None:
         del_p = flow_data.get("delivery_pct")
         del_str = f" ({del_p}%)" if del_p is not None else ""
         confluence_drivers.append(f"Wyckoff VSA: Institutional Delivery Absorption{del_str}")
-        flow_score = min(95, flow_score + 8)
-    elif vsa_regime == "OPERATOR_CHURN_TRAP":
+        flow_score_val = min(95, flow_score_val + 8)
+    elif vsa_regime == "OPERATOR_CHURN_TRAP" and flow_score_val is not None:
         confluence_drivers.append("Wyckoff VSA Warning: Speculative Operator Churn (Low Delivery %)")
-        flow_score = max(20, flow_score - 10)
+        flow_score_val = max(20, flow_score_val - 10)
 
-    sector_name = forensics.get("sector_name", "BROAD_MARKET")
+    sector_name = forensics.get("sector_name", "BROAD_MARKET") if forensics else "BROAD_MARKET"
     if sector_name != "BROAD_MARKET":
         confluence_drivers.append(f"Sector Alignment: {sector_name}")
 
@@ -286,12 +302,29 @@ def compute_deterministic_confluence(
     adx_val = technicals.get("adx_14")
     weights, macro_regime = get_adaptive_weights(macro_data, adx_regime)
 
-    confluence_score = int(round(
-        (tech_score * weights["tech"]) +
-        (flow_score * weights["flow"]) +
-        (forensic_score * weights["forensics"]) +
-        (min(95, news_score) * weights["news"])
-    ))
+    # Dynamic Available-Weight Re-Normalization: zero phantom default 50s
+    active_factors = {}
+    if raw_ts is not None:
+        active_factors["tech"] = float(raw_ts)
+    if flow_score_val is not None and flow_data and (flow_data.get("delivery_pct") is not None or flow_data.get("pcr") is not None or flow_data.get("is_fo_stock")):
+        active_factors["flow"] = flow_score_val
+    if raw_fors is not None and forensics and (forensics.get("debt_to_equity") is not None or forensics.get("pe_ratio") is not None or forensics.get("profit_margin_pct") is not None):
+        active_factors["forensics"] = float(raw_fors)
+    if has_news:
+        active_factors["news"] = float(news_score)
+
+    tech_score = int(round(raw_ts)) if raw_ts is not None else None
+    flow_score = int(round(flow_score_val)) if (flow_score_val is not None and "flow" in active_factors) else None
+    forensic_score = int(round(raw_fors)) if (raw_fors is not None and "forensics" in active_factors) else None
+
+    total_active_weight = sum(weights[k] for k in active_factors.keys())
+    if total_active_weight > 0 and "tech" in active_factors:
+        raw_confluence = sum(active_factors[k] * (weights[k] / total_active_weight) for k in active_factors.keys())
+        confluence_score = int(round(raw_confluence))
+    elif raw_ts is not None:
+        confluence_score = int(round(float(raw_ts)))
+    else:
+        confluence_score = 0
 
     # 1. ADX Trend Strength Check
     if adx_regime == "CHOPPY_SIDEWAYS":
@@ -358,7 +391,7 @@ def compute_deterministic_confluence(
         confluence_score = max(30, confluence_score - 8)
 
     # 7. F&O Options Chain & Delta-OI Integration
-    if flow_data.get("is_fo_stock"):
+    if flow_data and flow_data.get("is_fo_stock"):
         pcr_val = flow_data.get("pcr")
         max_pain = flow_data.get("max_pain_strike")
         sup_strike = flow_data.get("major_support_strike")
@@ -391,7 +424,7 @@ def compute_deterministic_confluence(
             elif current_price > max_pain and pcr_val is not None and pcr_val >= 1.0:
                 confluence_drivers.append(f"F&O Bullish Driver: Trading above Max Pain Strike ₹{max_pain:,.0f}")
                 confluence_score = min(98, confluence_score + 3)
-    elif flow_data.get("fo_oi_status") == "BSE_CASH_DELIVERY":
+    elif flow_data and flow_data.get("fo_oi_status") == "BSE_CASH_DELIVERY":
         del_pct = flow_data.get("delivery_pct")
         del_str = f" ({del_pct}%)" if del_pct is not None else ""
         confluence_drivers.append(f"BSE Cash Market: Delivery volume accumulation{del_str}")
@@ -439,11 +472,19 @@ def compute_deterministic_confluence(
 
     if is_severe_breakdown:
         confluence_score = min(28, confluence_score)
-        action_bias = "SELL_WATCH"
-        has_actionable_signal = True
-        catalyst_category = "PRICE_BREAKOUT"
         chg_fmt = f"{day_change:+.1f}%" if day_change is not None else "-3.5%"
-        alert_title = f"{symbol}: Severe Price Breakdown Alert ({chg_fmt})"
+        if demat_context["is_in_portfolio"]:
+            action_bias = "CAPITAL_PRESERVATION_EXIT"
+            has_actionable_signal = True
+            catalyst_category = "TRAILING_STOP_TRIGGER"
+            alert_title = f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
+            confluence_drivers.insert(0, f"Portfolio Defense Override: Severe breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
+        else:
+            action_bias = "INTRADAY_MIS_SHORT"
+            has_actionable_signal = True
+            catalyst_category = "PRICE_BREAKOUT"
+            alert_title = f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})"
+            confluence_drivers.insert(0, f"Intraday Short Setup: Severe supply shock detected (Cash MIS only, mandatory 03:15 PM square-off).")
         for r in reversed(breakdown_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
 
@@ -451,10 +492,10 @@ def compute_deterministic_confluence(
     if demat_context["is_in_portfolio"]:
         pnl = demat_context["unrealized_pnl_pct"]
         if pnl <= -3.5:
-            action_bias = "TRAILING_SL_ALERT"
+            action_bias = "CAPITAL_PRESERVATION_EXIT"
             has_actionable_signal = True
             catalyst_category = "TRAILING_STOP_TRIGGER"
-            alert_title = f"{symbol}: Stop-Loss Defense Trigger (P&L: {pnl:+.1f}%)"
+            alert_title = f"{symbol}: Capital Preservation Exit Trigger (P&L: {pnl:+.1f}%)"
             confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach.")
             confluence_score = min(20, confluence_score)
         elif pnl >= 5.0 and rsi_15m_val is not None and rsi_15m_val > 72:
@@ -506,19 +547,34 @@ def compute_deterministic_confluence(
         if is_sector_laggard_veto:
             confluence_drivers.append(f"Sector Laggard Veto: Stock lagging sector by {sec_rating:+.1f}%. Long setup neutralized.")
 
-    if is_macro_uptrend and action_bias == "SELL_WATCH":
-        logger.info(f"Veto triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}). Downgrading SELL_WATCH to HOLD_NEUTRAL.")
-        action_bias = "HOLD_NEUTRAL"
-        has_actionable_signal = False
-        confluence_score = max(45, confluence_score + 8)
-        confluence_drivers.append(f"Macro Trend Veto: Price ₹{current_price:,.2f} is above 200 EMA (₹{ema_200_val:,.2f}). Shorting against primary bull trend blocked.")
+    # Anchored VWAP +2.5σ Mean-Reversion Exhaustion Trap Detection
+    vwap_upper_2s = technicals.get("vwap_upper_2s")
+    rsi_15m_val = technicals.get("rsi_15m")
+    if action_bias == "BUY_WATCH" and vwap_upper_2s is not None and current_price > float(vwap_upper_2s):
+        if rsi_15m_val is not None and float(rsi_15m_val) >= 76.0:
+            logger.info(f"Exhaustion Trap Veto for {symbol}: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}.")
+            action_bias = "HOLD_NEUTRAL"
+            has_actionable_signal = False
+            confluence_score = min(58, confluence_score - 10)
+            confluence_drivers.append(f"Exhaustion Trap Veto: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}. Overextended FOMO peak.")
+
+    if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
+        if is_severe_breakdown:
+            logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but severe breakdown active. Preserving {action_bias}.")
+            confluence_drivers.append(f"Supply Shock Override: Institutional breakdown overrides 200 EMA uptrend (₹{ema_200_val:,.2f}).")
+        else:
+            logger.info(f"Veto triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}). Downgrading {action_bias} to HOLD_NEUTRAL.")
+            action_bias = "HOLD_NEUTRAL"
+            has_actionable_signal = False
+            confluence_score = max(45, confluence_score + 8)
+            confluence_drivers.append(f"Macro Trend Veto: Price ₹{current_price:,.2f} is above 200 EMA (₹{ema_200_val:,.2f}). Shorting against primary bull trend blocked.")
 
     # Confluence Driver Highlights
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
         confluence_drivers.append("15m MACD Bullish Crossover detected.")
     if technicals.get("is_volume_surge") and technicals.get("volume_multiple"):
         confluence_drivers.append(f"5m Volume is {technicals.get('volume_multiple')}x above 20 MA.")
-    if flow_data.get("is_high_delivery") and flow_data.get("delivery_pct"):
+    if flow_data and flow_data.get("is_high_delivery") and flow_data.get("delivery_pct"):
         confluence_drivers.append(f"Institutional delivery estimated at {flow_data.get('delivery_pct')}%.")
     vwap_val = technicals.get("vwap")
     if vwap_val is not None and current_price > vwap_val:
@@ -550,9 +606,17 @@ def compute_deterministic_confluence(
             vwap_upper_1s=vwap_upper_1s,
             action_bias=action_bias
         )
+        if tactical_dict is None and has_actionable_signal and action_bias not in ["CAPITAL_PRESERVATION_EXIT"]:
+            has_actionable_signal = False
+            confluence_drivers.append("Tactical execution levels suspended: Authentic price volatility (ATR) unavailable.")
         if demat_context["is_in_portfolio"] and tactical_dict:
             avg_buy = demat_context.get("average_buy_price", current_price)
-            holding_guidance = f"Chandelier Trailing SL active at {tactical_dict['protective_stop_loss']} (Protecting cost basis ₹{avg_buy:,.2f})."
+            if action_bias == "CAPITAL_PRESERVATION_EXIT":
+                holding_guidance = f"CRITICAL DEFENSE: Severe breakdown at ₹{current_price:,.2f}. Capital preservation exit recommended to protect principal (Avg buy: ₹{avg_buy:,.2f})."
+            elif action_bias == "TRAILING_SL_ALERT":
+                holding_guidance = f"CRITICAL DEFENSE: Position down {demat_context.get('unrealized_pnl_pct', 0.0):+.1f}%. Immediate capital preservation stop-loss active."
+            else:
+                holding_guidance = f"Chandelier Trailing SL active at {tactical_dict['protective_stop_loss']} (Protecting cost basis ₹{avg_buy:,.2f})."
         else:
             holding_guidance = "Track for optimal entry in tactical range."
     else:
@@ -580,18 +644,18 @@ def compute_deterministic_confluence(
             "catalysts": min(95, news_score)
         },
         "derivatives_flow": {
-            "is_fo_stock": flow_data.get("is_fo_stock", False),
-            "pcr": flow_data.get("pcr") if flow_data.get("is_fo_stock") else None,
-            "max_pain_strike": flow_data.get("max_pain_strike") if flow_data.get("is_fo_stock") else None,
-            "major_support_strike": flow_data.get("major_support_strike") if flow_data.get("is_fo_stock") else None,
-            "major_resistance_strike": flow_data.get("major_resistance_strike") if flow_data.get("is_fo_stock") else None,
-            "fo_status": flow_data.get("fo_oi_status") if flow_data.get("is_fo_stock") else None
+            "is_fo_stock": flow_data.get("is_fo_stock", False) if flow_data else False,
+            "pcr": flow_data.get("pcr") if (flow_data and flow_data.get("is_fo_stock")) else None,
+            "max_pain_strike": flow_data.get("max_pain_strike") if (flow_data and flow_data.get("is_fo_stock")) else None,
+            "major_support_strike": flow_data.get("major_support_strike") if (flow_data and flow_data.get("is_fo_stock")) else None,
+            "major_resistance_strike": flow_data.get("major_resistance_strike") if (flow_data and flow_data.get("is_fo_stock")) else None,
+            "fo_status": flow_data.get("fo_oi_status") if (flow_data and flow_data.get("is_fo_stock")) else None
         },
         "market_breadth": {
-            "adr_ratio": macro_data.get("adr_ratio"),
-            "breadth_regime": macro_data.get("breadth_regime"),
-            "advances": macro_data.get("advances"),
-            "declines": macro_data.get("declines")
+            "adr_ratio": macro_data.get("adr_ratio") if macro_data else None,
+            "breadth_regime": macro_data.get("breadth_regime") if macro_data else None,
+            "advances": macro_data.get("advances") if macro_data else None,
+            "declines": macro_data.get("declines") if macro_data else None
         }
     }
 

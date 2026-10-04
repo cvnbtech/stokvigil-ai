@@ -450,7 +450,7 @@ class GlassCard extends StatelessWidget {
 // ─────────────────────────────────────────────
 class SignalBadge extends StatelessWidget {
   final String label;
-  final String type; // 'strong_buy', 'buy', 'volume', 'breakout', 'hold', 'neutral', 'med', 'sell'
+  final String type; // 'strong_buy', 'buy', 'volume', 'breakout', 'hold', 'neutral', 'med', 'sell', 'capital_preservation_exit', 'intraday_mis_short'
   final Color? colorOverride;
 
   const SignalBadge({
@@ -465,8 +465,30 @@ class SignalBadge extends StatelessWidget {
     Color bg;
     Color border;
     Color text;
+    Widget? leadingIcon;
 
-    if (type == 'strong_buy' || type == 'buy' || type == 'high' || type == 'bullish') {
+    final typeLower = type.toLowerCase();
+    final labelUpper = label.toUpperCase();
+    final isCapExit = typeLower.contains('capital_preservation') || labelUpper.contains('CAPITAL PRESERVATION');
+    final isMisShort = typeLower.contains('mis_short') || labelUpper.contains('MIS SHORT') || labelUpper.contains('INTRADAY MIS');
+
+    if (isCapExit) {
+      bg = AppTheme.dangerRose.withOpacity(0.22);
+      border = AppTheme.dangerRose;
+      text = AppTheme.dangerRose;
+      leadingIcon = const Padding(
+        padding: EdgeInsets.only(right: 5),
+        child: Icon(Icons.shield, color: AppTheme.dangerRose, size: 12),
+      );
+    } else if (isMisShort) {
+      bg = AppTheme.secondaryAmber.withOpacity(0.20);
+      border = AppTheme.secondaryAmber;
+      text = AppTheme.secondaryAmber;
+      leadingIcon = const Padding(
+        padding: EdgeInsets.only(right: 5),
+        child: Icon(Icons.flash_on, color: AppTheme.secondaryAmber, size: 12),
+      );
+    } else if (type == 'strong_buy' || type == 'buy' || type == 'high' || type == 'bullish') {
       bg = AppTheme.primaryEmerald.withOpacity(0.15);
       border = AppTheme.primaryEmerald;
       text = AppTheme.primaryEmerald;
@@ -499,16 +521,39 @@ class SignalBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border, width: 1.2),
+        border: Border.all(color: border, width: isCapExit || isMisShort ? 1.4 : 1.2),
+        boxShadow: isCapExit
+            ? [
+                BoxShadow(
+                  color: AppTheme.dangerRose.withOpacity(0.35),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                )
+              ]
+            : (isMisShort
+                ? [
+                    BoxShadow(
+                      color: AppTheme.secondaryAmber.withOpacity(0.25),
+                      blurRadius: 6,
+                    )
+                  ]
+                : null),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: text,
-          fontSize: 10,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 0.5,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (leadingIcon != null) leadingIcon,
+          Text(
+            label,
+            style: TextStyle(
+              color: text,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
       ),
     );
   }
