@@ -137,7 +137,7 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
     for suffix, exch in candidate_suffixes:
         for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
             try:
-                url = f"https://{host}/v8/finance/chart/{clean_sym}{suffix}?range=1d&interval=1d"
+                url = f"https://{host}/v8/finance/chart/{clean_sym}{suffix}?range=5d&interval=1d"
                 res = _QUOTE_HTTP_SESSION.get(url, timeout=2.0)
                 if res.status_code == 404:
                     break
@@ -159,7 +159,27 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             h_val = float(raw_high) if raw_high is not None else float(p)
                             l_val = float(raw_low) if raw_low is not None else float(p)
                             c_prev = float(prev) if prev is not None else float(p)
-                            true_range = max(h_val - l_val, abs(h_val - c_prev), abs(l_val - c_prev)) if (float(p) > 0) else 0.0
+
+                            # Extract completed prior-day (D-1) bar for static horizontal Camarilla pivots
+                            quotes = res_list[0].get("indicators", {}).get("quote", [{}])[0]
+                            raw_highs = [float(v) for v in quotes.get("high", []) if v is not None and not (isinstance(v, float) and np.isnan(v))]
+                            raw_lows = [float(v) for v in quotes.get("low", []) if v is not None and not (isinstance(v, float) and np.isnan(v))]
+                            raw_closes = [float(v) for v in quotes.get("close", []) if v is not None and not (isinstance(v, float) and np.isnan(v))]
+
+                            h_prev = None
+                            l_prev = None
+                            if len(raw_highs) >= 2 and len(raw_lows) >= 2:
+                                h_prev = raw_highs[-2]
+                                l_prev = raw_lows[-2]
+                                if len(raw_closes) >= 2:
+                                    c_prev = raw_closes[-2]
+                            elif len(raw_highs) == 1 and len(raw_lows) == 1:
+                                h_prev = raw_highs[0]
+                                l_prev = raw_lows[0]
+
+                            ref_high = h_prev if h_prev is not None else h_val
+                            ref_low = l_prev if l_prev is not None else l_val
+                            true_range = max(ref_high - ref_low, abs(ref_high - c_prev), abs(ref_low - c_prev)) if (float(p) > 0) else 0.0
 
                             h4 = round(c_prev + (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
                             h3 = round(c_prev + (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
@@ -205,7 +225,12 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 if tactical:
                                     target_val = tactical.get("target_1")
                                     sl_val = tactical.get("protective_stop_loss")
-                                if not signal:
+                                if l4 and float(p) <= float(l4):
+                                    signal = "STOP LOSS EXIT"
+                                    signal_type = "danger"
+                                    target_val = "CUT RISK"
+                                    sl_val = f"₹{l4:,.2f} BREACHED"
+                                elif not signal:
                                     signal = "HOLD"
                                     signal_type = "hold"
 
@@ -238,7 +263,7 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
     for suffix, exch in candidate_suffixes:
         try:
             t = yf.Ticker(f"{clean_sym}{suffix}")
-            df = t.history(period="1d", interval="1d")
+            df = t.history(period="5d", interval="1d")
             if not df.empty:
                 last_row = df.iloc[-1]
                 p = float(last_row["Close"])
@@ -256,7 +281,18 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 h_val = float(day_high) if day_high is not None else float(p)
                 l_val = float(day_low) if day_low is not None else float(p)
                 c_prev = float(prev) if prev is not None else float(p)
-                true_range = max(h_val - l_val, abs(h_val - c_prev), abs(l_val - c_prev)) if (float(p) > 0) else 0.0
+
+                # Extract completed prior-day (D-1) bar for static horizontal Camarilla pivots
+                if len(df) >= 2:
+                    ref_row = df.iloc[-2]
+                    h_prev = float(ref_row["High"])
+                    l_prev = float(ref_row["Low"])
+                    c_prev = float(ref_row["Close"])
+                else:
+                    h_prev = h_val
+                    l_prev = l_val
+
+                true_range = max(h_prev - l_prev, abs(h_prev - c_prev), abs(l_prev - c_prev)) if (float(p) > 0) else 0.0
 
                 h4 = round(c_prev + (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
                 h3 = round(c_prev + (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
@@ -302,7 +338,12 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     if tactical:
                         target_val = tactical.get("target_1")
                         sl_val = tactical.get("protective_stop_loss")
-                    if not signal:
+                    if l4 and float(p) <= float(l4):
+                        signal = "STOP LOSS EXIT"
+                        signal_type = "danger"
+                        target_val = "CUT RISK"
+                        sl_val = f"₹{l4:,.2f} BREACHED"
+                    elif not signal:
                         signal = "HOLD"
                         signal_type = "hold"
 

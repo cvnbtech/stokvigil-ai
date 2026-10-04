@@ -253,7 +253,7 @@ class ApiService {
       final exch = suffix == '.NS' ? 'NSE' : 'BSE';
       for (final host in ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']) {
         try {
-          final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(cleanSym)}$suffix?range=1d&interval=1d');
+          final url = Uri.parse('https://$host/v8/finance/chart/${Uri.encodeComponent(cleanSym)}$suffix?range=5d&interval=1d');
           final res = await http.get(url, headers: headers).timeout(const Duration(milliseconds: 2500));
           if (res.statusCode == 200) {
             final data = jsonDecode(res.body);
@@ -269,11 +269,31 @@ class ApiService {
                 final dayHigh = meta?['regularMarketDayHigh'] != null ? (meta!['regularMarketDayHigh'] as num).toDouble() : null;
                 final dayLow = meta?['regularMarketDayLow'] != null ? (meta!['regularMarketDayLow'] as num).toDouble() : null;
 
-                // Calculate real Camarilla Equation Pivots only if authentic market session volatility exists
-                final double hVal = dayHigh ?? price;
-                final double lVal = dayLow ?? price;
-                final double cPrev = prev.toDouble();
-                final double trueRange = math.max(hVal - lVal, math.max((hVal - cPrev).abs(), (lVal - cPrev).abs()));
+                // Extract completed prior-day (D-1) bar to guarantee static horizontal Camarilla pivots
+                final quoteObj = resList[0]['indicators']?['quote']?[0] as Map<String, dynamic>?;
+                final rawHighs = (quoteObj?['high'] as List?)?.whereType<num>().toList() ?? [];
+                final rawLows = (quoteObj?['low'] as List?)?.whereType<num>().toList() ?? [];
+                final rawCloses = (quoteObj?['close'] as List?)?.whereType<num>().toList() ?? [];
+
+                double? hPrev;
+                double? lPrev;
+                double cPrev = prev.toDouble();
+
+                if (rawHighs.length >= 2 && rawLows.length >= 2) {
+                  hPrev = rawHighs[rawHighs.length - 2].toDouble();
+                  lPrev = rawLows[rawLows.length - 2].toDouble();
+                  if (rawCloses.length >= 2) {
+                    cPrev = rawCloses[rawCloses.length - 2].toDouble();
+                  }
+                } else if (rawHighs.length == 1 && rawLows.length == 1) {
+                  hPrev = rawHighs[0].toDouble();
+                  lPrev = rawLows[0].toDouble();
+                }
+
+                // Calculate authentic Camarilla Equation Pivots anchored strictly to D-1 completed session
+                final double refHigh = hPrev ?? (dayHigh ?? price);
+                final double refLow = lPrev ?? (dayLow ?? price);
+                final double trueRange = math.max(refHigh - refLow, math.max((refHigh - cPrev).abs(), (refLow - cPrev).abs()));
                 final bool hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
 
                 final double h3 = cPrev + (trueRange * 1.1 / 4.0);
@@ -300,8 +320,8 @@ class ApiService {
                   } else if (price <= l4) {
                     signalStr = 'STOP LOSS EXIT';
                     signalTypeStr = 'danger';
-                    targetStr = '₹${l3.toStringAsFixed(2)}';
-                    slStr = '₹${l4.toStringAsFixed(2)}';
+                    targetStr = 'CUT RISK';
+                    slStr = '₹${l4.toStringAsFixed(2)} BREACHED';
                   } else if (price <= l3) {
                     signalStr = 'SELL';
                     signalTypeStr = 'sell';

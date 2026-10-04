@@ -45,7 +45,7 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
   for (const { suffix, exch } of exchanges) {
     for (const host of hosts) {
       try {
-        const url = `https://${host}/v8/finance/chart/${encodeURIComponent(cleanSym)}${suffix}?range=1d&interval=1d`;
+        const url = `https://${host}/v8/finance/chart/${encodeURIComponent(cleanSym)}${suffix}?range=5d&interval=1d`;
         const res = await fetch(url, { headers, cache: "no-store", signal: AbortSignal.timeout(2500) });
         if (!res.ok) continue;
 
@@ -67,11 +67,32 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
         // Preserve tactical levels from previous cache if available
         const prevCached = quoteCache.get(sym)?.data || quoteCache.get(cleanSym)?.data;
 
-        // Calculate authentic Camarilla Equation Pivots from live market session volatility
-        const hVal = dayHigh ?? price;
-        const lVal = dayLow ?? price;
-        const cPrev = Number(prev);
-        const trueRange = Math.max(hVal - lVal, Math.abs(hVal - cPrev), Math.abs(lVal - cPrev));
+        // Extract completed prior-day (D-1) bar to guarantee static horizontal Camarilla pivots
+        const quoteObj = resList[0]?.indicators?.quote?.[0];
+        const rawHighs: number[] = (quoteObj?.high || []).filter((v: any) => typeof v === "number" && !isNaN(v));
+        const rawLows: number[] = (quoteObj?.low || []).filter((v: any) => typeof v === "number" && !isNaN(v));
+        const rawCloses: number[] = (quoteObj?.close || []).filter((v: any) => typeof v === "number" && !isNaN(v));
+
+        let hPrev: number | null = null;
+        let lPrev: number | null = null;
+        let cPrev: number = Number(prev);
+
+        if (rawHighs.length >= 2 && rawLows.length >= 2) {
+          // Completed prior day session is index length - 2
+          hPrev = rawHighs[rawHighs.length - 2];
+          lPrev = rawLows[rawLows.length - 2];
+          if (rawCloses.length >= 2) {
+            cPrev = rawCloses[rawCloses.length - 2];
+          }
+        } else if (rawHighs.length === 1 && rawLows.length === 1) {
+          hPrev = rawHighs[0];
+          lPrev = rawLows[0];
+        }
+
+        // Calculate authentic Camarilla Equation Pivots anchored strictly to D-1 completed session
+        const refHigh = hPrev ?? (dayHigh ?? price);
+        const refLow = lPrev ?? (dayLow ?? price);
+        const trueRange = Math.max(refHigh - refLow, Math.abs(refHigh - cPrev), Math.abs(refLow - cPrev));
         const hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
 
         const h3 = cPrev + (trueRange * 1.1 / 4.0);
@@ -98,8 +119,8 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
           } else if (price <= l4) {
             signal = "STOP LOSS EXIT";
             signal_type = "danger";
-            target = `₹${l3.toFixed(2)}`;
-            stop_loss = `₹${l4.toFixed(2)}`;
+            target = "CUT RISK";
+            stop_loss = `₹${l4.toFixed(2)} BREACHED`;
           } else if (price <= l3) {
             signal = "SELL";
             signal_type = "sell";

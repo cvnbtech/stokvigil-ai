@@ -87,12 +87,27 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
       item['exchange'] = q['exchange'];
     }
     item['signal'] = q['signal'];
-    item['target'] = (q['target'] != null && q['target'] != '--' && q['target'] != '₹0')
-        ? (q['target'].toString().startsWith('₹') ? q['target'] : "₹${q['target']}")
-        : null;
-    item['stop_loss'] = (q['stop_loss'] != null && q['stop_loss'] != '--' && q['stop_loss'] != '₹0')
-        ? (q['stop_loss'].toString().startsWith('₹') ? q['stop_loss'] : "₹${q['stop_loss']}")
-        : null;
+    final rawTarget = q['target']?.toString();
+    if (rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget.isNotEmpty) {
+      if (rawTarget.contains('CUT') || rawTarget.contains('EXIT') || rawTarget.startsWith('₹')) {
+        item['target'] = rawTarget;
+      } else {
+        item['target'] = "₹$rawTarget";
+      }
+    } else {
+      item['target'] = null;
+    }
+
+    final rawSl = q['stop_loss']?.toString();
+    if (rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl.isNotEmpty) {
+      if (rawSl.contains('BREACHED') || rawSl.startsWith('₹')) {
+        item['stop_loss'] = rawSl;
+      } else {
+        item['stop_loss'] = "₹$rawSl";
+      }
+    } else {
+      item['stop_loss'] = null;
+    }
   }
 
   void _subscribeToWatchlist() {
@@ -999,8 +1014,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                             builder: (context) {
                                               final isTargetUnset = !hasRealPrice || target == '--' || target == '-' || target == '₹0' || target == '0';
                                               final isSlUnset = !hasRealPrice || stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0';
-                                              final targetText = isTargetUnset ? '--' : (target.startsWith('₹') ? target : '₹$target');
-                                              final slText = isSlUnset ? '--' : (stopLoss.startsWith('₹') ? stopLoss : '₹$stopLoss');
+                                              final isCutRisk = target.toString().contains('CUT') || target.toString().contains('EXIT');
+                                               final targetText = isTargetUnset ? '--' : (target.toString().startsWith('₹') || isCutRisk ? target.toString() : '₹$target');
+                                               final slText = isSlUnset ? '--' : (stopLoss.toString().startsWith('₹') || stopLoss.toString().contains('BREACHED') ? stopLoss.toString() : '₹$stopLoss');
                                               return RichText(
                                                 text: TextSpan(
                                                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
@@ -1009,7 +1025,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                     TextSpan(
                                                       text: targetText,
                                                       style: TextStyle(
-                                                        color: isTargetUnset ? AppTheme.textSecondary : AppTheme.primaryEmerald,
+                                                        color: isTargetUnset ? AppTheme.textSecondary : (isCutRisk ? AppTheme.dangerRose : AppTheme.primaryEmerald),
                                                         fontWeight: FontWeight.w900,
                                                       ),
                                                     ),
@@ -1061,41 +1077,47 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                          ),
                                          const SizedBox(width: 6),
 
-                                         // Trade Order Button
-                                        GestureDetector(
-                                          onTap: () {
-                                            TradeOrderModal.show(
-                                              context,
-                                              symbol: symbol,
-                                              currentPrice: priceNum,
-                                              initialType: 'BUY',
-                                              targetPrice: (target == '--' || target == '-' || target == '₹0' || target == '0')
-                                                  ? ''
-                                                  : target.toString().replaceAll('₹', '').trim(),
-                                              stopLoss: (stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0')
-                                                  ? ''
-                                                  : stopLoss.toString().replaceAll('₹', '').trim(),
-                                            );
-                                          },
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: AppTheme.cyan.withOpacity(0.12),
-                                              borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: AppTheme.borderCyan),
-                                            ),
-                                            child: Row(
-                                              children: const [
-                                                Icon(Icons.bolt, color: AppTheme.cyan, size: 14),
-                                                SizedBox(width: 3),
-                                                Text(
-                                                  "Trade Order",
-                                                  style: TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 11),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
+                                         // Trade Order / Exit Order Button
+                                         Builder(
+                                           builder: (context) {
+                                             final isExitOrSell = signal.contains('EXIT') || signal.contains('STOP LOSS') || signal == 'SELL';
+                                             final btnColor = isExitOrSell ? AppTheme.dangerRose : AppTheme.cyan;
+                                             return GestureDetector(
+                                               onTap: () {
+                                                 TradeOrderModal.show(
+                                                   context,
+                                                   symbol: symbol,
+                                                   currentPrice: priceNum,
+                                                   initialType: isExitOrSell ? 'SELL' : 'BUY',
+                                                   targetPrice: (target == '--' || target == '-' || target == '₹0' || target == '0' || target.toString().contains('CUT'))
+                                                       ? ''
+                                                       : target.toString().replaceAll('₹', '').trim(),
+                                                   stopLoss: (stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0' || stopLoss.toString().contains('BREACHED'))
+                                                       ? ''
+                                                       : stopLoss.toString().replaceAll('₹', '').trim(),
+                                                 );
+                                               },
+                                               child: Container(
+                                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                                 decoration: BoxDecoration(
+                                                   color: btnColor.withOpacity(0.12),
+                                                   borderRadius: BorderRadius.circular(8),
+                                                   border: Border.all(color: btnColor.withOpacity(0.5)),
+                                                 ),
+                                                 child: Row(
+                                                   children: [
+                                                     Icon(Icons.bolt, color: btnColor, size: 14),
+                                                     const SizedBox(width: 3),
+                                                     Text(
+                                                       isExitOrSell ? "Exit Order" : "Trade Order",
+                                                       style: TextStyle(color: btnColor, fontWeight: FontWeight.w900, fontSize: 11),
+                                                     ),
+                                                   ],
+                                                 ),
+                                               ),
+                                             );
+                                           },
+                                         ),
                                         const SizedBox(width: 6),
 
                                         // Delete Ticker Button

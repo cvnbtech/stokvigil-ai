@@ -65,6 +65,26 @@ def compute_tactical_levels(
         if demat_val and float(demat_val) > 0:
             budget = max(500.0, round(float(demat_val) * 0.01, 2))
 
+    is_defense_exit = action_bias in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT"] or (l4 is not None and price <= float(l4) and action_bias not in ["INTRADAY_MIS_SHORT"])
+    if is_defense_exit:
+        sl_display = f"₹{l4:,.2f} (BREACHED)" if (l4 and float(l4) > 0) else "BREACHED"
+        return {
+            "entry_range": "IMMEDIATE EXIT",
+            "target_1": "CUT RISK",
+            "target_2": "PROTECT PRINCIPAL",
+            "tactical_support_1": "CUT RISK",
+            "expansion_support_2": "PROTECT PRINCIPAL",
+            "protective_stop_loss": sl_display,
+            "risk_reward_ratio": "CAPITAL DEFENSE",
+            "recommended_quantity": 0,
+            "risk_per_share": 0.0,
+            "capital_at_risk": 0.0,
+            "estimated_position_value": 0.0,
+            "risk_budget": budget,
+            "position_sizing_rule": "Capital Defense (0 new quantity)",
+            "volatility_disclaimer": "Defensive Capital Preservation trigger. Cut position to protect remaining principal."
+        }
+
     is_sell = action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT"]
 
     # 1. Bearish Breakdown / Short Setup (SELL_WATCH / INTRADAY_MIS_SHORT)

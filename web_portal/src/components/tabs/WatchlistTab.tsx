@@ -362,7 +362,7 @@ export default function WatchlistTab({
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <SignalBadge signal={item.signal || "--"} type={item.signalType || "none"} />
                   <span style={{ fontSize: 10, color: C.gray2 }}>
-                    Target: <b style={{ color: item.target && item.target !== "--" ? C.emerald : C.gray2 }}>{item.target || "--"}</b>
+                    Target: <b style={{ color: item.target && item.target !== "--" ? (item.target === "CUT RISK" ? C.rose : C.emerald) : C.gray2 }}>{item.target || "--"}</b>
                   </span>
                   <span style={{ fontSize: 10, color: C.gray2 }}>
                     SL: <b style={{ color: item.sl && item.sl !== "--" ? C.rose : C.gray2 }}>{item.sl || "--"}</b>
@@ -370,27 +370,33 @@ export default function WatchlistTab({
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <button
-                    disabled={!item.price || item.price <= 0}
-                    onClick={() => onOpenTradeModal({
-                      symbol: item.symbol,
-                      price: item.price,
-                      type: item.signalType === "sell" ? "SELL" : "BUY",
-                      target: item.target && item.target !== "--" ? item.target : "--",
-                      sl: item.sl && item.sl !== "--" ? item.sl : "--",
-                      qty: 10
-                    })}
-                    style={{
-                      background: (!item.price || item.price <= 0) ? "rgba(255,255,255,0.04)" : (item.signalType === "sell" ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)"),
-                      border: `1px solid ${(!item.price || item.price <= 0) ? C.border : (item.signalType === "sell" ? C.rose : C.emerald)}`,
-                      borderRadius: 8, padding: "5px 10px",
-                      fontSize: 11, fontWeight: 800,
-                      color: (!item.price || item.price <= 0) ? C.gray2 : (item.signalType === "sell" ? C.rose : C.emerald),
-                      cursor: (!item.price || item.price <= 0) ? "not-allowed" : "pointer"
-                    }}
-                  >
-                    ⚡ Trade Order
-                  </button>
+                  {(() => {
+                    const isExitOrSell = item.signalType === "sell" || item.signalType === "danger" || item.signal?.includes("EXIT") || item.signal?.includes("STOP LOSS");
+                    const isDisabled = !item.price || item.price <= 0;
+                    return (
+                      <button
+                        disabled={isDisabled}
+                        onClick={() => onOpenTradeModal({
+                          symbol: item.symbol,
+                          price: item.price,
+                          type: isExitOrSell ? "SELL" : "BUY",
+                          target: item.target && item.target !== "--" ? item.target : "--",
+                          sl: item.sl && item.sl !== "--" ? item.sl : "--",
+                          qty: 10
+                        })}
+                        style={{
+                          background: isDisabled ? "rgba(255,255,255,0.04)" : (isExitOrSell ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)"),
+                          border: `1px solid ${isDisabled ? C.border : (isExitOrSell ? C.rose : C.emerald)}`,
+                          borderRadius: 8, padding: "5px 10px",
+                          fontSize: 11, fontWeight: 800,
+                          color: isDisabled ? C.gray2 : (isExitOrSell ? C.rose : C.emerald),
+                          cursor: isDisabled ? "not-allowed" : "pointer"
+                        }}
+                      >
+                        ⚡ {isExitOrSell ? "Exit Order" : "Trade Order"}
+                      </button>
+                    );
+                  })()}
 
                   <button
                     onClick={() => removeTicker(item.id)}

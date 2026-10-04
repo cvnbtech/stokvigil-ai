@@ -177,7 +177,11 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
     sl_price = parse_tactical_price(sl_str)
 
     alert_dt = parse_iso_datetime(alert.get("created_at"))
-    is_bearish = bias in ["SELL_WATCH", "STRONG_SELL", "DISTRIBUTION", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT"]
+    is_bearish = (
+        bias in ["SELL", "SELL_WATCH", "STRONG_SELL", "DISTRIBUTION", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT"]
+        or "SELL" in bias
+        or (target_price is not None and sl_price is not None and target_price < sl_price)
+    )
 
     # Zero Dummy / Zero Hallucination: If no candle data or unparseable prices, signal is pending real-time candle ingestion
     if candles_df is None or candles_df.empty or not entry_price or not target_price or not sl_price or not alert_dt:
@@ -233,6 +237,10 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
     outcome = "OPEN_MONITORING"
     max_peak_gain = 0.0
     resolved_time = None
+    exit_price = None
+    realized_r = None
+    slippage_drag_pct = 0.0
+    gap_slippage_detected = False
 
     if not is_bearish:
         # BULLISH / LONG TRADE VERIFICATION
@@ -253,21 +261,39 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
                 # Both breached in same candle bar -> check open price proximity
                 if abs(bar_open - sl_price) < abs(bar_open - target_price):
                     outcome = "STOP_LOSS_DEFENDED"
+                    exit_price = min(bar_open, sl_price) if bar_open < sl_price else sl_price
                 else:
                     outcome = "TARGET_1_REACHED"
+                    exit_price = max(bar_open, target_price) if bar_open > target_price else target_price
                 resolved_time = idx_time
                 break
             elif hit_target:
                 outcome = "TARGET_1_REACHED"
+                exit_price = max(bar_open, target_price) if bar_open > target_price else target_price
                 resolved_time = idx_time
                 break
             elif hit_sl:
                 outcome = "STOP_LOSS_DEFENDED"
+                exit_price = min(bar_open, sl_price) if bar_open < sl_price else sl_price
                 resolved_time = idx_time
                 break
 
         # Calculate max gain percentage achieved during the hold period
         max_peak_gain = round(max(0.0, ((max_high - entry_price) / entry_price) * 100), 1)
+
+        # Model Overnight Gap Slippage & Realized R-Multiple
+        if exit_price is not None:
+            nominal_risk = max(0.5, entry_price - sl_price)
+            if outcome == "STOP_LOSS_DEFENDED":
+                if exit_price < sl_price:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((sl_price - exit_price) / entry_price) * 100, 2)
+                realized_r = round((entry_price - exit_price) / nominal_risk, 2)
+            elif outcome == "TARGET_1_REACHED":
+                if exit_price > target_price:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((exit_price - target_price) / entry_price) * 100, 2)
+                realized_r = round((exit_price - entry_price) / nominal_risk, 2)
 
     else:
         # BEARISH / SHORT TRADE VERIFICATION
@@ -287,20 +313,38 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
             if hit_target and hit_sl:
                 if abs(bar_open - sl_price) < abs(bar_open - target_price):
                     outcome = "STOP_LOSS_DEFENDED"
+                    exit_price = max(bar_open, sl_price) if bar_open > sl_price else sl_price
                 else:
                     outcome = "TARGET_1_REACHED"
+                    exit_price = min(bar_open, target_price) if bar_open < target_price else target_price
                 resolved_time = idx_time
                 break
             elif hit_target:
                 outcome = "TARGET_1_REACHED"
+                exit_price = min(bar_open, target_price) if bar_open < target_price else target_price
                 resolved_time = idx_time
                 break
             elif hit_sl:
                 outcome = "STOP_LOSS_DEFENDED"
+                exit_price = max(bar_open, sl_price) if bar_open > sl_price else sl_price
                 resolved_time = idx_time
                 break
 
         max_peak_gain = round(max(0.0, ((entry_price - min_low) / entry_price) * 100), 1)
+
+        # Model Overnight Gap Slippage & Realized R-Multiple
+        if exit_price is not None:
+            nominal_risk = max(0.5, sl_price - entry_price)
+            if outcome == "STOP_LOSS_DEFENDED":
+                if exit_price > sl_price:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((exit_price - sl_price) / entry_price) * 100, 2)
+                realized_r = round((exit_price - entry_price) / nominal_risk, 2)
+            elif outcome == "TARGET_1_REACHED":
+                if exit_price < target_price:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((target_price - exit_price) / entry_price) * 100, 2)
+                realized_r = round((entry_price - exit_price) / nominal_risk, 2)
 
     # Compute hold duration
     hold_hours = None
@@ -334,11 +378,15 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
         "max_gain_pct": max_peak_gain,
         "hold_duration_hours": hold_hours,
         "created_at": alert.get("created_at"),
-        "verified_by": "REAL_CANDLE_VERIFICATION"
+        "verified_by": "REAL_CANDLE_VERIFICATION",
+        "exit_price": exit_price,
+        "realized_r": realized_r,
+        "slippage_drag_pct": slippage_drag_pct,
+        "gap_slippage_detected": gap_slippage_detected
     }
 
 
-def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
+def batch_verify_alerts(raw_alerts: List[Dict[str, Any]], preloaded_candles: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, Any]:
     """
     Asynchronously processes a list of raw alerts, fetching historical candles in parallel,
     verifying each outcome against real market price action, and calculating audited aggregate KPIs.
@@ -351,7 +399,9 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "avg_risk_reward": "-",
                 "avg_hold_duration": "-",
                 "profit_factor": 0.0,
-                "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE/BSE tick verification."
+                "slippage_events_count": 0,
+                "avg_gap_slippage_pct": "0.0%",
+                "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps, audited NSE/BSE tick verification, and overnight gap slippage modeling."
             },
             "ledger": []
         }
@@ -359,11 +409,15 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
     # 1. Collect unique symbols
     unique_symbols = list({str(a.get("symbol", "")).strip().upper() for a in raw_alerts if a.get("symbol")})
     symbol_candle_map: Dict[str, pd.DataFrame] = {}
+    if preloaded_candles:
+        symbol_candle_map.update(preloaded_candles)
+
+    needed_symbols = [s for s in unique_symbols if s not in symbol_candle_map]
 
     # 2. Parallel fetch for unique symbols (up to 5 concurrent workers)
-    if unique_symbols and os.environ.get("ENVIRONMENT") != "test":
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(unique_symbols))) as executor:
-            future_to_sym = {executor.submit(fetch_verification_candles, sym): sym for sym in unique_symbols}
+    if needed_symbols and os.environ.get("ENVIRONMENT") != "test":
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(needed_symbols))) as executor:
+            future_to_sym = {executor.submit(fetch_verification_candles, sym): sym for sym in needed_symbols}
             for future in concurrent.futures.as_completed(future_to_sym):
                 sym = future_to_sym[future]
                 try:
@@ -383,6 +437,8 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
     hold_count = 0
     gross_profits = 0.0
     gross_losses = 0.0
+    slippage_events = 0
+    total_slippage_drag = 0.0
 
     for a in raw_alerts:
         sym = str(a.get("symbol", "")).strip().upper()
@@ -395,12 +451,17 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
         rr_sum += rr_val
         total_evaluated += 1
 
+        realized_r = verified.get("realized_r")
+        if verified.get("gap_slippage_detected"):
+            slippage_events += 1
+            total_slippage_drag += abs(float(verified.get("slippage_drag_pct") or 0.0))
+
         if outcome == "TARGET_1_REACHED":
             target_hits += 1
-            gross_profits += rr_val
+            gross_profits += (realized_r if (realized_r is not None and realized_r > 0) else rr_val)
         elif outcome == "STOP_LOSS_DEFENDED":
             sl_hits += 1
-            gross_losses += 1.0
+            gross_losses += (realized_r if (realized_r is not None and realized_r > 0) else 1.0)
 
         if verified.get("hold_duration_hours"):
             total_hold_hours += verified["hold_duration_hours"]
@@ -427,6 +488,8 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         avg_hold = "Dynamic"
 
+    avg_slippage = round(total_slippage_drag / max(1, slippage_events), 2) if slippage_events > 0 else 0.0
+
     return {
         "audited_summary": {
             "win_rate_pct": win_rate,
@@ -434,7 +497,9 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
             "avg_risk_reward": avg_rr,
             "avg_hold_duration": avg_hold,
             "profit_factor": profit_factor,
-            "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps and audited NSE/BSE tick verification."
+            "slippage_events_count": slippage_events,
+            "avg_gap_slippage_pct": f"{avg_slippage}%" if slippage_events > 0 else "0.0%",
+            "audit_methodology": "Strict non-repudiation logging with immutable PostgreSQL timestamps, audited NSE/BSE tick verification, and overnight gap slippage modeling."
         },
         "ledger": ledger_items
     }
