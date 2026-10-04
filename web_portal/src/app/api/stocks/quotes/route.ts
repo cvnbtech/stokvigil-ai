@@ -86,7 +86,7 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
 
         if (hasRealVol) {
           if (price >= h4) {
-            signal = "STRONG_BUY";
+            signal = "STRONG BUY";
             signal_type = "strong_buy";
             target = `₹${(h4 + (trueRange * 0.5)).toFixed(2)}`;
             stop_loss = `₹${h3.toFixed(2)}`;
@@ -96,7 +96,7 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
             target = `₹${h4.toFixed(2)}`;
             stop_loss = `₹${l3.toFixed(2)}`;
           } else if (price <= l4) {
-            signal = "STOP_LOSS_EXIT";
+            signal = "STOP LOSS EXIT";
             signal_type = "danger";
             target = `₹${l3.toFixed(2)}`;
             stop_loss = `₹${l4.toFixed(2)}`;

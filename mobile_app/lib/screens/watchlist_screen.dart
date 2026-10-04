@@ -757,7 +757,12 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final isNegative = chg.startsWith('-') || item['is_positive'] == false;
                           final isPos = !isNegative && (item['is_positive'] == true);
                           final rawSignal = item['signal']?.toString();
-                          final signal = (hasRealPrice && rawSignal != null && rawSignal != '--' && rawSignal != 'MONITORING') ? rawSignal : (hasRealPrice ? (rawSignal ?? '--') : '--');
+                          final cleanSig = (rawSignal != null && rawSignal != '--')
+                              ? rawSignal.replaceAll('_', ' ').trim().toUpperCase()
+                              : '--';
+                          final signal = (hasRealPrice && cleanSig != '--' && cleanSig != 'MONITORING')
+                              ? cleanSig
+                              : (hasRealPrice ? cleanSig : '--');
                           final rawTarget = item['target']?.toString();
                           final target = (hasRealPrice && rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0') ? rawTarget : '--';
                           final rawSl = item['stop_loss']?.toString();
@@ -767,20 +772,42 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
 
                           Color signalColor = const Color(0xFF94A3B8);
+                          Color signalBg = const Color(0xFF94A3B8).withOpacity(0.12);
+                          Color signalBorder = const Color(0xFF94A3B8).withOpacity(0.35);
+
                           if (signal == 'STRONG BUY') {
-                            signalColor = AppTheme.primaryEmerald;
+                            signalColor = AppTheme.primaryEmerald; // Vibrant green #10B981
+                            signalBg = AppTheme.primaryEmerald.withOpacity(0.18);
+                            signalBorder = AppTheme.primaryEmerald.withOpacity(0.5);
                           } else if (signal == 'BUY') {
-                            signalColor = const Color(0xFF06B6D4);
-                          } else if (signal == 'ACCUMULATE') {
-                            signalColor = const Color(0xFF0EA5E9);
-                          } else if (signal == 'TAKE PROFIT') {
-                            signalColor = const Color(0xFFF59E0B);
+                            signalColor = const Color(0xFF10B981);
+                            signalBg = const Color(0xFF10B981).withOpacity(0.14);
+                            signalBorder = const Color(0xFF10B981).withOpacity(0.4);
+                          } else if (signal == 'STOP LOSS EXIT' || signal.contains('STOP LOSS') || signal.contains('CAPITAL PRESERVATION')) {
+                            // Distinct Alert Rose / Crimson for defensive exit
+                            signalColor = AppTheme.dangerRose; // #F43F5E
+                            signalBg = AppTheme.dangerRose.withOpacity(0.18);
+                            signalBorder = AppTheme.dangerRose.withOpacity(0.5);
                           } else if (signal == 'SELL' || signal == 'EXIT') {
-                            signalColor = AppTheme.dangerRose;
+                            signalColor = const Color(0xFFEF4444);
+                            signalBg = const Color(0xFFEF4444).withOpacity(0.16);
+                            signalBorder = const Color(0xFFEF4444).withOpacity(0.45);
+                          } else if (signal == 'ACCUMULATE') {
+                            signalColor = AppTheme.cyan;
+                            signalBg = AppTheme.cyan.withOpacity(0.16);
+                            signalBorder = AppTheme.cyan.withOpacity(0.45);
+                          } else if (signal == 'TAKE PROFIT' || signal == 'PROFIT BOOKING') {
+                            signalColor = const Color(0xFFA855F7);
+                            signalBg = const Color(0xFFA855F7).withOpacity(0.16);
+                            signalBorder = const Color(0xFFA855F7).withOpacity(0.45);
                           } else if (signal == 'HOLD' || signal == 'NEUTRAL') {
-                            signalColor = const Color(0xFFEAB308);
+                            signalColor = const Color(0xFFF59E0B);
+                            signalBg = const Color(0xFFF59E0B).withOpacity(0.16);
+                            signalBorder = const Color(0xFFF59E0B).withOpacity(0.45);
                           } else {
                             signalColor = const Color(0xFF94A3B8);
+                            signalBg = Colors.white.withOpacity(0.06);
+                            signalBorder = AppTheme.cardBorder;
                           }
 
                           return GlassCard(
@@ -933,9 +960,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                               decoration: BoxDecoration(
-                                                color: signalColor.withOpacity(0.12),
+                                                color: signalBg,
                                                 borderRadius: BorderRadius.circular(20),
-                                                border: Border.all(color: signalColor.withOpacity(0.4)),
+                                                border: Border.all(color: signalBorder),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
@@ -943,12 +970,27 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                   Container(
                                                     width: 6,
                                                     height: 6,
-                                                    decoration: BoxDecoration(color: signalColor, shape: BoxShape.circle),
+                                                    decoration: BoxDecoration(
+                                                      color: signalColor,
+                                                      shape: BoxShape.circle,
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: signalColor.withOpacity(0.6),
+                                                          blurRadius: 4,
+                                                          spreadRadius: 1,
+                                                        ),
+                                                      ],
+                                                    ),
                                                   ),
                                                   const SizedBox(width: 5),
                                                   Text(
                                                     signal,
-                                                    style: TextStyle(color: signalColor, fontSize: 10, fontWeight: FontWeight.w900),
+                                                    style: TextStyle(
+                                                      color: signalColor,
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w900,
+                                                      letterSpacing: 0.3,
+                                                    ),
                                                   ),
                                                 ],
                                               ),

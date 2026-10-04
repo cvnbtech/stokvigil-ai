@@ -288,7 +288,7 @@ class ApiService {
 
                 if (hasRealVol) {
                   if (price >= h4) {
-                    signalStr = 'STRONG_BUY';
+                    signalStr = 'STRONG BUY';
                     signalTypeStr = 'strong_buy';
                     targetStr = '₹${(h4 + (trueRange * 0.5)).toStringAsFixed(2)}';
                     slStr = '₹${h3.toStringAsFixed(2)}';
@@ -298,7 +298,7 @@ class ApiService {
                     targetStr = '₹${h4.toStringAsFixed(2)}';
                     slStr = '₹${l3.toStringAsFixed(2)}';
                   } else if (price <= l4) {
-                    signalStr = 'STOP_LOSS_EXIT';
+                    signalStr = 'STOP LOSS EXIT';
                     signalTypeStr = 'danger';
                     targetStr = '₹${l3.toStringAsFixed(2)}';
                     slStr = '₹${l4.toStringAsFixed(2)}';

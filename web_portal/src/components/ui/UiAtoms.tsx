@@ -230,9 +230,9 @@ export function SignalBadge({ signal, type }: { signal: string; type?: "strong_b
   const sigUpper = (signal || "").toUpperCase();
   const typeLower = (type || "").toLowerCase();
 
-  const isCapExit = sigUpper.includes("CAPITAL_PRESERVATION") || sigUpper.includes("CAPITAL PRESERVATION") || typeLower.includes("capital_preservation");
+  const isCapExit = sigUpper.includes("STOP_LOSS") || sigUpper.includes("STOP LOSS") || sigUpper.includes("CAPITAL_PRESERVATION") || sigUpper.includes("CAPITAL PRESERVATION") || typeLower.includes("capital_preservation") || typeLower.includes("danger");
   const isMisShort = sigUpper.includes("MIS_SHORT") || sigUpper.includes("MIS SHORT") || sigUpper.includes("INTRADAY_MIS") || sigUpper.includes("INTRADAY MIS") || typeLower.includes("mis_short");
-  const isStrong = type === "strong_buy" || sigUpper.includes("STRONG BUY");
+  const isStrong = type === "strong_buy" || sigUpper.includes("STRONG BUY") || sigUpper.includes("STRONG_BUY");
   const isBuy = type === "buy" || sigUpper === "BUY" || sigUpper.includes("ACCUMULATE");
   const isSell = type === "sell" || sigUpper === "SELL" || sigUpper.includes("PROFIT BOOK");
   const isHold = type === "hold" || type === "neutral" || sigUpper.includes("HOLD");
@@ -306,7 +306,7 @@ export function SignalBadge({ signal, type }: { signal: string; type?: "strong_b
         }} className={isStrong ? "pulse-live" : ""} />
       )}
       <span style={{ fontSize: 10.5, fontWeight: 900, color, letterSpacing: "0.04em" }}>
-        {signal}
+        {(signal || "").replace(/_/g, ' ')}
       </span>
     </div>
   );
