@@ -168,10 +168,14 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertIn("signal_type", q)
         self.assertIn("disclaimer", q)
         if q.get("price") and q["price"] > 0:
-            self.assertIsNotNone(q["target"])
-            self.assertIsNotNone(q["stop_loss"])
-            self.assertIsNotNone(q["signal"])
-            self.assertIn(q["signal"], ["HOLD", "BUY", "STRONG BUY", "ACCUMULATE", "SELL", "PULLBACK WATCH"])
+            if q.get("signal") is not None:
+                self.assertIsNotNone(q["target"])
+                self.assertIsNotNone(q["stop_loss"])
+                self.assertIn(q["signal"], ["BUY", "STRONG BUY", "ACCUMULATE", "SELL", "PULLBACK WATCH", "STOP LOSS EXIT"])
+            else:
+                # Zero-Default Policy: When stock is in neutral consolidation, target and stop loss must be None
+                self.assertIsNone(q["target"])
+                self.assertIsNone(q["stop_loss"])
 
     # 6. User Profile - Authorized
     def test_06_user_profile_authorized(self):

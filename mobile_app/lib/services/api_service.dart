@@ -296,18 +296,28 @@ class ApiService {
                 final double trueRange = math.max(refHigh - refLow, math.max((refHigh - cPrev).abs(), (refLow - cPrev).abs()));
                 final bool hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
 
+                // Intraday Expansion Ratio (IER) & High-Beta Event Buffering
+                final double intradayRange = (dayHigh != null && dayLow != null) ? math.max(0.0, dayHigh - dayLow) : 0.0;
+                final double ier = trueRange > 0 ? (intradayRange / trueRange) : 0.0;
+                final bool isHighBeta = ier >= 1.25;
+                final double bufferMult = isHighBeta ? 0.25 : 0.10;
+                final double atrBuffer = trueRange * bufferMult;
+
                 final double h3 = cPrev + (trueRange * 1.1 / 4.0);
                 final double h4 = cPrev + (trueRange * 1.1 / 2.0);
                 final double l3 = cPrev - (trueRange * 1.1 / 4.0);
                 final double l4 = cPrev - (trueRange * 1.1 / 2.0);
+
+                final double bufferedH4 = h4 + atrBuffer;
+                final double bufferedL4 = l4 - atrBuffer;
 
                 String? targetStr;
                 String? slStr;
                 String? signalStr;
                 String? signalTypeStr;
 
-                if (hasRealVol) {
-                  if (price >= h4) {
+                if (hasRealVol && price > 0) {
+                  if (price >= bufferedH4) {
                     signalStr = 'STRONG BUY';
                     signalTypeStr = 'strong_buy';
                     targetStr = '₹${(h4 + (trueRange * 0.5)).toStringAsFixed(2)}';
@@ -317,7 +327,7 @@ class ApiService {
                     signalTypeStr = 'buy';
                     targetStr = '₹${h4.toStringAsFixed(2)}';
                     slStr = '₹${l3.toStringAsFixed(2)}';
-                  } else if (price <= l4) {
+                  } else if (price <= bufferedL4 || price <= l4) {
                     signalStr = 'STOP LOSS EXIT';
                     signalTypeStr = 'danger';
                     targetStr = 'CUT RISK';
@@ -327,18 +337,20 @@ class ApiService {
                     signalTypeStr = 'sell';
                     targetStr = '₹${l4.toStringAsFixed(2)}';
                     slStr = '₹${h3.toStringAsFixed(2)}';
-                  } else if (price >= cPrev) {
-                    signalStr = 'ACCUMULATE';
-                    signalTypeStr = 'accumulate';
-                    targetStr = '₹${h3.toStringAsFixed(2)}';
-                    slStr = '₹${l3.toStringAsFixed(2)}';
-                  } else {
-                    signalStr = 'HOLD';
-                    signalTypeStr = 'hold';
-                    targetStr = '₹${h3.toStringAsFixed(2)}';
-                    slStr = '₹${l3.toStringAsFixed(2)}';
                   }
+                  // Zero-Default Policy: If price trades between L3 and H3 (neutral consolidation),
+                  // do NOT invent fake signals ('HOLD', 'MONITORING', 'ACCUMULATE') or dummy targets/stops.
+                  // signalStr, signalTypeStr, targetStr, slStr remain null (rendered as '--' on client UI).
                 }
+
+                // Dynamic Chandelier Trailing Stop (2.0x ATR for High Beta, 1.5x ATR for Standard)
+                // Calculated strictly when real volume exists and an active trade setup is triggered
+                final double trailMult = isHighBeta ? 2.0 : 1.5;
+                final double peakVal = math.max(price, dayHigh ?? price);
+                final double rawTrailSl = math.max(l3, peakVal - (trailMult * trueRange));
+                final String? trailingSlStr = (hasRealVol && price > 0 && signalStr != null)
+                    ? '₹${rawTrailSl.toStringAsFixed(2)}'
+                    : null;
 
                 return {
                   'symbol': cleanSym,
@@ -351,6 +363,9 @@ class ApiService {
                   'day_low': dayLow != null ? double.parse(dayLow.toStringAsFixed(2)) : null,
                   'target': targetStr,
                   'stop_loss': slStr,
+                  'trailing_sl': trailingSlStr,
+                  'is_high_beta': isHighBeta,
+                  'volatility_regime': isHighBeta ? 'HIGH_BETA_EVENT' : 'STANDARD_CAMARILLA',
                   'signal': signalStr,
                   'signal_type': signalTypeStr,
                   'disclaimer': 'Authentic mathematical Camarilla Equation pivots (H3/H4/L3/L4) from live market volatility.',

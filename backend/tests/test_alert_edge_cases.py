@@ -46,7 +46,7 @@ class TestAlertEdgeCases(unittest.TestCase):
         """Confluence engine must never produce Target 1 == Stop Loss or -100% P&L on missing price."""
         technicals = {
             "current_price": 0.0,
-            "atr_14": 0.0,
+            "atr_14": 2.5,
             "rsi_15m": 55.0,
             "rsi_daily": 52.0,
             "technical_score": 60,

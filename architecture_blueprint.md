@@ -197,7 +197,7 @@ To operate with institutional precision, the deterministic confluence engine exe
    - Evaluates sub-tick high/low/close equality ($|H - L| < 10^{-4}$ and $|C - L| < 10^{-4}$) coupled with significant price expansion ($|\Delta P| \ge 1.90\%$), classifying frozen order books as `UPPER_CIRCUIT` or `LOWER_CIRCUIT`.
 
 ### 2.1.4d The 13 Critical Quantitative Upgrades & Institutional Execution Realities
-To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 19 critical algorithmic upgrades:
+To overcome standard mathematical limitations of linear factor blending and emulate tier-1 institutional quantitative trading systems, StokVigil implements 23 critical algorithmic upgrades:
 
 ```mermaid
 graph TD
@@ -272,6 +272,17 @@ graph TD
     - Uses exact algebraic Camarilla range derivation: $(H_4 - L_4) / 2.2 = (H - L)$.
 19. **Audited Accuracy Verifier Zero-Dummy Engine**:
     - Replaces synthetic `"TARGET_1_REACHED"` with `"PENDING_CANDLE_DATA"` and `0.0%` max gain when real candle data is unavailable. Eradicates false coercion of $+1.0\%$ moves into target reached; trades where price did not reach Target 1 remain genuinely `OPEN_MONITORING`.
+20. **Multi-Tier Camarilla Equation Synchronization ($D-1$ Anchor)**:
+    - Synchronizes exact mathematical Camarilla equations ($H_4, H_3, L_3, L_4$) strictly from the prior completed trading day ($D-1$) across all 3 stack tiers: Python FastAPI backend (`technical_engine.py`, `stocks.py`), Next.js Web Route (`/api/stocks/quotes`), and Flutter Mobile (`ApiService`). Eliminates mathematical divergence and applies symmetrical breakout/breakdown detection ($H_4$ Breakout, $H_3$ Resistance, $L_3$ Accumulation, $L_4$ Breakdown).
+21. **Refactored STOP LOSS EXIT Tactical Display (Capital Defense)**:
+    - When price breaches the $L_4$ structural floor or triggers `CAPITAL_PRESERVATION_EXIT` / `STOP_LOSS_EXIT`, tactical levels clearly signal capital defense: Entry is `"IMMEDIATE EXIT"`, targets are `"CUT RISK"` / `"PROTECT PRINCIPAL"`, Protective Stop-Loss displays `"₹{L4} (BREACHED)"` or `"BREACHED"`, Risk/Reward is `"CAPITAL DEFENSE"`, and Recommended Quantity is `0` (`"Capital Defense (0 new quantity)"`).
+22. **Overnight Gap Slippage Modeling & Trailing Profit Lock (`accuracy_verifier.py`)**:
+    - Historical alert verification models real-world overnight opening gaps for breakout orders and protective stop-losses. Accurately accounts for gap-downs below stop-loss or gap-ups past targets, tracking `gap_slippage_detected`, `slippage_drag_pct`, and `realized_r`.
+    - Introduces the `TRAILING_SL_LOCKED_PROFIT` outcome: alerts that gain $\ge 1.0R$ advance and subsequently reverse exit via the active Chandelier trailing stop, locking in positive realized profit rather than suffering a full initial stop-loss breach.
+23. **Adaptive Intraday Volatility / ATR Buffers & Chandelier Ratchet**:
+    - `compute_tactical_levels` dynamically detects `HIGH_BETA_EVENT` sessions (India VIX $\ge 18.0$, stock $\beta \ge 1.25$, Intraday Expansion Ratio $(H - L)/\text{ATR} \ge 1.25$, or active news/earnings catalysts).
+    - Applies a $0.25\times\text{ATR}$ buffer on high-beta event sessions (preventing false breakout whipsaws during RBI announcements or earnings) versus $0.10\times\text{ATR}$ on standard sessions, producing `buffered_breakout_level` and `buffered_breakdown_level`.
+    - Features a dynamic Chandelier Trailing Stop ratchet ($2.0\times\text{ATR}$ for high-beta event days, $1.5\times\text{ATR}$ for standard days) ratcheting upward monotonically to protect accrued profits while strictly never loosening below the initial stop-loss.
 
 ### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting & Weight Re-Normalization (`app/engine/deterministic.py`)
 Rather than static weightings or arbitrary default placeholders, factor weights adapt dynamically to real-time market regimes and available data:
@@ -297,7 +308,7 @@ $$\text{Confluence Score} = \sum_{k \in \text{Available}} W_k' \times \text{Fact
   - In `Market Snapshot`, lines are only rendered for metrics that are legitimately present (preventing `• Delivery: None%` or `• 15m RSI: None`).
   - `format_pre_market_war_room_telegram` omits benchmark lines if index prices are unavailable.
   - Web portal components (such as the FII/DII institutional flow bar in `HomeTab.tsx`) hide cards or display clean unavailable states when live institutional flow or indices are missing, strictly avoiding synthetic estimates.
-  - **Watchlist UI Integrity (Mobile & Web)**: Watchlist cards strictly display clean, non-misleading `"--"` indicators for Price, % Change, Target, Stop Loss, and Signal whenever real-time values are absent. Colored status badges are replaced with neutral `--` pills, and the `[⚡ Trade Order]` button is automatically disabled (`not-allowed`) for unpriced stocks.
+  - **Watchlist UI Integrity (Mobile & Web)**: Watchlist cards strictly display clean, non-misleading `"--"` indicators for Price, % Change, Target, Stop Loss, and Signal whenever real-time values are absent. Colored status badges are replaced with neutral `--` pills, the `[⚡ Trade Order]` button is disabled with an informative error warning (`"Real-time quote unavailable... Cannot place trade at price ₹0.00"`) for unpriced stocks, trailing SL chips are hidden unless an active signal and authentic positive price exist, and stocks in normal consolidation ($L_3 < \text{Price} < H_3$) display neutral `"--"` badges without artificial `'HOLD'`, `'MONITORING'`, or `'ACCUMULATE'` placeholder coercion.
 
 ### 2.1.5 Robust Price Resolution & 1-Year Daily Candle Fallback (`technical_engine.py`)
 - **Off-Market & Low-Liquidity Synthesis**: When intraday 5m data is empty (off-market hours, weekends, exchange holidays, illiquid stocks, or upstream latency), `technical_engine.py` smoothly synthesizes price, 14-period ATR, Camarilla institutional pivots ($H_4, H_3, L_3, L_4$), EMAs (20/50/200), Mansfield Relative Strength vs NIFTY 50, and 14-period Wilder's ADX directly from the 1-year daily history (100+ daily bars).
@@ -693,9 +704,12 @@ G:\stokvigil-ai\
 │   │   ├── test_advanced_accuracy.py    <-- 6 Market Breadth ADR, Scrip Normalization & RAM Tick Tests
 │   │   ├── test_alert_edge_cases.py     <-- 2 Daily Fallback, Demat P&L, Target/SL Clamping Tests
 │   │   ├── test_api_endpoints.py        <-- 44 API, Auth, Modular Routers, Security Hardening & Rate Limiter Tests
+│   │   ├── test_atr_buffers.py          <-- 4 Adaptive ATR Volatility Buffers, High-Beta Regime & Chandelier Ratchet Tests
 │   │   ├── test_brokers.py              <-- 6 Pluggable Multi-Broker, Adapter Contracts & Registry Tests
+│   │   ├── test_crash_breakdown.py      <-- 5 Supply Shock Overrides 200 EMA & Macro Crash Dispatch Tests
 │   │   ├── test_db_pool.py              <-- 9 Connection Pool, PgBouncer Port 6543, Date/UUID Normalization Tests
 │   │   ├── test_financial_trade_flaws.py <-- 9 Trade Execution, Directional Levels, RMS Interception & SL-L Tests
+│   │   ├── test_gap_slippage.py         <-- 5 Overnight Gap Slippage Modeling, Realized R & Trailing Profit Lock Tests
 │   │   ├── test_gatekeeper_and_vsa.py   <-- 14 Gatekeeper, Dynamic F&O Discovery, Wyckoff VSA Tests
 │   │   ├── test_institutional_accuracy.py <-- 18 Volatility, TTM Squeeze, VWAP Bands & Zero-Default Tests
 │   │   ├── test_institutional_engine.py <-- 1 Master Integration Suite (7 Quantitative Modules)
@@ -704,8 +718,9 @@ G:\stokvigil-ai\
 │   │   ├── test_phase2.py               <-- 7 Accuracy Ledger, FII/DII Flows, Candle Overlays Tests
 │   │   ├── test_portfolio_optimization.py <-- 3 Fundamentals Caching & Background Pre-Warming Tests
 │   │   ├── test_quantitative_upgrades.py <-- 7 Quantitative Upgrades, Hard Risk Veto & Demat SL Defense Tests
-│   │   └── test_real_accuracy_verifier.py <-- 7 Real-Time Price Tracking, Candle Outcome & Dynamic Win Rate Tests
-│   │   # Total: 160 automated unit tests across 16 test suites (100% passing)
+│   │   ├── test_real_accuracy_verifier.py <-- 7 Real-Time Price Tracking, Candle Outcome & Dynamic Win Rate Tests
+│   │   └── test_realtime_confluence.py  <-- 5 Zero-Dummy ATR Enforcement & Pure Confluence Math Tests
+│   │   # Total: 179 automated unit tests across 20 test suites (100% passing)
 │   ├── supabase_rls_setup.sql       <-- Master Database RLS & Schema Setup
 │   ├── requirements.txt
 │   ├── Dockerfile

@@ -74,21 +74,40 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
   void _applyQuoteToItem(Map<String, dynamic> item, Map<String, dynamic> q) {
     final price = (q['price'] as num? ?? 0.0).toDouble();
+    if (price <= 0) {
+      item['price'] = 0.0;
+      item['chg'] = '--';
+      item['signal'] = null;
+      item['target'] = null;
+      item['stop_loss'] = null;
+      item['trailing_sl'] = null;
+      item['is_high_beta'] = false;
+      return;
+    }
+
     item['price'] = price;
     final num? chgVal = q['change_pct'] as num?;
     final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
     final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
     item['is_positive'] = isPos;
-    item['chg'] = price > 0 ? "${isPos ? '+' : ''}$chgPctStr%" : "--";
+    item['chg'] = "${isPos ? '+' : ''}$chgPctStr%";
     if (q['name'] != null && q['name'].toString().isNotEmpty) {
       item['name'] = q['name'];
     }
     if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
       item['exchange'] = q['exchange'];
     }
-    item['signal'] = q['signal'];
+
+    // Zero-Default Policy: Filter out placeholder 'HOLD', 'MONITORING', etc.
+    final rawSignal = q['signal']?.toString().trim();
+    if (rawSignal != null && rawSignal.isNotEmpty && rawSignal != '--' && rawSignal != 'HOLD' && rawSignal != 'MONITORING') {
+      item['signal'] = rawSignal;
+    } else {
+      item['signal'] = null;
+    }
+
     final rawTarget = q['target']?.toString();
-    if (rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget.isNotEmpty) {
+    if (rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0' && rawTarget.isNotEmpty && item['signal'] != null) {
       if (rawTarget.contains('CUT') || rawTarget.contains('EXIT') || rawTarget.startsWith('₹')) {
         item['target'] = rawTarget;
       } else {
@@ -99,7 +118,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     }
 
     final rawSl = q['stop_loss']?.toString();
-    if (rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl.isNotEmpty) {
+    if (rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl != '0' && rawSl.isNotEmpty && item['signal'] != null) {
       if (rawSl.contains('BREACHED') || rawSl.startsWith('₹')) {
         item['stop_loss'] = rawSl;
       } else {
@@ -108,6 +127,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     } else {
       item['stop_loss'] = null;
     }
+    item['trailing_sl'] = item['signal'] != null ? q['trailing_sl'] : null;
+    item['is_high_beta'] = q['is_high_beta'] == true;
+    item['volatility_regime'] = q['volatility_regime'];
   }
 
   void _subscribeToWatchlist() {
@@ -135,6 +157,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               merged['signal'] = existing['signal'];
               merged['target'] = existing['target'];
               merged['stop_loss'] = existing['stop_loss'];
+              merged['trailing_sl'] = existing['trailing_sl'];
+              merged['is_high_beta'] = existing['is_high_beta'];
+              merged['volatility_regime'] = existing['volatility_regime'];
               merged['name'] = existing['name'] ?? merged['name'];
               merged['exchange'] = existing['exchange'] ?? merged['exchange'];
             } else if (cached != null && (cached['price'] as num? ?? 0) > 0) {
@@ -775,13 +800,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                           final cleanSig = (rawSignal != null && rawSignal != '--')
                               ? rawSignal.replaceAll('_', ' ').trim().toUpperCase()
                               : '--';
-                          final signal = (hasRealPrice && cleanSig != '--' && cleanSig != 'MONITORING')
-                              ? cleanSig
-                              : (hasRealPrice ? cleanSig : '--');
+                          final bool hasActiveSignal = hasRealPrice &&
+                              cleanSig != '--' &&
+                              cleanSig != 'MONITORING' &&
+                              cleanSig != 'HOLD';
+                          final signal = hasActiveSignal ? cleanSig : '--';
                           final rawTarget = item['target']?.toString();
-                          final target = (hasRealPrice && rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0') ? rawTarget : '--';
+                          final target = (hasActiveSignal && rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0') ? rawTarget : '--';
                           final rawSl = item['stop_loss']?.toString();
-                          final stopLoss = (hasRealPrice && rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl != '0') ? rawSl : '--';
+                          final stopLoss = (hasActiveSignal && rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl != '0') ? rawSl : '--';
                           final rawName = (item['name'] as String? ?? '').trim();
                           final name = (rawName.isNotEmpty && !rawName.contains('(Demat Holding)')) ? rawName : symbol;
                           final initial = symbol.length >= 2 ? symbol.substring(0, 2) : (symbol.isNotEmpty ? symbol : 'ST');
@@ -842,17 +869,23 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                             width: 38,
                                             height: 38,
                                             decoration: BoxDecoration(
-                                              color: isPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12),
+                                              color: !hasRealPrice
+                                                  ? Colors.white.withOpacity(0.04)
+                                                  : (isPos ? AppTheme.primaryEmerald.withOpacity(0.12) : AppTheme.dangerRose.withOpacity(0.12)),
                                               borderRadius: BorderRadius.circular(10),
                                               border: Border.all(
-                                                color: isPos ? AppTheme.primaryEmerald.withOpacity(0.35) : AppTheme.dangerRose.withOpacity(0.35),
+                                                color: !hasRealPrice
+                                                    ? AppTheme.cardBorder
+                                                    : (isPos ? AppTheme.primaryEmerald.withOpacity(0.35) : AppTheme.dangerRose.withOpacity(0.35)),
                                               ),
                                             ),
                                             child: Center(
                                               child: Text(
                                                 initial,
                                                 style: TextStyle(
-                                                  color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                                  color: !hasRealPrice
+                                                      ? AppTheme.textMuted
+                                                      : (isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose),
                                                   fontWeight: FontWeight.w900,
                                                   fontSize: 12,
                                                 ),
@@ -908,6 +941,25 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                         ),
                                                       ),
                                                     ),
+                                                    if (hasRealPrice && item['is_high_beta'] == true) ...[
+                                                      const SizedBox(width: 4),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFFF59E0B).withOpacity(0.15),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4), width: 0.8),
+                                                        ),
+                                                        child: const Text(
+                                                          "⚡ High Beta",
+                                                          style: TextStyle(
+                                                            color: Color(0xFFF59E0B),
+                                                            fontSize: 8.5,
+                                                            fontWeight: FontWeight.w900,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ],
                                                 ),
                                                 const SizedBox(height: 2),
@@ -1037,6 +1089,16 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                         fontWeight: FontWeight.w900,
                                                       ),
                                                     ),
+                                                     if (hasRealPrice && item['trailing_sl'] != null && !isCutRisk && !signal.contains('STOP LOSS') && signal != '--') ...[
+                                                       const TextSpan(text: "  •  Trail: "),
+                                                       TextSpan(
+                                                         text: item['trailing_sl'].toString(),
+                                                         style: const TextStyle(
+                                                           color: AppTheme.cyan,
+                                                           fontWeight: FontWeight.w900,
+                                                         ),
+                                                       ),
+                                                     ],
                                                   ],
                                                 ),
                                               );
@@ -1052,9 +1114,17 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                          // Candles & Camarilla Chart Button
                                          GestureDetector(
                                            onTap: () {
+                                               if (!hasRealPrice) {
+                                                 ErrorHandler.showErrorSnackBar(context, "Market data currently unavailable for " + symbol + ".");
+                                                 return;
+                                               }
                                              CandleChartModal.show(context, symbol: symbol);
                                            },
                                            onLongPress: () {
+                                               if (!hasRealPrice) {
+                                                 ErrorHandler.showErrorSnackBar(context, "Market data currently unavailable for " + symbol + ".");
+                                                 return;
+                                               }
                                              Navigator.of(context).push(
                                                MaterialPageRoute(
                                                  builder: (_) => CandleChartScreen(symbol: symbol),
@@ -1081,9 +1151,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                          Builder(
                                            builder: (context) {
                                              final isExitOrSell = signal.contains('EXIT') || signal.contains('STOP LOSS') || signal == 'SELL';
-                                             final btnColor = isExitOrSell ? AppTheme.dangerRose : AppTheme.cyan;
+                                             final btnColor = !hasRealPrice ? AppTheme.textMuted : (isExitOrSell ? AppTheme.dangerRose : AppTheme.cyan);
                                              return GestureDetector(
                                                onTap: () {
+                                                 if (!hasRealPrice) {
+                                                   ErrorHandler.showErrorSnackBar(context, "Real-time quote unavailable for " + symbol + ". Cannot place trade at price ₹0.00.");
+                                                   return;
+                                                 }
                                                  TradeOrderModal.show(
                                                    context,
                                                    symbol: symbol,
@@ -1097,7 +1171,9 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                        : stopLoss.toString().replaceAll('₹', '').trim(),
                                                  );
                                                },
-                                               child: Container(
+                                               child: Opacity(
+                                                 opacity: hasRealPrice ? 1.0 : 0.45,
+                                                 child: Container(
                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                                  decoration: BoxDecoration(
                                                    color: btnColor.withOpacity(0.12),
@@ -1115,6 +1191,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                    ],
                                                  ),
                                                ),
+                                                ),
                                              );
                                            },
                                          ),

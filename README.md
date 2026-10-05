@@ -199,6 +199,17 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
     - Uses exact algebraic Camarilla range derivation: $(H_4 - L_4) / 2.2 = (H - L)$.
 24. **Audited Accuracy Verifier Zero-Dummy Engine**:
     - Replaces synthetic `"TARGET_1_REACHED"` with `"PENDING_CANDLE_DATA"` and `0.0%` max gain when real candle data is unavailable. Eradicates false coercion of $+1.0\%$ moves into target reached; trades where price did not reach Target 1 remain genuinely `OPEN_MONITORING`.
+25. **Multi-Tier Camarilla Equation Synchronization ($D-1$ Anchor)**:
+    - Synchronizes exact Camarilla calculations ($H_4, H_3, L_3, L_4$) strictly from the prior completed trading day ($D-1$) across all 3 stack tiers: Python FastAPI backend (`technical_engine.py`, `stocks.py`), Next.js Web Route (`/api/stocks/quotes`), and Flutter Mobile (`ApiService`). Implements symmetrical breakout and breakdown detection ($H_4$ Breakout, $H_3$ Resistance, $L_3$ Accumulation, $L_4$ Breakdown) with mathematical precision.
+26. **Refactored STOP LOSS EXIT Tactical Display**:
+    - When price breaches the $L_4$ structural floor or triggers `CAPITAL_PRESERVATION_EXIT` / `STOP_LOSS_EXIT`, tactical levels clearly signal capital defense: Entry is `"IMMEDIATE EXIT"`, targets are `"CUT RISK"` / `"PROTECT PRINCIPAL"`, Protective Stop-Loss displays `"₹{L4} (BREACHED)"` or `"BREACHED"`, Risk/Reward is `"CAPITAL DEFENSE"`, and Recommended Quantity is `0` (`"Capital Defense (0 new quantity)"`).
+27. **Overnight Gap Slippage Modeling & Trailing Profit Lock (`accuracy_verifier.py`)**:
+    - Historical alert verification models real-world overnight opening gaps for breakout orders and protective stop-losses. Accurately accounts for gap-downs below stop-loss or gap-ups past targets, tracking `gap_slippage_detected`, `slippage_drag_pct`, and `realized_r`.
+    - Introduces the `TRAILING_SL_LOCKED_PROFIT` outcome: alerts that gain $\ge 1.0R$ advance and subsequently reverse exit via the active Chandelier trailing stop, locking in positive realized profit rather than suffering a full initial stop-loss breach.
+28. **Adaptive Intraday Volatility / ATR Buffers & Chandelier Ratchet**:
+    - `compute_tactical_levels` dynamically detects `HIGH_BETA_EVENT` sessions (India VIX $\ge 18.0$, stock $\beta \ge 1.25$, Intraday Expansion Ratio $(H - L)/\text{ATR} \ge 1.25$, or active news/earnings catalysts).
+    - Applies a $0.25\times\text{ATR}$ buffer on high-beta event sessions (preventing false breakout whipsaws during RBI announcements or earnings) versus $0.10\times\text{ATR}$ on standard sessions, producing `buffered_breakout_level` and `buffered_breakdown_level`.
+    - Features a dynamic Chandelier Trailing Stop ratchet ($2.0\times\text{ATR}$ for high-beta event days, $1.5\times\text{ATR}$ for standard days) ratcheting upward monotonically to protect accrued profits while strictly never loosening below the initial stop-loss.
 
 ---
 
@@ -214,7 +225,7 @@ To emulate hedge-fund-grade quantitative trading desks, StokVigil incorporates 1
   - In `Market Snapshot`, lines are only rendered for metrics that are legitimately present (preventing `• Delivery: None%` or `• 15m RSI: None`).
   - `format_pre_market_war_room_telegram` omits benchmark lines if index prices are unavailable.
   - Web Portal (`HomeTab.tsx`) suppresses the FII/DII institutional bar entirely when data is unavailable, preventing misleading `₹0 Cr` or `BALANCED` badges.
-  - **Watchlist UI Integrity (Mobile & Web)**: Watchlist cards strictly display clean, non-misleading `"--"` indicators for Price, % Change, Target, Stop Loss, and Signal whenever real-time values are absent. Colored status badges are replaced with neutral `--` pills, and the `[⚡ Trade Order]` button is automatically disabled (`not-allowed`) for unpriced stocks.
+  - **Watchlist UI Integrity (Mobile & Web)**: Watchlist cards strictly display clean, non-misleading `"--"` indicators for Price, % Change, Target, Stop Loss, and Signal whenever real-time values are absent. Colored status badges are replaced with neutral `--` pills, the `[⚡ Trade Order]` button is disabled with an informative error warning (`"Real-time quote unavailable... Cannot place trade at price ₹0.00"`) for unpriced stocks, trailing SL chips are hidden unless an active signal and authentic positive price exist, and stocks in normal consolidation ($L_3 < \text{Price} < H_3$) display neutral `"--"` badges without artificial `'HOLD'`, `'MONITORING'`, or `'ACCUMULATE'` placeholder coercion.
 
 ---
 
@@ -468,7 +479,7 @@ Users can permanently delete their account directly from the **Settings** page:
    ICICI_MASTER_APP_KEY=your-icici-master-app-key
    ICICI_MASTER_SECRET_KEY=your-icici-master-secret-key
    ```
-3. Run test suite (160 automated unit tests across 16 suites, including modular architecture verification, 10K+ hybrid rate limiter with verified JWT caching, defensive HTTP security headers, production fail-closed vault encryption, institutional engines, multi-broker adapters, quantitative upgrades, PgBouncer DATE/UUID parameter normalization, and real price-tracking accuracy verifiers):
+3. Run test suite (179 automated unit tests across 20 suites, including modular architecture verification, 10K+ hybrid rate limiter with verified JWT caching, defensive HTTP security headers, production fail-closed vault encryption, institutional engines, multi-broker adapters, quantitative upgrades, PgBouncer DATE/UUID parameter normalization, overnight gap slippage modeling, adaptive ATR volatility buffers, and real price-tracking accuracy verifiers):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

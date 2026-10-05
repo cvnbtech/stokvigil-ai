@@ -356,10 +356,11 @@ export default function App() {
               const isPos = chgPct >= 0;
               const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
               const hasRealPrice = price > 0;
-              const signal = (hasRealPrice && q.signal && q.signal !== "--") ? q.signal : "--";
-              const signalType = (hasRealPrice && q.signal_type) ? q.signal_type : "none";
-              const target = (hasRealPrice && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
-              const sl = (hasRealPrice && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
+              const hasActiveSignal = hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING" && q.signal !== "HOLD";
+              const signal = hasActiveSignal ? q.signal : "--";
+              const signalType = (hasActiveSignal && q.signal_type) ? q.signal_type : "none";
+              const target = (hasActiveSignal && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
+              const sl = (hasActiveSignal && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
 
               return {
                 id: w.id,

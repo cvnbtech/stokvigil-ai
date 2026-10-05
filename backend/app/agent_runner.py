@@ -331,7 +331,11 @@ def precompute_symbol_market_state(
             l4=pivots.get("l4"),
             vwap_val=technicals.get("vwap"),
             vwap_upper_1s=technicals.get("vwap_upper_1s"),
-            action_bias=analysis.get("action_bias", "HOLD_NEUTRAL")
+            action_bias=analysis.get("action_bias", "HOLD_NEUTRAL"),
+            day_high=technicals.get("day_high"),
+            day_low=technicals.get("day_low"),
+            india_vix=macro_data.get("india_vix") if macro_data else None,
+            stock_beta=financials.get("beta_volatility") if financials else None
         )
         if tactical:
             analysis["tactical_levels"] = tactical

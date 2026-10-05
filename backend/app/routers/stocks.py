@@ -18,7 +18,7 @@ import yfinance as yf
 from app.core.rate_limiter import check_rate_limit
 from app.core.dependencies import is_indian_market_open
 from app.market_cache import market_cache
-from app.agent_runner import compute_tactical_levels
+from app.engine.deterministic import compute_tactical_levels
 from app.technical_engine import calculate_camarilla_pivots, calculate_vwap_bands, calculate_ttm_squeeze
 
 logger = logging.getLogger("stokvigil.routers.stocks")
@@ -95,13 +95,17 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                 s1 = cached_tactical.get("protective_stop_loss")
                 target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
                 sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
+                trailing_sl = cached_tactical.get("atr_trailing_stop")
+                volatility_regime = cached_tactical.get("volatility_regime") or "STANDARD_CAMARILLA"
+                is_high_beta = bool(cached_tactical.get("is_high_beta_event", False))
                 bias = cached_stock.get("action_bias")
                 signal = None
                 signal_type = None
-                if bias:
+                if bias and bias != "DATA_UNAVAILABLE":
                     if bias == "HOLD_NEUTRAL":
-                        signal = "HOLD"
-                        signal_type = "hold"
+                        # ZERO-DEFAULT POLICY: HOLD_NEUTRAL represents neutral baseline, not an active trade signal
+                        signal = None
+                        signal_type = None
                     elif "BUY" in bias:
                         signal = bias.replace("_", " ")
                         signal_type = "strong_buy"
@@ -109,8 +113,13 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         signal = bias.replace("_", " ")
                         signal_type = "sell"
                     else:
-                        signal = bias.replace("_", " ")
-                        signal_type = "hold"
+                        signal = None
+                        signal_type = None
+
+                if not signal:
+                    target_val = None
+                    sl_val = None
+                    trailing_sl = None
 
                 exch = "BSE" if is_explicit_bse else "NSE"
                 cached_name = cached_stock.get("name") or (f"{clean_sym} (BSE)" if is_explicit_bse else f"{clean_sym} (NSE)")
@@ -128,6 +137,11 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "day_low": round(float(day_low), 2) if day_low is not None else None,
                     "target": target_val,
                     "stop_loss": sl_val,
+                    "trailing_sl": trailing_sl,
+                    "volatility_regime": volatility_regime,
+                    "is_high_beta": is_high_beta,
+                    "buffered_breakout_level": cached_tactical.get("buffered_breakout_level"),
+                    "buffered_breakdown_level": cached_tactical.get("buffered_breakdown_level"),
                     "signal": signal,
                     "signal_type": signal_type,
                     "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
@@ -198,10 +212,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
                                 sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
                                 bias = cached_stock.get("action_bias")
-                                if bias:
+                                if bias and bias != "DATA_UNAVAILABLE":
                                     if bias == "HOLD_NEUTRAL":
-                                        signal = "HOLD"
-                                        signal_type = "hold"
+                                        signal = None
+                                        signal_type = None
                                     elif "BUY" in bias:
                                         signal = bias.replace("_", " ")
                                         signal_type = "strong_buy"
@@ -209,8 +223,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                         signal = bias.replace("_", " ")
                                         signal_type = "sell"
                                     else:
-                                        signal = bias.replace("_", " ")
-                                        signal_type = "hold"
+                                        signal = None
+                                        signal_type = None
+
+                            trailing_sl_val = None
+                            is_high_beta_val = False
+                            regime_val = "STANDARD_CAMARILLA"
+                            buf_h4_val = None
+                            buf_l4_val = None
 
                             if (not target_val or not sl_val) and true_range > 0 and float(p) > 0 and h3 and l4:
                                 tactical = compute_tactical_levels(
@@ -220,19 +240,59 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                     h4=h4,
                                     l3=l3,
                                     l4=l4,
-                                    action_bias="HOLD_NEUTRAL"
+                                    action_bias="HOLD_NEUTRAL",
+                                    day_high=day_high,
+                                    day_low=day_low
                                 )
                                 if tactical:
                                     target_val = tactical.get("target_1")
                                     sl_val = tactical.get("protective_stop_loss")
+                                    trailing_sl_val = tactical.get("atr_trailing_stop")
+                                    is_high_beta_val = bool(tactical.get("is_high_beta_event", False))
+                                    regime_val = tactical.get("volatility_regime", "STANDARD_CAMARILLA")
+                                    buf_h4_val = tactical.get("buffered_breakout_level")
+                                    buf_l4_val = tactical.get("buffered_breakdown_level")
                                 if l4 and float(p) <= float(l4):
                                     signal = "STOP LOSS EXIT"
                                     signal_type = "danger"
                                     target_val = "CUT RISK"
                                     sl_val = f"₹{l4:,.2f} BREACHED"
+                                elif not signal and true_range > 0 and h3 and l3:
+                                    atr_buf = (true_range * 0.25) if is_high_beta_val else (true_range * 0.10)
+                                    raw_buf_h4 = (h4 + atr_buf) if h4 else None
+                                    raw_buf_l4 = (l4 - atr_buf) if l4 else None
+                                    if raw_buf_h4 and float(p) >= raw_buf_h4:
+                                        signal = "STRONG BUY"
+                                        signal_type = "strong_buy"
+                                        target_val = f"₹{(h4 + (true_range * 0.5)):,.2f}"
+                                        sl_val = f"₹{h3:,.2f}"
+                                    elif h3 and float(p) >= float(h3):
+                                        signal = "BUY"
+                                        signal_type = "buy"
+                                        target_val = f"₹{h4:,.2f}"
+                                        sl_val = f"₹{l3:,.2f}"
+                                    elif (raw_buf_l4 and float(p) <= raw_buf_l4) or (l4 and float(p) <= float(l4)):
+                                        signal = "STOP LOSS EXIT"
+                                        signal_type = "danger"
+                                        target_val = "CUT RISK"
+                                        sl_val = f"₹{l4:,.2f} BREACHED"
+                                    elif l3 and float(p) <= float(l3):
+                                        signal = "SELL"
+                                        signal_type = "sell"
+                                        target_val = f"₹{l4:,.2f}"
+                                        sl_val = f"₹{h3:,.2f}"
+                                    else:
+                                        signal = None
+                                        signal_type = None
+                                        target_val = None
+                                        sl_val = None
+                                        trailing_sl_val = None
                                 elif not signal:
-                                    signal = "HOLD"
-                                    signal_type = "hold"
+                                    signal = None
+                                    signal_type = None
+                                    target_val = None
+                                    sl_val = None
+                                    trailing_sl_val = None
 
                             quote_result = {
                                 "symbol": clean_sym,
@@ -247,6 +307,11 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 "day_low": day_low,
                                 "target": target_val,
                                 "stop_loss": sl_val,
+                                "trailing_sl": trailing_sl_val,
+                                "volatility_regime": regime_val,
+                                "is_high_beta": is_high_beta_val,
+                                "buffered_breakout_level": buf_h4_val,
+                                "buffered_breakdown_level": buf_l4_val,
                                 "signal": signal,
                                 "signal_type": signal_type,
                                 "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
@@ -311,10 +376,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     target_val = t1 if (t1 and t1 not in ["-", "₹0", "0"]) else None
                     sl_val = s1 if (s1 and s1 not in ["-", "₹0", "0"]) else None
                     bias = cached_stock.get("action_bias")
-                    if bias:
+                    if bias and bias != "DATA_UNAVAILABLE":
                         if bias == "HOLD_NEUTRAL":
-                            signal = "HOLD"
-                            signal_type = "hold"
+                            signal = None
+                            signal_type = None
                         elif "BUY" in bias:
                             signal = bias.replace("_", " ")
                             signal_type = "strong_buy"
@@ -322,8 +387,14 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             signal = bias.replace("_", " ")
                             signal_type = "sell"
                         else:
-                            signal = bias.replace("_", " ")
-                            signal_type = "hold"
+                            signal = None
+                            signal_type = None
+
+                trailing_sl_val = None
+                is_high_beta_val = False
+                regime_val = "STANDARD_CAMARILLA"
+                buf_h4_val = None
+                buf_l4_val = None
 
                 if (not target_val or not sl_val) and true_range > 0 and float(p) > 0 and h3 and l4:
                     tactical = compute_tactical_levels(
@@ -333,19 +404,59 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         h4=h4,
                         l3=l3,
                         l4=l4,
-                        action_bias="HOLD_NEUTRAL"
+                        action_bias="HOLD_NEUTRAL",
+                        day_high=day_high,
+                        day_low=day_low
                     )
                     if tactical:
                         target_val = tactical.get("target_1")
                         sl_val = tactical.get("protective_stop_loss")
+                        trailing_sl_val = tactical.get("atr_trailing_stop")
+                        is_high_beta_val = bool(tactical.get("is_high_beta_event", False))
+                        regime_val = tactical.get("volatility_regime", "STANDARD_CAMARILLA")
+                        buf_h4_val = tactical.get("buffered_breakout_level")
+                        buf_l4_val = tactical.get("buffered_breakdown_level")
                     if l4 and float(p) <= float(l4):
                         signal = "STOP LOSS EXIT"
                         signal_type = "danger"
                         target_val = "CUT RISK"
                         sl_val = f"₹{l4:,.2f} BREACHED"
+                    elif not signal and true_range > 0 and h3 and l3:
+                        atr_buf = (true_range * 0.25) if is_high_beta_val else (true_range * 0.10)
+                        raw_buf_h4 = (h4 + atr_buf) if h4 else None
+                        raw_buf_l4 = (l4 - atr_buf) if l4 else None
+                        if raw_buf_h4 and float(p) >= raw_buf_h4:
+                            signal = "STRONG BUY"
+                            signal_type = "strong_buy"
+                            target_val = f"₹{(h4 + (true_range * 0.5)):,.2f}"
+                            sl_val = f"₹{h3:,.2f}"
+                        elif h3 and float(p) >= float(h3):
+                            signal = "BUY"
+                            signal_type = "buy"
+                            target_val = f"₹{h4:,.2f}"
+                            sl_val = f"₹{l3:,.2f}"
+                        elif (raw_buf_l4 and float(p) <= raw_buf_l4) or (l4 and float(p) <= float(l4)):
+                            signal = "STOP LOSS EXIT"
+                            signal_type = "danger"
+                            target_val = "CUT RISK"
+                            sl_val = f"₹{l4:,.2f} BREACHED"
+                        elif l3 and float(p) <= float(l3):
+                            signal = "SELL"
+                            signal_type = "sell"
+                            target_val = f"₹{l4:,.2f}"
+                            sl_val = f"₹{h3:,.2f}"
+                        else:
+                            signal = None
+                            signal_type = None
+                            target_val = None
+                            sl_val = None
+                            trailing_sl_val = None
                     elif not signal:
-                        signal = "HOLD"
-                        signal_type = "hold"
+                        signal = None
+                        signal_type = None
+                        target_val = None
+                        sl_val = None
+                        trailing_sl_val = None
 
                 quote_result = {
                     "symbol": clean_sym,
@@ -360,6 +471,11 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "day_low": day_low,
                     "target": target_val,
                     "stop_loss": sl_val,
+                    "trailing_sl": trailing_sl_val,
+                    "volatility_regime": regime_val,
+                    "is_high_beta": is_high_beta_val,
+                    "buffered_breakout_level": buf_h4_val,
+                    "buffered_breakdown_level": buf_l4_val,
                     "signal": signal,
                     "signal_type": signal_type,
                     "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."

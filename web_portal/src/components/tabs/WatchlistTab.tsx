@@ -239,10 +239,10 @@ export default function WatchlistTab({
               price: h.price || 0,
               chg: formattedChg,
               isPositive: isChgPos,
-              signal: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "MONITORING") ? h.signal : "--",
-              signalType: (h.price && h.price > 0 && h.signalType) ? h.signalType : "none",
-              target: (h.price && h.price > 0 && h.target && h.target !== "--") ? h.target : "--",
-              sl: (h.price && h.price > 0 && h.sl && h.sl !== "--") ? h.sl : "--"
+              signal: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "MONITORING" && h.signal !== "HOLD") ? h.signal : "--",
+              signalType: (h.price && h.price > 0 && h.signalType && h.signal !== "HOLD" && h.signal !== "MONITORING") ? h.signalType : "none",
+              target: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "HOLD" && h.signal !== "MONITORING" && h.target && h.target !== "--") ? h.target : "--",
+              sl: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "HOLD" && h.signal !== "MONITORING" && h.sl && h.sl !== "--") ? h.sl : "--"
             };
           });
 
@@ -303,10 +303,10 @@ export default function WatchlistTab({
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{
                     width: 38, height: 38, borderRadius: 11,
-                    background: isPos ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
-                    border: `1.5px solid ${isPos ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
+                    background: item.price > 0 ? (isPos ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)") : "rgba(255,255,255,0.04)",
+                    border: `1.5px solid ${item.price > 0 ? (isPos ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)") : C.border}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 11, fontWeight: 900, color: isPos ? C.emerald : C.rose,
+                    fontSize: 11, fontWeight: 900, color: item.price > 0 ? (isPos ? C.emerald : C.rose) : C.gray2,
                   }}>
                     {item.symbol.replace(/\.(BO|NS)$/i, '').slice(0, 2)}
                   </div>
@@ -332,6 +332,17 @@ export default function WatchlistTab({
                       }}>
                         {item.auto ? "📊 Demat Auto-Sync" : "📌 Custom"}
                       </span>
+                      {item.is_high_beta && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 800,
+                          color: C.amber,
+                          background: "rgba(245,158,11,0.14)",
+                          border: "1px solid rgba(245,158,11,0.35)",
+                          borderRadius: 4, padding: "1px 5px",
+                        }}>
+                          ⚡ High Beta Buffer
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11, color: C.gray2, marginTop: 2, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {item.name && !item.name.endsWith('.BO') ? item.name : item.symbol.replace(/\.(BO|NS)$/i, '')}
@@ -359,7 +370,7 @@ export default function WatchlistTab({
                 display: "flex", alignItems: "center", justifyContent: "space-between",
                 paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                   <SignalBadge signal={item.signal || "--"} type={item.signalType || "none"} />
                   <span style={{ fontSize: 10, color: C.gray2 }}>
                     Target: <b style={{ color: item.target && item.target !== "--" ? (item.target === "CUT RISK" ? C.rose : C.emerald) : C.gray2 }}>{item.target || "--"}</b>
@@ -367,6 +378,11 @@ export default function WatchlistTab({
                   <span style={{ fontSize: 10, color: C.gray2 }}>
                     SL: <b style={{ color: item.sl && item.sl !== "--" ? C.rose : C.gray2 }}>{item.sl || "--"}</b>
                   </span>
+                  {item.price > 0 && item.signal && item.signal !== "--" && item.trailing_sl && item.target !== "CUT RISK" && !item.signal?.includes("STOP LOSS") && (
+                    <span style={{ fontSize: 10, color: C.gray2 }}>
+                      Trail: <b style={{ color: C.cyan }}>{item.trailing_sl}</b>
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

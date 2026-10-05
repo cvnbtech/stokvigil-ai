@@ -13,6 +13,9 @@ interface StockQuote {
   day_low: number | null;
   target: string | null;
   stop_loss: string | null;
+  trailing_sl?: string | null;
+  is_high_beta?: boolean;
+  volatility_regime?: string;
   signal: string | null;
   signal_type: string | null;
 }
@@ -95,18 +98,28 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
         const trueRange = Math.max(refHigh - refLow, Math.abs(refHigh - cPrev), Math.abs(refLow - cPrev));
         const hasRealVol = trueRange > 0 && cPrev > 0 && price > 0;
 
+        // Intraday Expansion Ratio (IER) & High-Beta Event Buffering
+        const intradayRange = (dayHigh !== null && dayLow !== null) ? Math.max(0, dayHigh - dayLow) : 0;
+        const ier = trueRange > 0 ? (intradayRange / trueRange) : 0;
+        const isHighBeta = ier >= 1.25;
+        const bufferMult = isHighBeta ? 0.25 : 0.10;
+        const atrBuffer = trueRange * bufferMult;
+
         const h3 = cPrev + (trueRange * 1.1 / 4.0);
         const h4 = cPrev + (trueRange * 1.1 / 2.0);
         const l3 = cPrev - (trueRange * 1.1 / 4.0);
         const l4 = cPrev - (trueRange * 1.1 / 2.0);
 
-        let target: string | null = prevCached?.target || null;
-        let stop_loss: string | null = prevCached?.stop_loss || null;
-        let signal: string = prevCached?.signal || "MONITORING";
-        let signal_type: string = prevCached?.signal_type || "monitoring";
+        const bufferedH4 = h4 + atrBuffer;
+        const bufferedL4 = l4 - atrBuffer;
 
-        if (hasRealVol) {
-          if (price >= h4) {
+        let target: string | null = null;
+        let stop_loss: string | null = null;
+        let signal: string | null = null;
+        let signal_type: string | null = null;
+
+        if (hasRealVol && price > 0) {
+          if (price >= bufferedH4) {
             signal = "STRONG BUY";
             signal_type = "strong_buy";
             target = `₹${(h4 + (trueRange * 0.5)).toFixed(2)}`;
@@ -116,7 +129,7 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
             signal_type = "buy";
             target = `₹${h4.toFixed(2)}`;
             stop_loss = `₹${l3.toFixed(2)}`;
-          } else if (price <= l4) {
+          } else if (price <= bufferedL4 || price <= l4) {
             signal = "STOP LOSS EXIT";
             signal_type = "danger";
             target = "CUT RISK";
@@ -126,18 +139,18 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
             signal_type = "sell";
             target = `₹${l4.toFixed(2)}`;
             stop_loss = `₹${h3.toFixed(2)}`;
-          } else if (price >= cPrev) {
-            signal = "ACCUMULATE";
-            signal_type = "accumulate";
-            target = `₹${h3.toFixed(2)}`;
-            stop_loss = `₹${l3.toFixed(2)}`;
-          } else {
-            signal = "HOLD";
-            signal_type = "hold";
-            target = `₹${h3.toFixed(2)}`;
-            stop_loss = `₹${l3.toFixed(2)}`;
           }
+          // Zero-Default Policy: When trading between L3 and H3 (neutral consolidation),
+          // do NOT invent fake signals ("HOLD", "MONITORING", "ACCUMULATE") or dummy targets/stops.
+          // signal, signal_type, target, stop_loss remain null (rendered as "--" on client UI).
         }
+
+        // Dynamic Chandelier Trailing Stop (2.0x ATR for High Beta, 1.5x ATR for Standard)
+        // Calculated strictly when real volume exists and an active trade setup is triggered
+        const trailMult = isHighBeta ? 2.0 : 1.5;
+        const peakVal = Math.max(price, dayHigh ?? price);
+        const rawTrailSl = Math.max(l3, peakVal - (trailMult * trueRange));
+        const trailingSlStr = (hasRealVol && price > 0 && signal !== null) ? `₹${rawTrailSl.toFixed(2)}` : null;
 
         return {
           symbol: sym,
@@ -150,6 +163,9 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
           day_low: dayLow,
           target,
           stop_loss,
+          trailing_sl: trailingSlStr,
+          is_high_beta: isHighBeta,
+          volatility_regime: isHighBeta ? "HIGH_BETA_EVENT" : "STANDARD_CAMARILLA",
           signal,
           signal_type
         };

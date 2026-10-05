@@ -245,36 +245,77 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
     if not is_bearish:
         # BULLISH / LONG TRADE VERIFICATION
         # Target 1 is above Entry, Stop Loss is below Entry
+        nominal_risk = max(0.5, entry_price - sl_price)
         max_high = entry_price
+        running_peak = entry_price
+        active_trailing_sl = sl_price
+        is_event = bool(alert.get("is_high_beta_event") or alert.get("volatility_regime") == "HIGH_BETA_EVENT")
+        m_trail = 2.0 if is_event else 1.5
+
         for idx_time, row in post_alert_df.iterrows():
             bar_high = float(row.get("High", entry_price))
             bar_low = float(row.get("Low", entry_price))
             bar_open = float(row.get("Open", entry_price))
+            bar_close = float(row.get("Close", entry_price))
 
             if bar_high > max_high:
                 max_high = bar_high
 
+            effective_sl = active_trailing_sl
+
+            # 1. Opening gap breaches
+            if bar_open <= effective_sl:
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl > sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = bar_open
+                resolved_time = idx_time
+                break
+            if bar_open >= target_price:
+                outcome = "TARGET_1_REACHED"
+                exit_price = bar_open
+                resolved_time = idx_time
+                break
+
+            # 2. Intraday checks against target and effective stop loss
             hit_target = bar_high >= target_price
-            hit_sl = bar_low <= sl_price
+            hit_sl = bar_low <= effective_sl
 
             if hit_target and hit_sl:
                 # Both breached in same candle bar -> check open price proximity
-                if abs(bar_open - sl_price) < abs(bar_open - target_price):
-                    outcome = "STOP_LOSS_DEFENDED"
-                    exit_price = min(bar_open, sl_price) if bar_open < sl_price else sl_price
+                if abs(bar_open - effective_sl) < abs(bar_open - target_price):
+                    outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl > sl_price else "STOP_LOSS_DEFENDED"
+                    exit_price = effective_sl
                 else:
                     outcome = "TARGET_1_REACHED"
-                    exit_price = max(bar_open, target_price) if bar_open > target_price else target_price
+                    exit_price = target_price
                 resolved_time = idx_time
                 break
             elif hit_target:
                 outcome = "TARGET_1_REACHED"
-                exit_price = max(bar_open, target_price) if bar_open > target_price else target_price
+                exit_price = target_price
                 resolved_time = idx_time
                 break
             elif hit_sl:
-                outcome = "STOP_LOSS_DEFENDED"
-                exit_price = min(bar_open, sl_price) if bar_open < sl_price else sl_price
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl > sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = effective_sl
+                resolved_time = idx_time
+                break
+
+            # 3. Bar completed without hitting target or effective SL: update trailing ratchet
+            if bar_high > max_high:
+                max_high = bar_high
+            if bar_high > running_peak:
+                running_peak = bar_high
+
+            # Activate trailing ratchet once price gains >= 1.0R
+            if running_peak >= (entry_price + nominal_risk):
+                ratchet = round(running_peak - (m_trail * nominal_risk), 2)
+                if ratchet > active_trailing_sl:
+                    active_trailing_sl = ratchet
+
+            # Severe intra-bar collapse: price spiked to high, then closed at or below new ratchet
+            if bar_close <= active_trailing_sl:
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if active_trailing_sl > sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = active_trailing_sl
                 resolved_time = idx_time
                 break
 
@@ -283,12 +324,16 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
 
         # Model Overnight Gap Slippage & Realized R-Multiple
         if exit_price is not None:
-            nominal_risk = max(0.5, entry_price - sl_price)
             if outcome == "STOP_LOSS_DEFENDED":
                 if exit_price < sl_price:
                     gap_slippage_detected = True
                     slippage_drag_pct = round(((sl_price - exit_price) / entry_price) * 100, 2)
                 realized_r = round((entry_price - exit_price) / nominal_risk, 2)
+            elif outcome == "TRAILING_SL_LOCKED_PROFIT":
+                if exit_price < active_trailing_sl:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((active_trailing_sl - exit_price) / entry_price) * 100, 2)
+                realized_r = round((exit_price - entry_price) / nominal_risk, 2)
             elif outcome == "TARGET_1_REACHED":
                 if exit_price > target_price:
                     gap_slippage_detected = True
@@ -298,35 +343,76 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
     else:
         # BEARISH / SHORT TRADE VERIFICATION
         # Target 1 is below Entry, Stop Loss is above Entry
+        nominal_risk = max(0.5, sl_price - entry_price)
         min_low = entry_price
+        running_trough = entry_price
+        active_trailing_sl = sl_price
+        is_event = bool(alert.get("is_high_beta_event") or alert.get("volatility_regime") == "HIGH_BETA_EVENT")
+        m_trail = 2.0 if is_event else 1.5
+
         for idx_time, row in post_alert_df.iterrows():
             bar_high = float(row.get("High", entry_price))
             bar_low = float(row.get("Low", entry_price))
             bar_open = float(row.get("Open", entry_price))
+            bar_close = float(row.get("Close", entry_price))
 
             if bar_low < min_low:
                 min_low = bar_low
 
+            effective_sl = active_trailing_sl
+
+            # 1. Opening gap breaches
+            if bar_open >= effective_sl:
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl < sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = bar_open
+                resolved_time = idx_time
+                break
+            if bar_open <= target_price:
+                outcome = "TARGET_1_REACHED"
+                exit_price = bar_open
+                resolved_time = idx_time
+                break
+
+            # 2. Intraday checks against target and effective stop loss
             hit_target = bar_low <= target_price
-            hit_sl = bar_high >= sl_price
+            hit_sl = bar_high >= effective_sl
 
             if hit_target and hit_sl:
-                if abs(bar_open - sl_price) < abs(bar_open - target_price):
-                    outcome = "STOP_LOSS_DEFENDED"
-                    exit_price = max(bar_open, sl_price) if bar_open > sl_price else sl_price
+                if abs(bar_open - effective_sl) < abs(bar_open - target_price):
+                    outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl < sl_price else "STOP_LOSS_DEFENDED"
+                    exit_price = effective_sl
                 else:
                     outcome = "TARGET_1_REACHED"
-                    exit_price = min(bar_open, target_price) if bar_open < target_price else target_price
+                    exit_price = target_price
                 resolved_time = idx_time
                 break
             elif hit_target:
                 outcome = "TARGET_1_REACHED"
-                exit_price = min(bar_open, target_price) if bar_open < target_price else target_price
+                exit_price = target_price
                 resolved_time = idx_time
                 break
             elif hit_sl:
-                outcome = "STOP_LOSS_DEFENDED"
-                exit_price = max(bar_open, sl_price) if bar_open > sl_price else sl_price
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if effective_sl < sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = effective_sl
+                resolved_time = idx_time
+                break
+
+            # 3. Bar completed without hitting target or effective SL: update trailing ratchet
+            if bar_low < min_low:
+                min_low = bar_low
+            if bar_low < running_trough:
+                running_trough = bar_low
+
+            # Activate trailing ratchet once price moves down >= 1.0R
+            if running_trough <= (entry_price - nominal_risk):
+                ratchet = round(running_trough + (m_trail * nominal_risk), 2)
+                if ratchet < active_trailing_sl:
+                    active_trailing_sl = ratchet
+
+            # Severe intra-bar collapse: price dropped to low, then closed at or above new ratchet
+            if bar_close >= active_trailing_sl:
+                outcome = "TRAILING_SL_LOCKED_PROFIT" if active_trailing_sl < sl_price else "STOP_LOSS_DEFENDED"
+                exit_price = active_trailing_sl
                 resolved_time = idx_time
                 break
 
@@ -334,12 +420,16 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
 
         # Model Overnight Gap Slippage & Realized R-Multiple
         if exit_price is not None:
-            nominal_risk = max(0.5, sl_price - entry_price)
             if outcome == "STOP_LOSS_DEFENDED":
                 if exit_price > sl_price:
                     gap_slippage_detected = True
                     slippage_drag_pct = round(((exit_price - sl_price) / entry_price) * 100, 2)
                 realized_r = round((exit_price - entry_price) / nominal_risk, 2)
+            elif outcome == "TRAILING_SL_LOCKED_PROFIT":
+                if exit_price > active_trailing_sl:
+                    gap_slippage_detected = True
+                    slippage_drag_pct = round(((exit_price - active_trailing_sl) / entry_price) * 100, 2)
+                realized_r = round((entry_price - exit_price) / nominal_risk, 2)
             elif outcome == "TARGET_1_REACHED":
                 if exit_price < target_price:
                     gap_slippage_detected = True
@@ -430,6 +520,7 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]], preloaded_candles: Opt
     # 3. Verify each alert
     ledger_items: List[Dict[str, Any]] = []
     target_hits = 0
+    trailing_sl_hits = 0
     sl_hits = 0
     total_evaluated = 0
     rr_sum = 0.0
@@ -459,6 +550,9 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]], preloaded_candles: Opt
         if outcome == "TARGET_1_REACHED":
             target_hits += 1
             gross_profits += (realized_r if (realized_r is not None and realized_r > 0) else rr_val)
+        elif outcome == "TRAILING_SL_LOCKED_PROFIT":
+            trailing_sl_hits += 1
+            gross_profits += (realized_r if (realized_r is not None and realized_r > 0) else 0.5)
         elif outcome == "STOP_LOSS_DEFENDED":
             sl_hits += 1
             gross_losses += (realized_r if (realized_r is not None and realized_r > 0) else 1.0)
@@ -468,11 +562,11 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]], preloaded_candles: Opt
             hold_count += 1
 
     # 4. Compute Aggregate Audited Metrics
-    evaluated_signals = target_hits + sl_hits
+    evaluated_signals = target_hits + trailing_sl_hits + sl_hits
     if evaluated_signals > 0:
-        win_rate = round((target_hits / evaluated_signals) * 100, 1)
+        win_rate = round(((target_hits + trailing_sl_hits) / evaluated_signals) * 100, 1)
     elif total_evaluated > 0:
-        win_rate = round((target_hits / total_evaluated) * 100, 1)
+        win_rate = round(((target_hits + trailing_sl_hits) / total_evaluated) * 100, 1)
     else:
         win_rate = 0.0
 
@@ -494,6 +588,9 @@ def batch_verify_alerts(raw_alerts: List[Dict[str, Any]], preloaded_candles: Opt
         "audited_summary": {
             "win_rate_pct": win_rate,
             "total_verified_signals": total_evaluated,
+            "target_1_hits_count": target_hits,
+            "trailing_sl_locked_count": trailing_sl_hits,
+            "stopped_out_count": sl_hits,
             "avg_risk_reward": avg_rr,
             "avg_hold_duration": avg_hold,
             "profit_factor": profit_factor,

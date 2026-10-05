@@ -40,12 +40,18 @@ def compute_tactical_levels(
     vwap_val: Optional[float] = None,
     vwap_upper_1s: Optional[float] = None,
     action_bias: str = "HOLD_NEUTRAL",
-    risk_budget: Optional[float] = None
+    risk_budget: Optional[float] = None,
+    day_high: Optional[float] = None,
+    day_low: Optional[float] = None,
+    india_vix: Optional[float] = None,
+    stock_beta: Optional[float] = None,
+    is_event_day: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
     Computes institutional tactical levels: entry range, target 1, target 2, protective stop-loss, and R:R ratio.
     Direction-Aware: Properly computes downside targets and protective buy-stops for SELL_WATCH short / breakdown trades.
     Includes Mathematical Risk-Based Position Sizer (1% Capital Risk Rule).
+    Includes Adaptive ATR Volatility Buffering for high-beta event sessions (e.g. RBI, Earnings, VIX spikes).
     ZERO-DEFAULT RULE: Returns None if current_price is None or <= 0.
     """
     if current_price is None or float(current_price) <= 0:
@@ -56,6 +62,25 @@ def compute_tactical_levels(
         return None
     atr = float(atr_val)
 
+    # Volatility & High-Beta Event Detection
+    vix_high = india_vix is not None and float(india_vix) >= 18.0
+    beta_high = stock_beta is not None and float(stock_beta) >= 1.25
+    ier = 0.0
+    if day_high is not None and day_low is not None and atr > 0:
+        ier = round(max(0.0, float(day_high) - float(day_low)) / atr, 2)
+    ier_high = ier >= 1.25
+
+    is_high_beta = bool(vix_high or beta_high or ier_high or is_event_day)
+    volatility_regime = "HIGH_BETA_EVENT" if is_high_beta else "STANDARD_CAMARILLA"
+
+    # Breakout / Breakdown Volatility Buffer (0.25x ATR on High-Beta Event, 0.10x ATR on Standard)
+    buffer_multiplier = 0.25 if is_high_beta else 0.10
+    atr_buffer = round(atr * buffer_multiplier, 2)
+    volatility_buffer_pct = round((atr_buffer / price) * 100, 2) if price > 0 else 0.0
+
+    buffered_h4 = round(float(h4) + atr_buffer, 2) if (h4 is not None and float(h4) > 0) else None
+    buffered_l4 = round(float(l4) - atr_buffer, 2) if (l4 is not None and float(l4) > 0) else None
+
     # Determine risk budget (defaults to ₹2,000 or 1% of Demat portfolio)
     budget = 2000.0
     if risk_budget is not None and float(risk_budget) > 0:
@@ -65,7 +90,7 @@ def compute_tactical_levels(
         if demat_val and float(demat_val) > 0:
             budget = max(500.0, round(float(demat_val) * 0.01, 2))
 
-    is_defense_exit = action_bias in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT"] or (l4 is not None and price <= float(l4) and action_bias not in ["INTRADAY_MIS_SHORT"])
+    is_defense_exit = action_bias in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT"] or (l4 is not None and price <= float(l4) and action_bias not in ["INTRADAY_MIS_SHORT", "SELL_WATCH"])
     if is_defense_exit:
         sl_display = f"₹{l4:,.2f} (BREACHED)" if (l4 and float(l4) > 0) else "BREACHED"
         return {
@@ -82,7 +107,14 @@ def compute_tactical_levels(
             "estimated_position_value": 0.0,
             "risk_budget": budget,
             "position_sizing_rule": "Capital Defense (0 new quantity)",
-            "volatility_disclaimer": "Defensive Capital Preservation trigger. Cut position to protect remaining principal."
+            "volatility_disclaimer": "Defensive Capital Preservation trigger. Cut position to protect remaining principal.",
+            "atr_trailing_stop": None,
+            "trailing_stop_rule": "Capital Defense (Stop Breached)",
+            "volatility_regime": volatility_regime,
+            "volatility_buffer_pct": volatility_buffer_pct,
+            "is_high_beta_event": is_high_beta,
+            "buffered_breakout_level": f"₹{buffered_h4:,.2f}" if buffered_h4 else None,
+            "buffered_breakdown_level": f"₹{buffered_l4:,.2f}" if buffered_l4 else None,
         }
 
     is_sell = action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT"]
@@ -119,6 +151,11 @@ def compute_tactical_levels(
         capital_at_risk = round(recommended_qty * effective_risk, 2)
         estimated_pos_val = round(recommended_qty * price, 2)
 
+        # Dynamic ATR Trailing Stop (Chandelier Ratchet for Short)
+        m_mult = 2.0 if is_high_beta else 1.5
+        trough_val = min(price, float(day_low)) if day_low is not None else price
+        atr_trailing_sl = round(min(stop_loss, trough_val + (m_mult * atr)), 2)
+
         return {
             "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
             "target_1": f"₹{target_1:,.2f}",
@@ -133,7 +170,14 @@ def compute_tactical_levels(
             "estimated_position_value": estimated_pos_val,
             "risk_budget": budget,
             "position_sizing_rule": f"1% Capital Risk Rule (₹{budget:,.0f} risk budget)",
-            "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
+            "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise.",
+            "atr_trailing_stop": f"₹{atr_trailing_sl:,.2f}",
+            "trailing_stop_rule": f"{m_mult}x ATR {'High-Beta Event' if is_high_beta else 'Standard'} Trailing Ratchet",
+            "volatility_regime": volatility_regime,
+            "volatility_buffer_pct": volatility_buffer_pct,
+            "is_high_beta_event": is_high_beta,
+            "buffered_breakout_level": f"₹{buffered_h4:,.2f}" if buffered_h4 else None,
+            "buffered_breakdown_level": f"₹{buffered_l4:,.2f}" if buffered_l4 else None,
         }
 
     # 2. Bullish Setup (BUY_WATCH / HOLD_NEUTRAL) or Demat Protection
@@ -184,6 +228,11 @@ def compute_tactical_levels(
     capital_at_risk = round(recommended_qty * effective_risk, 2)
     estimated_pos_val = round(recommended_qty * price, 2)
 
+    # Dynamic ATR Trailing Stop (Chandelier Ratchet for Long)
+    m_mult = 2.0 if is_high_beta else 1.5
+    peak_val = max(price, float(day_high)) if day_high is not None else price
+    atr_trailing_sl = round(max(stop_loss, peak_val - (m_mult * atr)), 2)
+
     return {
         "entry_range": f"₹{entry_min:,.2f} - ₹{entry_max:,.2f}",
         "target_1": f"₹{target_1:,.2f}",
@@ -198,7 +247,14 @@ def compute_tactical_levels(
         "estimated_position_value": estimated_pos_val,
         "risk_budget": budget,
         "position_sizing_rule": f"1% Capital Risk Rule (₹{budget:,.0f} risk budget)",
-        "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
+        "volatility_disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise.",
+        "atr_trailing_stop": f"₹{atr_trailing_sl:,.2f}",
+        "trailing_stop_rule": f"{m_mult}x ATR {'High-Beta Event' if is_high_beta else 'Standard'} Trailing Ratchet",
+        "volatility_regime": volatility_regime,
+        "volatility_buffer_pct": volatility_buffer_pct,
+        "is_high_beta_event": is_high_beta,
+        "buffered_breakout_level": f"₹{buffered_h4:,.2f}" if buffered_h4 else None,
+        "buffered_breakdown_level": f"₹{buffered_l4:,.2f}" if buffered_l4 else None,
     }
 
 
@@ -328,7 +384,10 @@ def compute_deterministic_confluence(
         active_factors["tech"] = float(raw_ts)
     if flow_score_val is not None and flow_data and (flow_data.get("delivery_pct") is not None or flow_data.get("pcr") is not None or flow_data.get("is_fo_stock")):
         active_factors["flow"] = flow_score_val
-    if raw_fors is not None and forensics and (forensics.get("debt_to_equity") is not None or forensics.get("pe_ratio") is not None or forensics.get("profit_margin_pct") is not None):
+    if raw_fors is not None and (
+        (forensics and (forensics.get("debt_to_equity") is not None or forensics.get("pe_ratio") is not None or forensics.get("profit_margin_pct") is not None or forensics.get("forensic_score") is not None))
+        or (financials and (financials.get("debt_to_equity") is not None or financials.get("pe_ratio") is not None or financials.get("profit_margin_pct") is not None))
+    ):
         active_factors["forensics"] = float(raw_fors)
     if has_news:
         active_factors["news"] = float(news_score)
@@ -624,7 +683,12 @@ def compute_deterministic_confluence(
             l4=l4,
             vwap_val=vwap_val,
             vwap_upper_1s=vwap_upper_1s,
-            action_bias=action_bias
+            action_bias=action_bias,
+            day_high=technicals.get("day_high"),
+            day_low=technicals.get("day_low"),
+            india_vix=macro_data.get("india_vix") if macro_data else None,
+            stock_beta=financials.get("beta_volatility") if financials else None,
+            is_event_day=bool(news_items and len(news_items) > 0)
         )
         if tactical_dict is None and has_actionable_signal and action_bias not in ["CAPITAL_PRESERVATION_EXIT"]:
             has_actionable_signal = False
