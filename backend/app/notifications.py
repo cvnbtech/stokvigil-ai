@@ -340,6 +340,15 @@ def format_telegram_alert(
             except (ValueError, TypeError):
                 snapshot_lines.append(f"• Day Change: <b>{day_chg}%</b>")
 
+        r3d = metrics_snapshot.get("rolling_3d_change_pct")
+        if r3d is not None and str(r3d).strip() not in ("None", "N/A", ""):
+            try:
+                r3d_f = float(r3d)
+                r3d_sign = "+" if r3d_f > 0 else ""
+                snapshot_lines.append(f"• 3-Day Return: <b>{r3d_sign}{r3d_f:.2f}%</b>")
+            except (ValueError, TypeError):
+                pass
+
         orb_st = metrics_snapshot.get("orb_status")
         if orb_st and str(orb_st).strip() not in ("None", "N/A", "NONE", "DATA_INSUFFICIENT", ""):
             safe_orb = html_lib.escape(str(orb_st).replace('_', ' '), quote=False)

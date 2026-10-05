@@ -59,18 +59,20 @@ logger = logging.getLogger("stokvigil.agent_runner")
 _TARGET_1_DISPATCHED_TODAY: Dict[str, float] = {}
 _MAX_AI_CALLS_PER_SCAN: int = getattr(settings, "MAX_AI_CALLS_PER_SCAN", 15)
 
-# Systemic Risk / Macro Crash State Latch with VIX Hysteresis
+# Systemic Risk / Macro Crash State Latch with VIX and Nifty Hysteresis
 _MACRO_CRASH_DISPATCHED_DATE: Optional[str] = None
 _MACRO_LAST_DISPATCHED_VIX: float = 0.0
+_MACRO_LAST_DISPATCHED_NIFTY: float = 0.0
 
 
 async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], supabase_client) -> bool:
     """
     Evaluates macro market conditions for systemic distribution/crash regimes.
-    Dispatches high-priority broadcast with asymmetric state latch & VIX hysteresis
+    Dispatches high-priority CAPITAL_DEFENSE_MODE broadcast with asymmetric state latch & VIX hysteresis
     to prevent threshold whiplash and alert spamming.
+    ZERO-DEFAULT POLICY: Grounded strictly in authentic real-time exchange data with zero synthetic fallbacks.
     """
-    global _MACRO_CRASH_DISPATCHED_DATE, _MACRO_LAST_DISPATCHED_VIX
+    global _MACRO_CRASH_DISPATCHED_DATE, _MACRO_LAST_DISPATCHED_VIX, _MACRO_LAST_DISPATCHED_NIFTY
     if not macro_data:
         return False
 
@@ -78,34 +80,59 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
     nifty_chg = macro_data.get("nifty_change_pct")
     vix = macro_data.get("india_vix")
     adr = macro_data.get("adr_ratio")
+    adv = macro_data.get("advances")
+    dec = macro_data.get("declines")
+
+    # STRICT ZERO-DEFAULT POLICY: If market breadth ADR and VIX are unavailable, do NOT fabricate synthetic alerts
+    if vix is None and nifty_chg is None:
+        return False
 
     nifty_val = float(nifty_chg) if nifty_chg is not None else 0.0
     vix_val = float(vix) if vix is not None else 0.0
-    adr_val = float(adr) if adr is not None else 1.0
+    adr_val = float(adr) if adr is not None else None
 
-    is_severe_macro_crash = (nifty_val <= -1.25) or (adr_val <= 0.45 and vix_val >= 16.5)
-    if not is_severe_macro_crash:
+    # Condition 1: CAPITAL_DEFENSE_MODE: India VIX > 16.5 and Market Breadth ADR < 0.70
+    is_capital_defense = (vix_val > 16.5 and adr_val is not None and adr_val < 0.70)
+    # Condition 2: Severe Single-Session Plunge: Nifty <= -1.25%
+    is_severe_nifty_plunge = (nifty_chg is not None and nifty_val <= -1.25)
+
+    if not (is_capital_defense or is_severe_nifty_plunge):
         return False
 
     # Check State Latch & Hysteresis
     if _MACRO_CRASH_DISPATCHED_DATE == today:
-        if _MACRO_LAST_DISPATCHED_VIX > 0 and vix_val >= (_MACRO_LAST_DISPATCHED_VIX * 1.15):
-            logger.info(f"Macro Crash Escalation Triggered: VIX surged from {_MACRO_LAST_DISPATCHED_VIX} to {vix_val} (+15%). Dispatched secondary broadcast.")
+        vix_escalated = (_MACRO_LAST_DISPATCHED_VIX > 0 and vix_val >= (_MACRO_LAST_DISPATCHED_VIX * 1.10))
+        nifty_escalated = (nifty_chg is not None and nifty_val <= (_MACRO_LAST_DISPATCHED_NIFTY - 0.75))
+        if vix_escalated or nifty_escalated:
+            logger.info(f"Macro Risk Escalation Triggered: VIX {vix_val} (prior {_MACRO_LAST_DISPATCHED_VIX}), Nifty {nifty_val:+.2f}%. Dispatched secondary broadcast.")
             _MACRO_LAST_DISPATCHED_VIX = vix_val
+            _MACRO_LAST_DISPATCHED_NIFTY = nifty_val
         else:
-            logger.info(f"Macro Crash broadcast suppressed by intraday state latch (Date: {today}, VIX: {vix_val}).")
+            logger.info(f"Macro broadcast suppressed by intraday state latch (Date: {today}, VIX: {vix_val}, ADR: {adr_val}).")
             return False
     else:
         _MACRO_CRASH_DISPATCHED_DATE = today
         _MACRO_LAST_DISPATCHED_VIX = vix_val
+        _MACRO_LAST_DISPATCHED_NIFTY = nifty_val
 
-    logger.warning(f"🚨 SYSTEMIC RISK BROADCAST: Nifty {nifty_val:+.2f}%, ADR {adr_val:.2f}, VIX {vix_val:.1f}")
+    # Real-Time Breadth Statistics (ZERO SYNTHETIC VALUES: calculate authentic percentage if advances/declines exist)
+    breadth_desc = ""
+    if adv is not None and dec is not None and (adv + dec) > 0:
+        dec_pct = round((float(dec) / (float(adv) + float(dec))) * 100.0, 1)
+        breadth_desc = f"{dec_pct:.0f}% of stocks are declining ({dec} Declines vs {adv} Advances)"
+    elif adr_val is not None:
+        breadth_desc = f"Advance-Decline Ratio: {adr_val:.2f}"
 
-    alert_title = f"Macro Risk Alert: Broad Market Distribution (Nifty {nifty_val:+.1f}%)"
+    adr_str = f"{adr_val:.2f}" if adr_val is not None else "N/A"
+    alert_title = f"🚨 CAPITAL DEFENSE MODE: Severe Market Distribution (ADR: {adr_str})"
+    
+    desc_part = f"{breadth_desc}. " if breadth_desc else ""
     body = (
-        f"Broad market distribution active (Breadth ADR: {adr_val:.2f}, India VIX: {vix_val:.1f}). "
-        "Defensive regime engaged. New long breakouts suspended. Review Demat trailing stop-losses."
+        f"Market Breadth is severely deteriorated (ADR: {adr_str}). {desc_part}"
+        "All fresh buy setups are paused. Defensive capital preservation protocol engaged. Consider trimming vulnerable positions."
     )
+
+    logger.warning(f"🚨 CAPITAL DEFENSE BROADCAST: Nifty {nifty_val:+.2f}%, ADR {adr_str}, VIX {vix_val:.1f}")
 
     try:
         from app.db_pool import fetch_all
@@ -124,7 +151,7 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
                         token,
                         alert_title,
                         body,
-                        {"type": "MACRO_DISTRIBUTION", "nifty_change": str(nifty_val), "india_vix": str(vix_val)}
+                        {"type": "CAPITAL_DEFENSE_MODE", "nifty_change": str(nifty_val), "india_vix": str(vix_val), "adr_ratio": adr_str}
                     )
                 except Exception as fcm_err:
                     logger.debug(f"Macro broadcast FCM note for user {mask_id(u.get('id', ''))}: {fcm_err}")
@@ -133,7 +160,7 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
                     tg_msg = (
                         f"🚨 <b>{alert_title}</b>\n\n"
                         f"{body}\n\n"
-                        f"📊 <b>Regime Metrics</b>: Nifty: <code>{nifty_val:+.2f}%</code> | ADR: <code>{adr_val:.2f}</code> | VIX: <code>{vix_val:.1f}</code>\n"
+                        f"📊 <b>Regime Metrics</b>: Nifty: <code>{nifty_val:+.2f}%</code> | ADR: <code>{adr_str}</code> | India VIX: <code>{vix_val:.1f}</code>\n"
                         "🛡️ <i>StokVigil Capital Preservation Protocol Active.</i>"
                     )
                     await send_telegram_notification(tg_id, tg_msg)
@@ -799,6 +826,8 @@ async def evaluate_user_portfolio_and_watchlists(
                         metrics_snapshot={
                             "current_price": technicals.get("current_price"),
                             "change_pct": technicals.get("change_pct"),
+                            "rolling_3d_change_pct": technicals.get("rolling_3d_change_pct"),
+                            "rolling_5d_change_pct": technicals.get("rolling_5d_change_pct"),
                             "orb_status": technicals.get("orb_status"),
                             "rsi_15m": technicals.get("rsi_15m"),
                             "rsi_5m": technicals.get("rsi_5m"),
@@ -817,7 +846,9 @@ async def evaluate_user_portfolio_and_watchlists(
                     "DEBT_REDUCTION": "DEBT_CHANGE",
                     "PRICE_BREAKDOWN": "PRICE_BREAKOUT",
                     "STOP_LOSS_DEFENSE": "TRAILING_STOP_TRIGGER",
-                    "TARGET_1_ACHIEVED": "PRICE_BREAKOUT"
+                    "TARGET_1_ACHIEVED": "PRICE_BREAKOUT",
+                    "MULTI_DAY_DOWNTREND": "PRICE_BREAKOUT",
+                    "CAPITAL_DEFENSE_TRIGGER": "TRAILING_STOP_TRIGGER"
                 }
                 normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
                 VALID_CATALYST_TYPES = {

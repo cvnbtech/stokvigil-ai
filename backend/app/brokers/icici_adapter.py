@@ -122,3 +122,98 @@ class IciciBrokerAdapter(BaseBrokerAdapter):
         )
 
         return order_res
+
+    def start_ticker_stream(
+        self,
+        decrypted_creds: Dict[str, str],
+        symbols: List[str],
+        on_tick_callback: Any
+    ) -> bool:
+        """
+        Initializes persistent WebSocket stream via ICICI Breeze Connect (breeze.ws_connect()).
+        Binds incoming real-time ticks to on_tick_callback.
+        """
+        app_key = (settings.ICICI_MASTER_APP_KEY or decrypted_creds.get("app_key") or "").strip().strip('"').strip("'")
+        secret_key = (settings.ICICI_MASTER_SECRET_KEY or decrypted_creds.get("secret_key") or "").strip().strip('"').strip("'")
+        session_token = (decrypted_creds.get("session_token") or "").strip().strip('"').strip("'")
+
+        if not app_key or not secret_key or not session_token:
+            logger.warning("Cannot start ICICI WebSocket stream: Incomplete broker credentials.")
+            return False
+
+        try:
+            from breeze_connect import BreezeConnect
+            breeze = BreezeConnect(api_key=app_key)
+            breeze.generate_session(api_secret=secret_key, session_token=session_token)
+
+            if not getattr(breeze, "session_key", None):
+                logger.warning("ICICI Breeze session generation failed for WebSocket ticker stream.")
+                return False
+
+            breeze.on_ticks = on_tick_callback
+            breeze.ws_connect()
+            self._breeze_ws = breeze
+            self._subscribed_codes = set()
+            logger.info("✅ ICICI Breeze WebSocket successfully connected.")
+
+            if symbols:
+                self.subscribe_symbols(symbols)
+            return True
+        except Exception as e:
+            logger.error(f"Error starting ICICI Breeze WebSocket ticker stream: {e}")
+            self._breeze_ws = None
+            return False
+
+    def subscribe_symbols(self, symbols: List[str]) -> bool:
+        """
+        Subscribes a list of symbols to the active ICICI Breeze WebSocket feed.
+        """
+        breeze = getattr(self, "_breeze_ws", None)
+        if not breeze:
+            logger.debug("Cannot subscribe symbols: ICICI Breeze WebSocket is not active.")
+            return False
+
+        if not hasattr(self, "_subscribed_codes"):
+            self._subscribed_codes = set()
+
+        subscribed_count = 0
+        for raw_sym in symbols:
+            if not raw_sym:
+                continue
+            clean_sym = str(raw_sym).replace(".NS", "").replace(".BO", "").strip().upper()
+            is_bse = str(raw_sym).endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+            exchange = "BSE" if is_bse else "NSE"
+            code_key = f"{exchange}:{clean_sym}"
+
+            if code_key in self._subscribed_codes:
+                continue
+
+            try:
+                breeze.subscribe_feeds(
+                    exchange_code=exchange,
+                    stock_code=clean_sym,
+                    product_type="cash"
+                )
+                self._subscribed_codes.add(code_key)
+                subscribed_count += 1
+            except Exception as sub_err:
+                logger.warning(f"Error subscribing ICICI Breeze feed for {code_key}: {sub_err}")
+
+        if subscribed_count > 0:
+            logger.info(f"Subscribed {subscribed_count} new symbols to ICICI Breeze WebSocket.")
+        return True
+
+    def stop_ticker_stream(self) -> None:
+        """
+        Gracefully disconnects ICICI Breeze WebSocket ticker feed.
+        """
+        breeze = getattr(self, "_breeze_ws", None)
+        if breeze:
+            try:
+                breeze.ws_disconnect()
+                logger.info("ICICI Breeze WebSocket successfully disconnected.")
+            except Exception as e:
+                logger.debug(f"Note on ICICI Breeze ws_disconnect: {e}")
+            finally:
+                self._breeze_ws = None
+                self._subscribed_codes = set()

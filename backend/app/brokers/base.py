@@ -68,3 +68,27 @@ class BaseBrokerAdapter(ABC):
         Validates if the session token is active for today per SEBI daily expiration rules.
         """
         return str(token_date).strip() == str(date.today())
+
+    def start_ticker_stream(
+        self,
+        decrypted_creds: Dict[str, str],
+        symbols: List[str],
+        on_tick_callback: Any
+    ) -> bool:
+        """
+        Starts a persistent WebSocket ticker feed for the requested symbols.
+        Returns True if the connection and subscriptions are established, False otherwise.
+        """
+        return False
+
+    def subscribe_symbols(self, symbols: List[str]) -> bool:
+        """
+        Dynamically subscribes additional symbols to the existing active WebSocket stream.
+        """
+        return False
+
+    def stop_ticker_stream(self) -> None:
+        """
+        Gracefully terminates the persistent WebSocket connection.
+        """
+        pass

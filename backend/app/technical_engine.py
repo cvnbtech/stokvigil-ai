@@ -452,6 +452,9 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "camarilla_pivots": {"h4": None, "h3": None, "l3": None, "l4": None},
         "rs_rating": None,
         "rs_regime": "DATA_INSUFFICIENT",
+        "rolling_3d_change_pct": None,
+        "rolling_5d_change_pct": None,
+        "consecutive_below_ema20": False,
         "ttm_squeeze": {
             "squeeze_on": False,
             "squeeze_release": False,
@@ -510,6 +513,69 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         return default_res
 
 
+def _calculate_rolling_multiday_stats(
+    df_daily: pd.DataFrame, 
+    current_price: Optional[float]
+) -> Tuple[Optional[float], Optional[float], bool]:
+    """
+    Computes rolling 3-day return (R_3D), rolling 5-day return (R_5D),
+    and whether the last 3 consecutive sessions closed below the 20-day EMA.
+    Strict Zero-Default Policy: Returns (None, None, False) if authentic daily data is insufficient.
+    """
+    if df_daily.empty or 'Close' not in df_daily.columns:
+        return None, None, False
+        
+    valid_closes = df_daily['Close'].dropna()
+    if valid_closes.empty:
+        return None, None, False
+
+    p_now = float(current_price) if current_price is not None and float(current_price) > 0 else float(valid_closes.iloc[-1])
+    
+    today_date = date.today()
+    last_dt = df_daily.index[-1]
+    last_date = last_dt.date() if hasattr(last_dt, 'date') else pd.to_datetime(last_dt).date()
+    is_today_in_daily = (last_date >= today_date)
+
+    r_3d = None
+    r_5d = None
+    below_ema20_3d = False
+
+    if is_today_in_daily:
+        # iloc[-1] is today's session, so 3 sessions prior is iloc[-4]
+        if len(valid_closes) >= 4:
+            p_ref_3d = float(valid_closes.iloc[-4])
+            if p_ref_3d > 0:
+                r_3d = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
+        if len(valid_closes) >= 6:
+            p_ref_5d = float(valid_closes.iloc[-6])
+            if p_ref_5d > 0:
+                r_5d = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+        if len(valid_closes) >= 22:
+            ema20 = valid_closes.ewm(span=20, adjust=False).mean()
+            c1 = p_now < float(ema20.iloc[-1])
+            c2 = float(valid_closes.iloc[-2]) < float(ema20.iloc[-2])
+            c3 = float(valid_closes.iloc[-3]) < float(ema20.iloc[-3])
+            below_ema20_3d = bool(c1 and c2 and c3)
+    else:
+        # df_daily ends yesterday (T-1), so 3 sessions prior to today is iloc[-3]
+        if len(valid_closes) >= 3:
+            p_ref_3d = float(valid_closes.iloc[-3])
+            if p_ref_3d > 0:
+                r_3d = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
+        if len(valid_closes) >= 5:
+            p_ref_5d = float(valid_closes.iloc[-5])
+            if p_ref_5d > 0:
+                r_5d = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+        if len(valid_closes) >= 21:
+            ema20 = valid_closes.ewm(span=20, adjust=False).mean()
+            c1 = p_now < float(ema20.iloc[-1])
+            c2 = float(valid_closes.iloc[-1]) < float(ema20.iloc[-1])
+            c3 = float(valid_closes.iloc[-2]) < float(ema20.iloc[-2])
+            below_ema20_3d = bool(c1 and c2 and c3)
+
+    return r_3d, r_5d, below_ema20_3d
+
+
 def compute_technicals_from_frames(
     symbol: str, 
     df_5m: pd.DataFrame, 
@@ -557,6 +623,9 @@ def compute_technicals_from_frames(
         "camarilla_pivots": {"h4": None, "h3": None, "l3": None, "l4": None},
         "rs_rating": None,
         "rs_regime": "DATA_INSUFFICIENT",
+        "rolling_3d_change_pct": None,
+        "rolling_5d_change_pct": None,
+        "consecutive_below_ema20": False,
         "ttm_squeeze": {
             "squeeze_on": False,
             "squeeze_release": False,
@@ -611,6 +680,7 @@ def compute_technicals_from_frames(
                 rs_dict = calculate_relative_strength(df_daily)
                 adx_dict = calculate_adx(df_daily, 14)
                 ttm_squeeze = calculate_ttm_squeeze(df_daily)
+                r_3d, r_5d, below_ema20_3d = _calculate_rolling_multiday_stats(df_daily, current_price)
                 
                 tech_score = 50
                 if ema_50:
@@ -660,6 +730,9 @@ def compute_technicals_from_frames(
                     "camarilla_pivots": camarilla_pivots,
                     "rs_rating": rs_dict.get("rs_rating"),
                     "rs_regime": rs_dict.get("rs_regime", "DATA_INSUFFICIENT"),
+                    "rolling_3d_change_pct": r_3d,
+                    "rolling_5d_change_pct": r_5d,
+                    "consecutive_below_ema20": below_ema20_3d,
                     "ttm_squeeze": ttm_squeeze,
                     "volume_multiple": None,
                     "is_volume_surge": False,
@@ -863,6 +936,7 @@ def compute_technicals_from_frames(
         rs_dict = calculate_relative_strength(df_daily)
         rs_rating = rs_dict["rs_rating"]
         rs_regime = rs_dict["rs_regime"]
+        r_3d, r_5d, below_ema20_3d = _calculate_rolling_multiday_stats(df_daily, current_price)
 
         # Calculate Quantitative Technical Score (0 - 100)
         tech_score = 50
@@ -963,6 +1037,9 @@ def compute_technicals_from_frames(
             "camarilla_pivots": camarilla_pivots,
             "rs_rating": rs_rating,
             "rs_regime": rs_regime,
+            "rolling_3d_change_pct": r_3d,
+            "rolling_5d_change_pct": r_5d,
+            "consecutive_below_ema20": below_ema20_3d,
             "ttm_squeeze": ttm_squeeze,
             "volume_multiple": volume_mult,
             "is_volume_surge": is_volume_surge,

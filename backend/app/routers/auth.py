@@ -342,6 +342,7 @@ def get_user_credentials(
 @router.post("/api/user/credentials")
 def save_user_credentials(
     req: SaveCredentialsRequest,
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     auth_user_id: Optional[str] = Depends(get_current_user_id),
     db: Client = Depends(get_supabase)
 ):
@@ -351,12 +352,18 @@ def save_user_credentials(
     """
     verify_user_access(req.user_id, auth_user_id)
     adapter = get_broker(req.broker)
-    return adapter.save_credentials(
+    save_res = adapter.save_credentials(
         db=db,
         vault=vault,
         user_id=req.user_id,
         session_token=req.session_token
     )
+    try:
+        from app.engine.ticker_stream import ticker_manager
+        background_tasks.add_task(ticker_manager.start)
+    except Exception as tm_err:
+        logger.debug(f"Note on starting ticker_manager upon credentials save: {tm_err}")
+    return save_res
 
 
 @router.post("/api/user/delete-account")
@@ -566,6 +573,11 @@ def get_user_portfolio(
 
     if detailed_holdings:
         background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, detailed_holdings)
+        try:
+            from app.engine.ticker_stream import ticker_manager
+            ticker_manager.register_user_portfolio(user_id, detailed_holdings)
+        except Exception as tm_err:
+            logger.debug(f"Note on registering user holdings with ticker_manager: {tm_err}")
 
         missing_fund_syms = [
             h.get('clean_symbol') or h['symbol'] for h in detailed_holdings

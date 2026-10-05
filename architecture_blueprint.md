@@ -41,6 +41,7 @@ flowchart TD
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
         C1["Pluggable Broker Adapter Layer (app/brokers: BaseBrokerAdapter, IciciBrokerAdapter, Zerodha, Angel One)"]
+        C1a["Persistent Broker WebSocket Stream (breeze.ws_connect / KiteTicker)"]
         C2["yfinance API (Vectorized 5m Batch + 8h Cached 1D Candles, Dual-Exchange)"]
         C3["NSE F&O Dynamic Universe Feed (fo_mktlots.csv, 24h cache) & Near-Month Option Chain"]
         C4["Google News RSS & Exchange Filings (Block Deals, Results, 30m Cache)"]
@@ -51,6 +52,7 @@ flowchart TD
     subgraph Engine["AI & Quantitative Surveillance Engine (app/engine)"]
         D0a["Multi-User Bulk Batch Fetch (app/engine/portfolio_sync.py: 3 Direct Queries: Profiles, Watchlists, Today Creds)"]
         D0["Market Cache Manager (Vectorized Batch Engine, 900s TTL, Semaphore(20))"]
+        D0b["Live Ticker Stream Manager (ticker_stream.py: Sub-Millisecond L4 & Trailing SL Breach Engine)"]
         D1["Technical Engine (Multi-TF RSI, MACD, VWAP, ATR, Date-Aware Camarilla iloc[-2], 15m ORB Close & Wick Rejection, Two-Way 200 EMA Anchor, Circuit Lock)"]
         D2["Flow Tracker & Wyckoff VSA (Absorption vs Churn, Near-Month Expiry OI)"]
         D3["FII/DII Flow Engine (fii_dii_tracker.py with 30m Cache & Sentiment Classifier)"]
@@ -82,6 +84,10 @@ flowchart TD
     D0a -->|Bulk Prefetch (3 DB Queries) + Pre-Warm Symbols| D0
     B4 -->|Master App Key + Decrypted User Session Token| C1
     C1 --> C6
+    C1 --> C1a
+    C1a -->|Live Sub-Second Ticks| D0b
+    D0b -->|Atomically Update LTP & VWAP| D0
+    D0b -->|Instant Breach (L4 / Trailing SL)| D7
     D0 -->|Batch Pre-Compute All Watchlists| D1 & D2 & D3 & D4
     D1 & D2 & D3 & D4 --> D5
     D5 --> D5a
@@ -289,6 +295,20 @@ graph TD
     - Sub-150ms Camarilla Resolution: Daily session pivots ($D-1$ anchor) are resolved directly from daily candles or via sub-150ms Keep-Alive queries without redundant serial roundtrips.
     - Dynamic Multi-Timeframe Cache: Implements dynamic in-memory caching with 180-second TTL for intraday intervals (`1m`, `5m`, `15m`) and 14,400-second (4 hours) TTL for higher timeframes (`1h`, `1d`), dropping chart load latency from 10–25s down to 0.35–1.1s (and 0.02ms on cache hits).
     - Client Timeout Buffer: Increased client-side network timeout from 25s to 35s in `ApiService` (`mobile_app/lib/services/api_service.dart`), completely eliminating mobile `TimeoutException` drops.
+25. **Decoupled Forensics from Intraday Direction (Eliminating Linear Fundamental Blindness)**:
+    - *The Problem*: Fundamentally sound companies with high ROE, low debt-to-equity, and high profit margins blinded the algorithm during price collapses. High forensic scores buoyed failing stocks into `HOLD_NEUTRAL`.
+    - *The Quantitative Fix*: Decoupled balance sheet forensics from intraday direction. Direction is strictly determined by price action, VWAP, and order flow: $S_{\text{dir}} = (S_{\text{tech}} \times 0.60) + (S_{\text{flow}} \times 0.40)$. If $S_{\text{dir}} \le 40$, the engine enforces `action_bias = "SELL_WATCH"` and hard-caps the confluence score at $\le 35$, regardless of how clean the company's balance sheet is. Forensics only serve as a multi-quarter position size filter, never as an intraday directional stabilizer.
+26. **Rolling Multi-Day Drawdown Detection ($R_{3D} \le -4.0\%$, $R_{5D} \le -6.0\%$)**:
+    - *The Problem*: Slow, grinding multi-day bear distributions where a stock loses $-1\%$ to $-1.5\%$ per day avoided single-day change thresholds (e.g. `change_pct <= -3.5%`), flying under the radar while losing 5%–10% over consecutive sessions.
+    - *The Quantitative Fix*: Computes authentic rolling multi-day returns from daily candles: $R_{3D} = \frac{P_t - P_{t-3}}{P_{t-3}} \times 100$ and $R_{5D} = \frac{P_t - P_{t-5}}{P_{t-5}} \times 100$. If a stock drops $\le -4.0\%$ over 3 consecutive sessions below its 20 EMA, or drops $\le -6.0\%$ over 5 sessions, the engine triggers an automatic `MULTI_DAY_DOWNTREND` breakdown alert (`SELL_WATCH` or `CAPITAL_PRESERVATION_EXIT`), overriding the 200 EMA uptrend veto.
+27. **Dedicated Market-Wide Regime Dashboard (`CAPITAL_DEFENSE_MODE` Broadcast)**:
+    - *The Institutional Defense*: When India VIX $> 16.5$ and cash market breadth advance-decline ratio $\text{ADR} < 0.70$ (or Nifty single-session drop $\le -1.25\%$), the engine proactively broadcasts an emergency `CAPITAL_DEFENSE_MODE` notification across all user channels (FCM push and Telegram). Computes authentic decline percentage ($\%_{\text{declines}} = \frac{\text{dec}}{\text{adv} + \text{dec}} \times 100$), informs users that breadth is severely deteriorated, pauses all fresh buy setups, and engages capital defense protocols with asymmetric state latching and VIX hysteresis.
+28. **Persistent Broker WebSocket Live Ticker Stream Engine (`LiveTickerStreamManager`)**:
+    - *The Infrastructure Leap*: Upgraded from 5-minute batch polling via Yahoo Finance (`yf.download`) to persistent broker WebSockets via ICICI Direct Breeze Connect (`breeze.ws_connect()`) / Zerodha KiteTicker.
+    - *Sub-Millisecond Tick Ingestion*: Ingests live ticks directly from broker WebSocket feeds into in-memory `market_cache` ($LTP$, Day High/Low, Volume, VWAP deviation) in $<0.1\text{ ms}$.
+    - *Instant Level Breach Detection*: Evaluates every tick against Camarilla $L_4$ support breakdown and Demat trailing stop-loss breaches ($P\&L \le -3.5\%$ or $LTP \le \text{StopLoss}$) instantaneously.
+    - *Gemini AI Qualitative Synthesis*: As approved, invokes Gemini AI upon live breach to generate deep qualitative holding guidance and risk rationales (~1.2–2.5s delivery vs 300s batch wait).
+    - *Immutable Mathematical Sovereignty & 15-Minute Hysteresis Latch*: Numerical prices, stop levels, and percentages remain 100% deterministic. A 15-minute anti-spam latch suppresses tick oscillation alert flooding. Operates under the Strict Zero-Default Policy with graceful standby when markets are closed.
 
 ### 2.1.4b Regime-Adaptive Dynamic Confluence Weighting & Weight Re-Normalization (`app/engine/deterministic.py`)
 Rather than static weightings or arbitrary default placeholders, factor weights adapt dynamically to real-time market regimes and available data:

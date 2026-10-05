@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,7 @@ from app.notifications import (
     stop_telegram_worker,
     close_telegram_client,
 )
+from app.engine.ticker_stream import ticker_manager
 from app.core.dependencies import get_supabase
 from app.routers import (
     orders as orders_router,
@@ -64,14 +66,16 @@ app.include_router(cron_router.router)
 
 @app.on_event("startup")
 async def startup_event():
-    """Initializes Supabase PgBouncer Connection Pool on Port 6543 and Telegram queue worker."""
+    """Initializes Supabase PgBouncer Connection Pool on Port 6543, Telegram queue worker, and WebSocket Ticker Stream."""
     await init_db_pool()
     start_telegram_worker()
+    asyncio.create_task(ticker_manager.start())
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Gracefully closes all connections in the database pool, HTTP clients, and background workers on shutdown."""
+    ticker_manager.stop()
     await stop_telegram_worker()
     await close_db_pool()
     await close_telegram_client()

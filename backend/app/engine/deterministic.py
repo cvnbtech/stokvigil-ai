@@ -396,6 +396,14 @@ def compute_deterministic_confluence(
     flow_score = int(round(flow_score_val)) if (flow_score_val is not None and "flow" in active_factors) else None
     forensic_score = int(round(raw_fors)) if (raw_fors is not None and "forensics" in active_factors) else None
 
+    # Calculate Intraday Directional Score (Strictly Price Action & Order Flow - ZERO Forensics bias!)
+    # Constraint: Never use synthetic or default values.
+    directional_score = None
+    if tech_score is not None and flow_score is not None:
+        directional_score = int(round((tech_score * 0.60) + (flow_score * 0.40)))
+    elif tech_score is not None:
+        directional_score = tech_score
+
     total_active_weight = sum(weights[k] for k in active_factors.keys())
     if total_active_weight > 0 and "tech" in active_factors:
         raw_confluence = sum(active_factors[k] * (weights[k] / total_active_weight) for k in active_factors.keys())
@@ -549,22 +557,40 @@ def compute_deterministic_confluence(
         is_severe_breakdown = True
         breakdown_reasons.append(f"Camarilla L4 institutional floor breached (₹{l4_level:,.2f})")
 
-    if is_severe_breakdown:
-        confluence_score = min(28, confluence_score)
-        chg_fmt = f"{day_change:+.1f}%" if day_change is not None else "-3.5%"
+    # Multi-Day Rolling Drawdown Detection (Catches multi-session market liquidations)
+    r_3d = technicals.get("rolling_3d_change_pct")
+    r_5d = technicals.get("rolling_5d_change_pct")
+    below_ema20_3d = technicals.get("consecutive_below_ema20", False)
+
+    is_multiday_breakdown = False
+    multiday_reasons = []
+    if r_3d is not None and r_3d <= -4.0 and below_ema20_3d:
+        is_multiday_breakdown = True
+        multiday_reasons.append(f"3-Day Cumulative Loss of {r_3d:+.1f}% across consecutive sessions below 20 EMA")
+    elif r_5d is not None and r_5d <= -6.0:
+        is_multiday_breakdown = True
+        multiday_reasons.append(f"5-Day Severe Cumulative Drop of {r_5d:+.1f}%")
+
+    if is_severe_breakdown or is_multiday_breakdown:
+        confluence_score = min(25 if is_multiday_breakdown else 28, confluence_score)
+        chg_fmt = (
+            f"{r_3d:+.1f}% (3D)" if is_multiday_breakdown and r_3d is not None else
+            (f"{r_5d:+.1f}% (5D)" if is_multiday_breakdown and r_5d is not None else
+            (f"{day_change:+.1f}%" if day_change is not None else "-3.5%"))
+        )
         if demat_context["is_in_portfolio"]:
             action_bias = "CAPITAL_PRESERVATION_EXIT"
             has_actionable_signal = True
             catalyst_category = "TRAILING_STOP_TRIGGER"
             alert_title = f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
-            confluence_drivers.insert(0, f"Portfolio Defense Override: Severe breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
+            confluence_drivers.insert(0, f"Portfolio Defense Override: Cumulative breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
         else:
-            action_bias = "INTRADAY_MIS_SHORT"
+            action_bias = "SELL_WATCH" if is_multiday_breakdown else "INTRADAY_MIS_SHORT"
             has_actionable_signal = True
             catalyst_category = "PRICE_BREAKOUT"
-            alert_title = f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})"
-            confluence_drivers.insert(0, f"Intraday Short Setup: Severe supply shock detected (Cash MIS only, mandatory 03:15 PM square-off).")
-        for r in reversed(breakdown_reasons):
+            alert_title = f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})"
+            confluence_drivers.insert(0, f"Supply Shock Breakdown: Cumulative liquidation ({chg_fmt}) detected.")
+        for r in reversed(breakdown_reasons + multiday_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
 
     # Demat Holding Portfolio Protection Override
@@ -583,8 +609,16 @@ def compute_deterministic_confluence(
             catalyst_category = "TRAILING_STOP_TRIGGER"
             alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl:+.1f}%)"
             confluence_drivers.insert(0, f"Position gained +{pnl:+.1f}%; 15m RSI reached {rsi_15m_val} (Overbought zone).")
-    elif not is_severe_breakdown and not is_locked:
-        if confluence_score >= 72 and has_real_price:
+    elif not is_severe_breakdown and not is_multiday_breakdown and not is_locked:
+        if directional_score is not None and directional_score <= 40 and has_real_price:
+            # PURE DIRECTIONAL BIAS: Technical momentum and order flow mandate SELL_WATCH regardless of high balance sheet forensics!
+            action_bias = "SELL_WATCH"
+            has_actionable_signal = True
+            catalyst_category = "PRICE_BREAKOUT"
+            alert_title = f"{symbol}: Directional Breakdown Warning"
+            confluence_score = min(35, confluence_score)
+            confluence_drivers.insert(0, f"Directional Breakdown: Price momentum & order flow weakness (Score: {directional_score}/100).")
+        elif confluence_score >= 72 and has_real_price:
             action_bias = "BUY_WATCH"
             has_actionable_signal = True
             if day_change is not None and day_change >= 5.0:
@@ -638,8 +672,8 @@ def compute_deterministic_confluence(
             confluence_drivers.append(f"Exhaustion Trap Veto: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}. Overextended FOMO peak.")
 
     if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
-        if is_severe_breakdown:
-            logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but severe breakdown active. Preserving {action_bias}.")
+        if is_severe_breakdown or is_multiday_breakdown or (directional_score is not None and directional_score <= 40):
+            logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but severe/multiday/directional breakdown active. Preserving {action_bias}.")
             confluence_drivers.append(f"Supply Shock Override: Institutional breakdown overrides 200 EMA uptrend (₹{ema_200_val:,.2f}).")
         else:
             logger.info(f"Veto triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}). Downgrading {action_bias} to HOLD_NEUTRAL.")
