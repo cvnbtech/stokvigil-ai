@@ -759,8 +759,108 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
     return {"quotes": results}
 
 
-# In-Memory Candle Cache (TTL 60 seconds)
+# Dynamic In-Memory Candle Cache (TTL: 180s for intraday, 14400s for daily/hourly)
 _CANDLE_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+def get_candle_cache_ttl(interval: str) -> float:
+    """
+    Intraday intervals (1m, 5m, 15m) are refreshed every 180 seconds (3 min).
+    Higher timeframe intervals (1h, 1d) are held for 14,400 seconds (4 hours).
+    """
+    if interval in ["1h", "1d"]:
+        return 14400.0
+    return 180.0
+
+
+def _parse_v8_chart_to_df(chart_data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Converts Yahoo v8 chart JSON response into a normalized pandas DataFrame
+    indexed by Asia/Kolkata DatetimeIndex with OHLCV numeric columns.
+    Filters out malformed or null rows.
+    """
+    try:
+        results = chart_data.get("chart", {}).get("result")
+        if not results:
+            return pd.DataFrame()
+        first_result = results[0]
+        timestamps = first_result.get("timestamp")
+        if not timestamps:
+            return pd.DataFrame()
+        quote_list = first_result.get("indicators", {}).get("quote", [])
+        if not quote_list:
+            return pd.DataFrame()
+        quote = quote_list[0]
+        opens = quote.get("open", [])
+        highs = quote.get("high", [])
+        lows = quote.get("low", [])
+        closes = quote.get("close", [])
+        volumes = quote.get("volume", [])
+
+        rows = []
+        vol_len = len(volumes) if volumes else 0
+        for i, t in enumerate(timestamps):
+            if t is None:
+                continue
+            o = opens[i] if i < len(opens) else None
+            h = highs[i] if i < len(highs) else None
+            l = lows[i] if i < len(lows) else None
+            c = closes[i] if i < len(closes) else None
+            if o is None or h is None or l is None or c is None:
+                continue
+            v = volumes[i] if i < vol_len and volumes[i] is not None else 0
+            rows.append({
+                "timestamp": t,
+                "Open": float(o),
+                "High": float(h),
+                "Low": float(l),
+                "Close": float(c),
+                "Volume": int(v)
+            })
+
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        df.index = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata")
+        df.drop(columns=["timestamp"], inplace=True)
+        return df
+    except Exception as e:
+        logger.warning(f"Error parsing Yahoo v8 chart data: {e}")
+        return pd.DataFrame()
+
+
+def _fetch_v8_candles_df(clean_sym: str, interval: str, period: str) -> Tuple[pd.DataFrame, Optional[str]]:
+    """
+    Fetches OHLCV candlestick data directly from Yahoo Finance v8 chart API using persistent Keep-Alive
+    HTTP connection pooling (_QUOTE_HTTP_SESSION) with automatic host failover (query1 -> query2)
+    and dual-exchange suffix resolution (.NS / .BO).
+    Strictly avoids heavy, blocking yfinance dependencies.
+    """
+    clean = clean_sym.strip().upper()
+    if clean.endswith(".NS") or clean.endswith(".BO"):
+        candidates = [clean]
+    elif clean.isdigit():
+        candidates = [f"{clean}.BO", f"{clean}.NS"]
+    else:
+        candidates = [f"{clean}.NS", f"{clean}.BO"]
+
+    for target_sym in candidates:
+        for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
+            try:
+                url = f"https://{host}/v8/finance/chart/{target_sym}?range={period}&interval={interval}"
+                res = _QUOTE_HTTP_SESSION.get(url, timeout=3.5)
+                if res.status_code == 404:
+                    # Symbol not found on this exchange, avoid trying query2
+                    break
+                if res.status_code == 200:
+                    df = _parse_v8_chart_to_df(res.json())
+                    if not df.empty:
+                        return df, target_sym
+            except Exception as e:
+                logger.debug(f"Direct v8 candle fetch error for {target_sym} on {host}: {e}")
+                continue
+    return pd.DataFrame(), None
+
 
 @router.get("/api/stocks/candles", dependencies=[Depends(check_rate_limit)])
 def get_stock_candles(
@@ -771,6 +871,7 @@ def get_stock_candles(
     """
     Returns OHLCV Candlestick data for TradingView lightweight-charts,
     overlaid with Camarilla Equation Pivots (H4, H3, L3, L4), VWAP, and Chandelier Trailing Stop.
+    Pure Direct Yahoo v8 Chart ingestion with sub-second latency and zero yfinance dependency.
     """
     clean_sym = symbol.strip().upper()
     if not STOCK_SYMBOL_REGEX.match(clean_sym):
@@ -783,22 +884,13 @@ def get_stock_candles(
 
     cache_key = f"{clean_sym}:{interval}:{period}"
     now = time.time()
+    ttl = get_candle_cache_ttl(interval)
     if cache_key in _CANDLE_CACHE:
         ts, cached_payload = _CANDLE_CACHE[cache_key]
-        if (now - ts) < 60.0:
+        if (now - ts) < ttl:
             return cached_payload
 
-    df_candles = pd.DataFrame()
-    candidates = [clean_sym] if (clean_sym.endswith(".NS") or clean_sym.endswith(".BO")) else [f"{clean_sym}.NS", f"{clean_sym}.BO"]
-    for sym_to_try in candidates:
-        try:
-            t = yf.Ticker(sym_to_try)
-            df_try = t.history(period=period, interval=interval)
-            if not df_try.empty:
-                df_candles = df_try
-                break
-        except Exception:
-            continue
+    df_candles, resolved_sym = _fetch_v8_candles_df(clean_sym, interval, period)
 
     if df_candles.empty:
         return {
@@ -817,7 +909,7 @@ def get_stock_candles(
         std_dev_series = vwap_bands_info.get("std_dev_series")
     except Exception:
         vwap_bands_info = {}
-        vwap_series = df_candles["Close"]
+        vwap_series = None
         std_dev_series = None
 
     try:
@@ -834,28 +926,38 @@ def get_stock_candles(
         rolling_high = df_candles["High"].rolling(window=22, min_periods=1).max()
         chandelier_sl_series = (rolling_high - (2.5 * atr_14)).round(2)
     except Exception:
-        chandelier_sl_series = (df_candles["Close"] * 0.96).round(2)
+        chandelier_sl_series = None
 
+    # Camarilla Equation Pivots (H4, H3, L3, L4) from prior completed session (D-1)
     camarilla = None
-    for sym_to_try in candidates:
-        try:
-            t_daily = yf.Ticker(sym_to_try)
-            df_daily = t_daily.history(period="10d", interval="1d")
-            if not df_daily.empty:
-                camarilla = calculate_camarilla_pivots(df_daily)
-                break
-        except Exception as e:
-            logger.debug(f"Daily Camarilla fetch error for {sym_to_try}: {e}")
+    if interval == "1d":
+        camarilla = calculate_camarilla_pivots(df_candles)
+    else:
+        # Intraday: query prior daily bars for resolved ticker via pooled session (~100-150ms)
+        target_sym_daily = resolved_sym or clean_sym
+        df_daily, _ = _fetch_v8_candles_df(target_sym_daily, interval="1d", period="10d")
+        if not df_daily.empty:
+            camarilla = calculate_camarilla_pivots(df_daily)
+        elif len(df_candles.index.normalize().unique()) >= 2:
+            # Fallback: synthesize daily session bars from intraday candles
+            df_daily_synth = df_candles.groupby(df_candles.index.date).agg({
+                "Open": "first",
+                "High": "max",
+                "Low": "min",
+                "Close": "last",
+                "Volume": "sum"
+            })
+            camarilla = calculate_camarilla_pivots(df_daily_synth)
 
     candles = []
     for idx, row in df_candles.iterrows():
         try:
             bar_time = int(idx.timestamp())
-            c_vwap = float(vwap_series.loc[idx]) if (vwap_series is not None and idx in vwap_series) else None
-            c_sd = float(std_dev_series.loc[idx]) if (std_dev_series is not None and idx in std_dev_series) else None
+            c_vwap = float(vwap_series.loc[idx]) if (vwap_series is not None and not vwap_series.empty and idx in vwap_series) else None
+            c_sd = float(std_dev_series.loc[idx]) if (std_dev_series is not None and not std_dev_series.empty and idx in std_dev_series) else None
             c_u1 = (c_vwap + c_sd) if (c_vwap is not None and c_sd is not None) else None
             c_l1 = max(0.01, c_vwap - c_sd) if (c_vwap is not None and c_sd is not None) else None
-            c_sl = float(chandelier_sl_series.loc[idx]) if idx in chandelier_sl_series else None
+            c_sl = float(chandelier_sl_series.loc[idx]) if (chandelier_sl_series is not None and not chandelier_sl_series.empty and idx in chandelier_sl_series) else None
             candles.append({
                 "time": bar_time,
                 "open": round(float(row["Open"]), 2),

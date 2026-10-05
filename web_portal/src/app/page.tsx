@@ -174,8 +174,8 @@ export default function App() {
               dayLow: h.day_low != null ? h.day_low : null,
               high52: h.high_52 != null ? h.high_52 : null,
               sector: `${exch} Equity`,
-              signal: h.signal || "MONITORING",
-              signalType: h.signal_type || "monitoring",
+              signal: h.signal || null,
+              signalType: h.signal_type || null,
               target: h.target ? (String(h.target).startsWith("₹") ? h.target : `₹${h.target}`) : "--",
               sl: h.stop_loss ? (String(h.stop_loss).startsWith("₹") ? h.stop_loss : `₹${h.stop_loss}`) : "--",
             };

@@ -155,7 +155,7 @@ def calculate_vwap(df: pd.DataFrame) -> pd.Series:
     series = bands.get("vwap_series")
     if series is not None and not series.empty:
         return series
-    return df['Close'] if 'Close' in df.columns else pd.Series(dtype=float)
+    return pd.Series(dtype=float)
 
 def calculate_ttm_squeeze(df: pd.DataFrame, bb_period: int = 20, bb_mult: float = 2.0, kc_period: int = 20, kc_mult: float = 1.5) -> Dict[str, Any]:
     """

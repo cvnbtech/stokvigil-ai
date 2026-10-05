@@ -139,7 +139,7 @@ class MarketCacheManager:
                     "day_high": high or round(float(ltp), 2),
                     "day_low": low or round(float(ltp), 2),
                     "action_bias": "HOLD_NEUTRAL",
-                    "confluence_score": 50
+                    "confluence_score": None
                 },
                 "cached_at": now,
                 "expires_at": now + 300

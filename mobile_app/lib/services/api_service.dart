@@ -597,7 +597,7 @@ class ApiService {
             Uri.parse('$baseUrl/api/stocks/candles?symbol=$q&interval=$interval&period=$period'),
             headers: _getAuthHeaders(),
           )
-          .timeout(const Duration(seconds: 25));
+          .timeout(const Duration(seconds: 35));
       if (res.statusCode == 200) {
         return jsonDecode(res.body);
       } else {

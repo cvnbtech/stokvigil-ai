@@ -291,7 +291,7 @@ export default function HomeTab({
                       ? `${h.pnlPct >= 0 ? "+" : ""}${h.pnlPct.toFixed(2)}%`
                       : "--"}
                   </span>
-                  <SignalBadge signal={h.price && h.price > 0 ? h.signal : "MONITORING"} type={h.price && h.price > 0 ? h.signalType : "monitoring"} />
+                  <SignalBadge signal={h.price && h.price > 0 && h.signal ? h.signal : "--"} type={h.price && h.price > 0 && h.signal ? h.signalType : "none"} />
                 </div>
               </div>
             </Card>

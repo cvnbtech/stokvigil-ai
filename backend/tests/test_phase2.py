@@ -170,20 +170,31 @@ class TestPhase2Features(unittest.TestCase):
 
     def test_stock_candles_endpoint_success(self):
         """GET /api/stocks/candles must return OHLCV candles with Camarilla, VWAP, and Chandelier SL."""
-        # Mock yfinance ticker history
-        dummy_df = pd.DataFrame({
-            "Open": [100.0, 102.0, 101.5],
-            "High": [103.0, 104.5, 103.0],
-            "Low": [99.5, 101.0, 101.0],
-            "Close": [102.0, 101.5, 102.8],
-            "Volume": [10000, 15000, 12000]
-        }, index=pd.date_range("2026-09-05 09:15:00", periods=3, freq="5min"))
+        # Mock Direct Yahoo v8 Chart API JSON response
+        mock_v8_response = {
+            "chart": {
+                "result": [{
+                    "meta": {"currency": "INR", "symbol": "RELIANCE.NS"},
+                    "timestamp": [1791192900, 1791193200, 1791193500],
+                    "indicators": {
+                        "quote": [{
+                            "open": [100.0, 102.0, 101.5],
+                            "high": [103.0, 104.5, 103.0],
+                            "low": [99.5, 101.0, 101.0],
+                            "close": [102.0, 101.5, 102.8],
+                            "volume": [10000, 15000, 12000]
+                        }]
+                    }
+                }],
+                "error": None
+            }
+        }
 
-        with patch("yfinance.Ticker") as mock_ticker:
-            mock_inst = MagicMock()
-            mock_inst.history.return_value = dummy_df
-            mock_ticker.return_value = mock_inst
+        mock_http_res = MagicMock()
+        mock_http_res.status_code = 200
+        mock_http_res.json.return_value = mock_v8_response
 
+        with patch("app.routers.stocks._QUOTE_HTTP_SESSION.get", return_value=mock_http_res):
             res = self.client.get("/api/stocks/candles?symbol=RELIANCE&interval=5m&period=1d")
             self.assertEqual(res.status_code, 200)
             data = res.json()

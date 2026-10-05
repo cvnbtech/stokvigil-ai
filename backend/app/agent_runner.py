@@ -275,7 +275,7 @@ def precompute_symbol_market_state(
     """
     clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
     current_price = float(technicals.get("current_price") or 0.0)
-    atr_val = float(technicals.get("atr_14") or ((current_price * 0.015) if current_price > 0 else 0.0))
+    atr_val = float(technicals.get("atr_14") or 0.0)
 
     canonical_key = _normalize_canonical_key(clean_sym)
     cached_fin = _FINANCIALS_CACHE.get(canonical_key, {}).get("data") or _FINANCIALS_CACHE.get(clean_sym, {}).get("data")

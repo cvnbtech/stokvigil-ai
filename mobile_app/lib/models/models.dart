@@ -144,7 +144,7 @@ class StokAlert {
       symbol: json['symbol'] ?? '',
       alertTitle: json['alert_title'] ?? '',
       catalystType: json['catalyst_type'] ?? 'NEWS_CATALYST',
-      impactScore: json['impact_score'] ?? 50,
+      impactScore: (json['impact_score'] as num?)?.toInt() ?? 0,
       factualReasons: List<String>.from(json['factual_reasons'] ?? []),
       metricsSnapshot: Map<String, dynamic>.from(json['metrics_snapshot'] ?? {}),
       sentViaFcm: json['sent_via_fcm'] ?? false,

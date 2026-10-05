@@ -764,8 +764,8 @@ def check_has_active_catalyst(
         avg_p = float(raw_avg) if raw_avg is not None else 0.0
         pnl_pct = ((curr_p - avg_p) / avg_p * 100) if avg_p > 0 else 0.0
         raw_rsi = technicals.get("rsi_15m")
-        rsi = float(raw_rsi) if raw_rsi is not None else 50.0
-        if (pnl_pct >= 5.0 and rsi > 70.0) or pnl_pct <= -3.5:
+        rsi = float(raw_rsi) if raw_rsi is not None else None
+        if (pnl_pct >= 5.0 and rsi is not None and rsi > 70.0) or pnl_pct <= -3.5:
             return True, f"Demat Holding Protection Trigger (P&L: {pnl_pct:+.1f}%)"
 
     # 2. Sharp Intraday Price Surge / Breakdown

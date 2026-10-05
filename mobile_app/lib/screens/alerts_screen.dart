@@ -90,7 +90,7 @@ Automated surveillance via StokVigil AI 🛡️''';
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFF10B981)),
                   ),
-                  child: Text("${alert.impactScore}/100 SCORE", style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
+                  child: Text(alert.impactScore > 0 ? "${alert.impactScore}/100 SCORE" : "-- SCORE", style: const TextStyle(color: Color(0xFF10B981), fontWeight: FontWeight.bold, fontSize: 11)),
                 ),
               ],
             ),
@@ -400,10 +400,11 @@ Automated surveillance via StokVigil AI 🛡️''';
                                               label: signalLabel,
                                               type: signalType,
                                             ),
-                                            SignalBadge(
-                                              label: "${alert.impactScore}/100 SCORE",
-                                              type: isHigh ? 'high' : 'med',
-                                            ),
+                                            if (alert.impactScore > 0)
+                                              SignalBadge(
+                                                label: "${alert.impactScore}/100 SCORE",
+                                                type: isHigh ? 'high' : 'med',
+                                              ),
                                           ],
                                         ),
                                       ),

@@ -168,13 +168,15 @@ def run_vectorized_strategy_backtest(
         cur_high = float(df["High"].iloc[i])
         cur_low = float(df["Low"].iloc[i])
         cur_close = float(df["Close"].iloc[i])
-        cur_atr = float(df["ATR_14"].iloc[i] or (cur_close * 0.015))
-        cur_rsi = float(df["RSI_14"].iloc[i])
-        cur_sma50 = float(df["SMA_50"].iloc[i] or cur_close)
-        cur_vol = float(df["Volume"].iloc[i])
-        cur_vol_sma = float(df["Vol_SMA_20"].iloc[i] or 1.0)
-        h4_val = float(df["Cam_H4"].iloc[i] or cur_close)
-        l3_val = float(df["Cam_L3"].iloc[i] or (cur_close * 0.98))
+        raw_atr = df["ATR_14"].iloc[i]
+        cur_atr = float(raw_atr) if (pd.notna(raw_atr) and float(raw_atr) > 0) else None
+        cur_rsi = float(df["RSI_14"].iloc[i]) if pd.notna(df["RSI_14"].iloc[i]) else 0.0
+        cur_sma50 = float(df["SMA_50"].iloc[i]) if pd.notna(df["SMA_50"].iloc[i]) else cur_close
+        cur_vol = float(df["Volume"].iloc[i]) if pd.notna(df["Volume"].iloc[i]) else 0.0
+        cur_vol_sma = float(df["Vol_SMA_20"].iloc[i]) if (pd.notna(df["Vol_SMA_20"].iloc[i]) and float(df["Vol_SMA_20"].iloc[i]) > 0) else 1.0
+        h4_val = float(df["Cam_H4"].iloc[i]) if pd.notna(df["Cam_H4"].iloc[i]) else cur_close
+        raw_l3 = df["Cam_L3"].iloc[i]
+        l3_val = float(raw_l3) if (pd.notna(raw_l3) and float(raw_l3) > 0) else None
 
         if in_position:
             bars_held = i - entry_idx
@@ -246,9 +248,10 @@ def run_vectorized_strategy_backtest(
                 volume_ok = cur_vol >= cur_vol_sma
                 should_enter = ma_aligned and momentum_ok and volume_ok
 
-            if should_enter:
+            if should_enter and cur_atr is not None:
                 # Mathematical Position Sizer (1% Capital Rule)
-                computed_sl = round(max(cur_close - (1.5 * cur_atr), l3_val), 2)
+                atr_sl = cur_close - (1.5 * cur_atr)
+                computed_sl = round(max(atr_sl, l3_val) if l3_val is not None else atr_sl, 2)
                 computed_sl = min(computed_sl, round(cur_close * 0.98, 2))  # At least 2% stop
                 risk_per_share = round(abs(cur_close - computed_sl), 2)
                 effective_risk = max(0.5, risk_per_share)

@@ -84,7 +84,7 @@ async def evaluate_stock_with_ai(
     Utilizes Gemini 3.5 Flash Lite / 2.0 / 1.5 Flash fallback chain, backed by a deterministic rule engine.
     """
     current_price = float(technicals.get("current_price") or financials.get("price") or 0.0)
-    atr_val = float(technicals.get("atr_14") or ((current_price * 0.015) if current_price > 0 else 0.0))
+    atr_val = float(technicals.get("atr_14") or 0.0)
     
     demat_context = {"is_in_portfolio": False, "quantity": 0, "average_buy_price": 0.0, "unrealized_pnl_pct": 0.0}
     if holding_info and holding_info.get("quantity", 0) > 0:
