@@ -161,6 +161,9 @@ class TestInstitutionalAccuracy(unittest.TestCase):
     @patch("yfinance.Ticker")
     def test_sector_relative_strength_calculation(self, mock_ticker):
         """Computes stock 20d return minus sector 20d return."""
+        from app.macro_filter import _SECTOR_RETURNS_CACHE
+        _SECTOR_RETURNS_CACHE.clear()
+
         mock_hist = pd.DataFrame({
             "Close": [100.0] * 21 + [102.0]
         }, index=pd.date_range("2026-08-15", periods=22, freq="1D"))

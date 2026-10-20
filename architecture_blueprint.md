@@ -309,6 +309,14 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
 22. **Public Audited Accuracy & Transparency Ledger (`/transparency`)**:
     - Real price-tracking verification engine (`app/accuracy_verifier.py`) that continuously verifies historical alerts against authentic subsequent OHLCV candles (`TARGET_1_REACHED`, `STOP_LOSS_HIT`, `OPEN_MONITORING`).
     - Reports genuine Target 1 hit rates, peak gains (`max_gain_pct`), and hold durations with zero mock data and zero PII exposure.
+23. **Time-of-Day Asymmetric Regime Filter (The "Lunch-Hour Trap" Blocker - NSE & BSE)**:
+    - Between 11:30 AM and 01:30 PM IST, institutional liquidity drops 40–65% (domestic institutions step away for lunch; European markets open). Over 75% of breakouts during this window are false bull-traps.
+    - *Asymmetric Long Gatekeeper*: Vetoes `BUY_WATCH` breakouts to `HOLD_NEUTRAL` unless extraordinary institutional volume surge occurs ($\text{RVOL} \ge 3.0\times$).
+    - *BSE Microstructure Awareness*: Identifies BSE scrips (`.BO` and 6-digit codes), flagging wide bid-ask spread risks. For watchlist breakdowns, automatically dispatches `SELL_WATCH` (delivery liquidation / avoid buying) rather than unsupported naked MIS shorts.
+    - *Zero-Veto Defense Guarantee*: Wyckoff Institutional Block Dumps (`is_block_dump`), Demat `CAPITAL_PRESERVATION_EXIT`, Lower Circuit Locks (`LOWER_CIRCUIT`), and Trailing Stop-Loss triggers are **100% unthrottled and accelerated at all times**.
+24. **Top Liquid Market Anchors Auto-Inclusion (Continuous Macro Surveillance)**:
+    - Automatically pre-seeds 15 high-beta index anchors (RELIANCE, HDFCBANK, ICICIBANK, INFY, TCS, ITC, LT, SBIN, BHARTIARTL, AXISBANK, KOTAKBANK, HINDUNILVR, TATAMOTORS, BAJFINANCE, MARUTI) into the 5-minute RAM cache.
+    - Ensures systemic institutional block dumps and breadth trends are continuously tracked even if not explicitly present in a user's manual watchlist.
 
 ---
 

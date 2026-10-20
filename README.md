@@ -5,7 +5,7 @@
 [![Cloud Run Free Tier](https://img.shields.io/badge/Cloud%20Run-100%25%20Free%20Tier%20(360k%20vCPU--s)-10B981?style=flat-square)](https://cloud.google.com/run)
 [![Database Pool](https://img.shields.io/badge/Supabase%20PgBouncer-Port%206543%20Multiplexed-3ECF8E?style=flat-square)](https://supabase.com)
 [![AI Engine](https://img.shields.io/badge/AI%20Reasoning-Google%20Gemini%203.5%20Flash%20Lite-6366F1?style=flat-square)](https://ai.google.dev)
-[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-170%2F170%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
+[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-203%2F203%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
 [![Client Platforms](https://img.shields.io/badge/Clients-Flutter%203%20%7C%20Next.js%2016%20PWA-8B5CF6?style=flat-square)](mobile_app)
 
 ---

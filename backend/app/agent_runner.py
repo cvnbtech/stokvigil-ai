@@ -1,8 +1,10 @@
 import asyncio
 import logging
 import time
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 from app.config import settings
 from app.technical_engine import (
@@ -270,7 +272,8 @@ async def evaluate_single_symbol_full(
             forensics=forensics,
             financials=financials,
             news_items=news_items,
-            holding_info=holding_info
+            holding_info=holding_info,
+            current_time_ist=datetime.now(IST)
         )
 
     stock_name = (
@@ -351,7 +354,8 @@ def precompute_symbol_market_state(
         macro_data=macro_data or {},
         forensics=forensics,
         financials=financials,
-        news_items=[]
+        news_items=[],
+        current_time_ist=datetime.now(IST)
     )
 
     if current_price > 0 and atr_val > 0:
@@ -425,6 +429,16 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
             symbols = list(set(item['symbol'].strip().upper() for item in (w_res.data or []) if item.get('symbol')))
         except Exception as rest_err:
             logger.error(f"REST symbol query failed: {rest_err}")
+
+    # Auto-Include Top Liquid Market Anchors (Nifty 50 & Sensex heavyweights)
+    # Ensures systemic institutional block dumps and breadth leaders are continuously cached in RAM
+    # even if not explicitly present in any individual user's manual watchlist.
+    MARKET_ANCHORS = [
+        "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS",
+        "ITC", "LT", "SBIN", "BHARTIARTL", "AXISBANK",
+        "KOTAKBANK", "HINDUNILVR", "TATAMOTORS", "BAJFINANCE", "MARUTI"
+    ]
+    symbols = list(set(symbols + MARKET_ANCHORS))
 
     if not symbols:
         logger.info("No active symbols found across user watchlists to pre-compute.")

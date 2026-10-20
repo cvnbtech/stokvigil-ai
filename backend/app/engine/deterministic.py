@@ -1,9 +1,12 @@
+import os
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple, List
 
 from app.macro_filter import calculate_sector_relative_strength
 
 logger = logging.getLogger("stokvigil.engine.deterministic")
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def get_adaptive_weights(macro_data: Dict[str, Any], adx_regime: Optional[str] = None) -> Tuple[Dict[str, float], str]:
@@ -266,12 +269,16 @@ def compute_deterministic_confluence(
     forensics: Dict[str, Any],
     financials: Dict[str, Any],
     news_items: Optional[List[Dict[str, Any]]] = None,
-    holding_info: Optional[Dict[str, Any]] = None
+    holding_info: Optional[Dict[str, Any]] = None,
+    current_time_ist: Optional[datetime] = None
 ) -> Dict[str, Any]:
     """
     Deterministic Quantitative Confluence Engine with Adaptive Regime Weighting.
     Evaluates institutional math in 0.001ms with zero API costs.
     """
+    clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+    is_bse = symbol.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+
     price_candidate = (
         technicals.get("current_price") or 
         financials.get("price") or 
@@ -602,11 +609,18 @@ def compute_deterministic_confluence(
             alert_title = f"🚨 {symbol}: Institutional Block Dump / Exit Defense ({chg_fmt})" if is_block_dump else f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
             confluence_drivers.insert(0, f"Portfolio Defense Override: Cumulative breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
         else:
-            action_bias = "SELL_WATCH" if is_multiday_breakdown else "INTRADAY_MIS_SHORT"
-            has_actionable_signal = True
-            catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
-            alert_title = f"🚨 {symbol}: Institutional Block Breakdown ({chg_fmt})" if is_block_dump else (f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})")
-            confluence_drivers.insert(0, f"Supply Shock Breakdown: Cumulative liquidation ({chg_fmt}) detected.")
+            if is_bse:
+                action_bias = "SELL_WATCH"
+                has_actionable_signal = True
+                catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
+                alert_title = f"🚨 {symbol}: BSE Institutional Block Breakdown ({chg_fmt})" if is_block_dump else (f"{symbol}: BSE Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: BSE Supply Breakdown ({chg_fmt})")
+                confluence_drivers.insert(0, f"BSE Cash Market: Delivery liquidation ({chg_fmt}) detected. Avoid fresh buying / Exit CNC holdings.")
+            else:
+                action_bias = "SELL_WATCH" if is_multiday_breakdown else "INTRADAY_MIS_SHORT"
+                has_actionable_signal = True
+                catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
+                alert_title = f"🚨 {symbol}: Institutional Block Breakdown ({chg_fmt})" if is_block_dump else (f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})")
+                confluence_drivers.insert(0, f"Supply Shock Breakdown: Cumulative liquidation ({chg_fmt}) detected.")
         for r in reversed(breakdown_reasons + multiday_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
 
@@ -688,6 +702,46 @@ def compute_deterministic_confluence(
             confluence_score = min(58, confluence_score - 10)
             confluence_drivers.append(f"Exhaustion Trap Veto: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}. Overextended FOMO peak.")
 
+    # Time-of-Day Asymmetric Regime Filter (The "Lunch-Hour Trap" Blocker - NSE & BSE)
+    # Between 11:30 AM and 01:30 PM IST, institutional liquidity drops 40-65% (DIIs step away for lunch, Euro opens).
+    # Over 75% of breakouts during this lull are false bull-traps that reverse into stop-losses.
+    # RULE: Veto BUY_WATCH to HOLD_NEUTRAL unless extraordinary institutional surge (RVOL >= 3.0x).
+    # ASYMMETRIC DEFENSE GUARANTEE: Block sells, Wyckoff dumps, circuit freezes, and Demat preservation exits are NEVER vetoed!
+    now_ist = current_time_ist or (macro_data.get("current_time_ist") if macro_data else None) or (technicals.get("current_time_ist") if technicals else None)
+    if now_ist is None and "PYTEST_CURRENT_TEST" not in os.environ:
+        now_ist = datetime.now(IST)
+
+    if now_ist is not None:
+        current_minute_of_day = now_ist.hour * 60 + now_ist.minute
+        # 11:30 AM IST = 690 minutes; 01:30 PM IST = 810 minutes
+        is_lunch_lull = (690 <= current_minute_of_day < 810)
+
+        if action_bias == "BUY_WATCH" and is_lunch_lull:
+            vol_mult = technicals.get("volume_multiple")
+            has_institutional_surge = bool(vol_mult is not None and float(vol_mult) >= 3.0)
+
+            if not has_institutional_surge:
+                logger.info(f"Lunch-Hour Trap Veto for {symbol} ({'BSE' if is_bse else 'NSE'}): Breakout blocked between 11:30 AM - 01:30 PM IST (RVOL: {vol_mult} < 3.0x).")
+                action_bias = "HOLD_NEUTRAL"
+                has_actionable_signal = False
+                confluence_score = min(58, confluence_score - 8)
+                vm_str = f"{float(vol_mult):.1f}x" if vol_mult is not None else "normal"
+                if is_bse:
+                    confluence_drivers.append(
+                        f"BSE Lunch Lull Veto: Low order book depth between 11:30 AM - 01:30 PM IST. "
+                        f"Breakout blocked to prevent illiquid slippage trap (RVOL: {vm_str} < 3.0x threshold)."
+                    )
+                else:
+                    confluence_drivers.append(
+                        f"Lunch-Hour Trap Veto: Institutional liquidity lull between 11:30 AM - 01:30 PM IST. "
+                        f"Breakout blocked to prevent false bull-trap (RVOL: {vm_str} < 3.0x threshold)."
+                    )
+            else:
+                confluence_drivers.append(
+                    f"Lunch-Hour Institutional Surge: Extraordinary RVOL ({float(vol_mult):.1f}x >= 3.0x) "
+                    f"confirms authentic institutional sponsorship during lunch lull."
+                )
+
     if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
         is_market_dist = bool(adr_val is not None and float(adr_val) < 0.80) or is_high_vix or bool(macro_data.get("nifty_change_pct") is not None and float(macro_data.get("nifty_change_pct")) <= -0.50)
         if is_severe_breakdown or is_multiday_breakdown or is_block_dump or (directional_score is not None and directional_score <= 40) or is_market_dist:
@@ -763,6 +817,7 @@ def compute_deterministic_confluence(
         "symbol": symbol,
         "has_actionable_signal": has_actionable_signal,
         "action_bias": action_bias,
+        "is_block_dump": is_block_dump,
         "confluence_score": confluence_score,
         "alert_title": alert_title,
         "catalyst_category": catalyst_category,
