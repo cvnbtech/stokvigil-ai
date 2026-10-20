@@ -89,16 +89,16 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
             profiles_data = profiles_res.data or []
 
         pooled_watchlists = await fetch_all(
-            "SELECT user_id, symbol, is_auto_synced FROM user_watchlists WHERE symbol IS NOT NULL"
+            "SELECT user_id, symbol, is_auto_synced, average_buy_price, quantity FROM user_watchlists WHERE symbol IS NOT NULL"
         )
         if pooled_watchlists is not None:
             watchlists_data = pooled_watchlists
         else:
             try:
-                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced").not_.is_("symbol", "null").limit(50000).execute()
+                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced, average_buy_price, quantity").not_.is_("symbol", "null").limit(50000).execute()
                 watchlists_data = watchlists_res.data or []
             except Exception:
-                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced").limit(50000).execute()
+                watchlists_res = db.table("user_watchlists").select("user_id, symbol, is_auto_synced, average_buy_price, quantity").limit(50000).execute()
                 watchlists_data = watchlists_res.data or []
 
         pooled_creds = await fetch_all(
@@ -121,6 +121,7 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
             user_contexts[uid] = {
                 "profile": p,
                 "symbols": set(),
+                "cached_demat_rows": [],
                 "cred": None
             }
 
@@ -129,12 +130,17 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
             sym = w.get("symbol")
             if sym:
                 clean_s = sym.strip().upper()
+                is_demat_row = bool(w.get("is_auto_synced") and w.get("average_buy_price"))
                 if uid in user_contexts:
                     user_contexts[uid]["symbols"].add(clean_s)
+                    if is_demat_row:
+                        user_contexts[uid]["cached_demat_rows"].append(w)
                 else:
+                    demat_list = [w] if is_demat_row else []
                     user_contexts[uid] = {
                         "profile": {"id": uid},
                         "symbols": {clean_s},
+                        "cached_demat_rows": demat_list,
                         "cred": None
                     }
 

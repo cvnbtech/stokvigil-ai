@@ -91,18 +91,28 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
     vix_val = float(vix) if vix is not None else 0.0
     adr_val = float(adr) if adr is not None else None
 
-    # Condition 1: CAPITAL_DEFENSE_MODE: India VIX > 16.5 and Market Breadth ADR < 0.70
-    is_capital_defense = (vix_val > 16.5 and adr_val is not None and adr_val < 0.70)
-    # Condition 2: Severe Single-Session Plunge: Nifty <= -1.25%
-    is_severe_nifty_plunge = (nifty_chg is not None and nifty_val <= -1.25)
+    # Condition 1: CAPITAL_DEFENSE_MODE: India VIX >= 14.5 and Market Breadth ADR < 0.75, or severe breadth collapse ADR < 0.55
+    is_capital_defense = bool(
+        (vix_val >= 14.5 and adr_val is not None and adr_val < 0.75) or
+        (adr_val is not None and adr_val < 0.55)
+    )
+    # Condition 2: Significant Single-Session Plunge: Nifty <= -0.75%
+    is_severe_nifty_plunge = bool(nifty_chg is not None and nifty_val <= -0.75)
 
-    if not (is_capital_defense or is_severe_nifty_plunge):
+    # Condition 3: Broad Declines Skew: Over 65% stocks declining with negative index
+    is_breadth_skew = False
+    if adv is not None and dec is not None and (adv + dec) > 0:
+        dec_pct_calc = (float(dec) / (float(adv) + float(dec))) * 100.0
+        if dec_pct_calc >= 65.0 and nifty_val <= -0.40:
+            is_breadth_skew = True
+
+    if not (is_capital_defense or is_severe_nifty_plunge or is_breadth_skew):
         return False
 
     # Check State Latch & Hysteresis
     if _MACRO_CRASH_DISPATCHED_DATE == today:
         vix_escalated = (_MACRO_LAST_DISPATCHED_VIX > 0 and vix_val >= (_MACRO_LAST_DISPATCHED_VIX * 1.10))
-        nifty_escalated = (nifty_chg is not None and nifty_val <= (_MACRO_LAST_DISPATCHED_NIFTY - 0.75))
+        nifty_escalated = (nifty_chg is not None and nifty_val <= (_MACRO_LAST_DISPATCHED_NIFTY - 0.50))
         if vix_escalated or nifty_escalated:
             logger.info(f"Macro Risk Escalation Triggered: VIX {vix_val} (prior {_MACRO_LAST_DISPATCHED_VIX}), Nifty {nifty_val:+.2f}%. Dispatched secondary broadcast.")
             _MACRO_LAST_DISPATCHED_VIX = vix_val
@@ -491,6 +501,7 @@ async def evaluate_user_portfolio_and_watchlists(
     cached_demat_rows = []
     if preloaded_user_ctx and preloaded_user_ctx.get("symbols") is not None:
         symbols = set(preloaded_user_ctx["symbols"])
+        cached_demat_rows = list(preloaded_user_ctx.get("cached_demat_rows") or [])
     else:
         try:
             from app.db_pool import fetch_all

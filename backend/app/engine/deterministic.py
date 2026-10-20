@@ -564,12 +564,12 @@ def compute_deterministic_confluence(
 
     is_multiday_breakdown = False
     multiday_reasons = []
-    if r_3d is not None and r_3d <= -4.0 and below_ema20_3d:
+    if r_3d is not None and r_3d <= -3.0 and below_ema20_3d:
         is_multiday_breakdown = True
         multiday_reasons.append(f"3-Day Cumulative Loss of {r_3d:+.1f}% across consecutive sessions below 20 EMA")
-    elif r_5d is not None and r_5d <= -6.0:
+    elif r_5d is not None and r_5d <= -4.5:
         is_multiday_breakdown = True
-        multiday_reasons.append(f"5-Day Severe Cumulative Drop of {r_5d:+.1f}%")
+        multiday_reasons.append(f"5-Day Cumulative Drop of {r_5d:+.1f}%")
 
     if is_severe_breakdown or is_multiday_breakdown:
         confluence_score = min(25 if is_multiday_breakdown else 28, confluence_score)
@@ -672,9 +672,10 @@ def compute_deterministic_confluence(
             confluence_drivers.append(f"Exhaustion Trap Veto: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}. Overextended FOMO peak.")
 
     if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
-        if is_severe_breakdown or is_multiday_breakdown or (directional_score is not None and directional_score <= 40):
-            logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but severe/multiday/directional breakdown active. Preserving {action_bias}.")
-            confluence_drivers.append(f"Supply Shock Override: Institutional breakdown overrides 200 EMA uptrend (₹{ema_200_val:,.2f}).")
+        is_market_dist = bool(adr_val is not None and float(adr_val) < 0.80) or is_high_vix or bool(macro_data.get("nifty_change_pct") is not None and float(macro_data.get("nifty_change_pct")) <= -0.50)
+        if is_severe_breakdown or is_multiday_breakdown or (directional_score is not None and directional_score <= 40) or is_market_dist:
+            logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but breakdown or broad market distribution active. Preserving {action_bias}.")
+            confluence_drivers.append(f"Supply Shock Override: Institutional breakdown / Market distribution overrides 200 EMA uptrend (₹{ema_200_val:,.2f}).")
         else:
             logger.info(f"Veto triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}). Downgrading {action_bias} to HOLD_NEUTRAL.")
             action_bias = "HOLD_NEUTRAL"
