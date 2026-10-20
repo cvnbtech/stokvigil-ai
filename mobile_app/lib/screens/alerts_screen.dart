@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import '../config/theme.dart';
 import '../models/models.dart';
+import '../providers/alerts_provider.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../widgets/custom_widgets.dart';
@@ -20,10 +22,6 @@ class AlertsScreen extends StatefulWidget {
 }
 
 class _AlertsScreenState extends State<AlertsScreen> {
-  bool _isLoading = true;
-  String _selectedFilter = 'all';
-  List<StokAlert> _alerts = [];
-  StreamSubscription<List<StokAlert>>? _alertsSub;
   final Set<String> _expandedRadarIds = {};
 
   void _shareAlphaCard(StokAlert alert, String targetStr, String slStr, String rrStr) {
@@ -127,52 +125,10 @@ Automated surveillance via StokVigil AI 🛡️''';
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _subscribeToAlerts();
-  }
-
-  @override
-  void dispose() {
-    _alertsSub?.cancel();
-    super.dispose();
-  }
-
-  void _subscribeToAlerts() {
-    _alertsSub = SupabaseService().streamAlerts().listen(
-      (liveAlerts) {
-        if (mounted) {
-          setState(() {
-            _alerts = liveAlerts;
-            _isLoading = false;
-          });
-        }
-      },
-      onError: (err) {
-        debugPrint("Realtime alerts stream error: $err");
-        _loadAlerts();
-      },
-    );
-  }
-
-  Future<void> _loadAlerts() async {
+  Future<void> _refreshAlerts() async {
     final user = SupabaseService().currentUser;
-    if (user == null) {
-      setState(() {
-        _isLoading = false;
-        _alerts = [];
-      });
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    final list = await ApiService().fetchAlerts(user.id);
-    if (mounted) {
-      setState(() {
-        _alerts = list;
-        _isLoading = false;
-      });
+    if (user != null) {
+      await context.read<AlertsProvider>().fetchAlertsFallback(user.id);
     }
   }
 
@@ -218,44 +174,10 @@ Automated surveillance via StokVigil AI 🛡️''';
 
   @override
   Widget build(BuildContext context) {
-    final filteredList = _alerts.where((a) {
-      if (_selectedFilter == 'defense') {
-        final b = a.actionBias.toUpperCase();
-        return b.contains('CAPITAL_PRESERVATION') ||
-            b.contains('MIS_SHORT') ||
-            b.contains('INTRADAY_MIS') ||
-            a.alertTitle.toUpperCase().contains('CAPITAL') ||
-            a.alertTitle.toUpperCase().contains('MIS');
-      }
-      if (_selectedFilter == 'high') return a.impactScore >= 80;
-      if (_selectedFilter == 'earnings') {
-        return a.catalystType == 'EARNINGS_BEAT' ||
-            a.alertTitle.toUpperCase().contains('EARNING') ||
-            a.alertTitle.toUpperCase().contains('REVENUE');
-      }
-      if (_selectedFilter == 'breakout') {
-        return a.catalystType == 'PRICE_BREAKOUT' ||
-            a.alertTitle.toUpperCase().contains('BREAKOUT') ||
-            a.alertTitle.toUpperCase().contains('HIGH');
-      }
-      if (_selectedFilter == 'volume') {
-        return a.catalystType == 'VOLUME_SURGE' ||
-            a.alertTitle.toUpperCase().contains('VOLUME') ||
-            a.factualReasons.any((r) => r.toUpperCase().contains('VOLUME'));
-      }
-      if (_selectedFilter == 'fii') {
-        return a.catalystType == 'BLOCK_DEAL' ||
-            a.catalystType == 'DEBT_CHANGE' ||
-            a.alertTitle.toUpperCase().contains('FII') ||
-            a.alertTitle.toUpperCase().contains('DEAL') ||
-            a.alertTitle.toUpperCase().contains('BLOCK');
-      }
-      if (_selectedFilter == 'trailing') {
-        return a.actionBias.contains('TRAILING') ||
-            a.alertTitle.toUpperCase().contains('TRAILING');
-      }
-      return true;
-    }).toList();
+    final alertsProvider = context.watch<AlertsProvider>();
+    final _isLoading = alertsProvider.isLoading;
+    final _selectedFilter = alertsProvider.selectedFilter;
+    final filteredList = alertsProvider.filteredAlerts;
 
     return Scaffold(
       backgroundColor: AppTheme.darkBackground,
@@ -282,11 +204,11 @@ Automated surveillance via StokVigil AI 🛡️''';
             icon: const Icon(Icons.verified_outlined, color: AppTheme.primaryEmerald),
             tooltip: "Public Audit Ledger",
           ),
-          IconButton(onPressed: _loadAlerts, icon: const Icon(Icons.refresh, color: AppTheme.cyan)),
+          IconButton(onPressed: _refreshAlerts, icon: const Icon(Icons.refresh, color: AppTheme.cyan)),
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadAlerts,
+        onRefresh: _refreshAlerts,
         color: AppTheme.cyan,
         child: Column(
           children: [
@@ -782,7 +704,7 @@ Automated surveillance via StokVigil AI 🛡️''';
   Widget _buildFilterChip(String filterKey, String label) {
     final active = _selectedFilter == filterKey;
     return GestureDetector(
-      onTap: () => setState(() => _selectedFilter = filterKey),
+      onTap: () => context.read<AlertsProvider>().setFilter(filterKey),
       child: Container(
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),

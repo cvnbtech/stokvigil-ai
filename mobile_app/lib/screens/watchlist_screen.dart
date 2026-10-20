@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../providers/watchlist_provider.dart';
 import '../services/api_service.dart';
 import '../services/supabase_service.dart';
 import '../utils/error_handler.dart';
@@ -17,23 +19,14 @@ class WatchlistScreen extends StatefulWidget {
 
 class _WatchlistScreenState extends State<WatchlistScreen> {
   final _searchController = TextEditingController();
-  List<Map<String, dynamic>> _watchlist = [];
   List<Map<String, dynamic>> _suggestions = [];
-  bool _isLoading = true;
-  bool _autoSync = false;
-  StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
   Timer? _searchDebounce;
-  Timer? _refreshTimer;
+  List<Map<String, dynamic>> _dematHoldings = [];
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
-    _loadWatchlist();
-    _subscribeToWatchlist();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _refreshQuotesOnly();
-    });
   }
 
   void _onSearchChanged() {
@@ -64,188 +57,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
     _searchDebounce?.cancel();
     _searchController.removeListener(_onSearchChanged);
-    _watchlistSub?.cancel();
     _searchController.dispose();
     super.dispose();
-  }
-
-  void _applyQuoteToItem(Map<String, dynamic> item, Map<String, dynamic> q) {
-    final price = (q['price'] as num? ?? 0.0).toDouble();
-    if (price <= 0) {
-      item['price'] = 0.0;
-      item['chg'] = '--';
-      item['signal'] = null;
-      item['target'] = null;
-      item['stop_loss'] = null;
-      item['trailing_sl'] = null;
-      item['is_high_beta'] = false;
-      return;
-    }
-
-    item['price'] = price;
-    final num? chgVal = q['change_pct'] as num?;
-    final isPos = chgVal != null ? (chgVal >= 0) : (q['is_positive'] == true);
-    final chgPctStr = chgVal != null ? chgVal.toStringAsFixed(2) : '0.00';
-    item['is_positive'] = isPos;
-    item['chg'] = "${isPos ? '+' : ''}$chgPctStr%";
-    if (q['name'] != null && q['name'].toString().isNotEmpty) {
-      item['name'] = q['name'];
-    }
-    if (q['exchange'] != null && q['exchange'].toString().isNotEmpty) {
-      item['exchange'] = q['exchange'];
-    }
-
-    // Zero-Default Policy: Filter out placeholder 'HOLD', 'MONITORING', etc.
-    final rawSignal = q['signal']?.toString().trim();
-    if (rawSignal != null && rawSignal.isNotEmpty && rawSignal != '--' && rawSignal != 'HOLD' && rawSignal != 'MONITORING') {
-      item['signal'] = rawSignal;
-    } else {
-      item['signal'] = null;
-    }
-
-    final rawTarget = q['target']?.toString();
-    if (rawTarget != null && rawTarget != '--' && rawTarget != '₹0' && rawTarget != '0' && rawTarget.isNotEmpty && item['signal'] != null) {
-      if (rawTarget.contains('CUT') || rawTarget.contains('EXIT') || rawTarget.startsWith('₹')) {
-        item['target'] = rawTarget;
-      } else {
-        item['target'] = "₹$rawTarget";
-      }
-    } else {
-      item['target'] = null;
-    }
-
-    final rawSl = q['stop_loss']?.toString();
-    if (rawSl != null && rawSl != '--' && rawSl != '₹0' && rawSl != '0' && rawSl.isNotEmpty && item['signal'] != null) {
-      if (rawSl.contains('BREACHED') || rawSl.startsWith('₹')) {
-        item['stop_loss'] = rawSl;
-      } else {
-        item['stop_loss'] = "₹$rawSl";
-      }
-    } else {
-      item['stop_loss'] = null;
-    }
-    item['trailing_sl'] = item['signal'] != null ? q['trailing_sl'] : null;
-    item['is_high_beta'] = q['is_high_beta'] == true;
-    item['volatility_regime'] = q['volatility_regime'];
-  }
-
-  void _subscribeToWatchlist() {
-    _watchlistSub = SupabaseService().streamWatchlist().listen((liveData) {
-      if (mounted) {
-        setState(() {
-          final updated = <Map<String, dynamic>>[];
-          for (final item in liveData) {
-            final sym = (item['symbol']?.toString() ?? '').toUpperCase();
-            final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
-
-            // Find existing item in memory to preserve live quotes
-            final existing = _watchlist.firstWhere(
-              (w) => (w['symbol']?.toString() ?? '').toUpperCase() == sym ||
-                     (w['symbol']?.toString() ?? '').toUpperCase() == cleanSym,
-              orElse: () => <String, dynamic>{},
-            );
-            final cached = ApiService.getCachedQuote(cleanSym) ?? ApiService.getCachedQuote(sym);
-
-            final merged = Map<String, dynamic>.from(item);
-            if (existing.isNotEmpty && (existing['price'] as num? ?? 0) > 0) {
-              merged['price'] = existing['price'];
-              merged['chg'] = existing['chg'];
-              merged['is_positive'] = existing['is_positive'];
-              merged['signal'] = existing['signal'];
-              merged['target'] = existing['target'];
-              merged['stop_loss'] = existing['stop_loss'];
-              merged['trailing_sl'] = existing['trailing_sl'];
-              merged['is_high_beta'] = existing['is_high_beta'];
-              merged['volatility_regime'] = existing['volatility_regime'];
-              merged['name'] = existing['name'] ?? merged['name'];
-              merged['exchange'] = existing['exchange'] ?? merged['exchange'];
-            } else if (cached != null && (cached['price'] as num? ?? 0) > 0) {
-              _applyQuoteToItem(merged, cached);
-            }
-            updated.add(merged);
-          }
-          _watchlist = updated;
-          _isLoading = false;
-        });
-      }
-    });
-  }
-
-  List<Map<String, dynamic>> _dematHoldings = [];
-
-  Future<void> _refreshQuotesOnly() async {
-    if (!mounted || _watchlist.isEmpty) return;
-    final symbols = _watchlist
-        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (symbols.isEmpty) return;
-    try {
-      final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
-      if (!mounted) return;
-      setState(() {
-        for (var item in _watchlist) {
-          final sym = (item['symbol']?.toString() ?? '').toUpperCase();
-          final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
-          final q = liveQuotes[sym] ?? liveQuotes[cleanSym];
-          if (q != null && q is Map<String, dynamic>) {
-            _applyQuoteToItem(item, q);
-          }
-        }
-      });
-    } catch (e) {
-      debugPrint("Error refreshing quotes: $e");
-    }
-  }
-
-  Future<void> _loadWatchlist() async {
-    final user = SupabaseService().currentUser;
-    if (user == null) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-      return;
-    }
-
-    if (_watchlist.isEmpty) {
-      setState(() => _isLoading = true);
-    }
-    try {
-      final profile = await SupabaseService().fetchUserProfile();
-      if (profile != null) {
-        _autoSync = profile.dematAutoSync;
-      }
-    } catch (_) {}
-
-    // Step 1: Instantly load cached/persisted watchlist from Supabase & L1 memory (< 10ms)
-    final data = await SupabaseService().fetchWatchlist();
-    if (mounted) {
-      for (final item in data) {
-        final sym = (item['symbol']?.toString() ?? '').toUpperCase();
-        final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
-        final cached = ApiService.getCachedQuote(cleanSym) ?? ApiService.getCachedQuote(sym);
-        if (cached != null) {
-          _applyQuoteToItem(item, cached);
-        }
-      }
-      setState(() {
-        _watchlist = data;
-        _isLoading = false; // Screen is immediately interactive and visible!
-      });
-    }
-
-    // Step 2: Fetch real-time live quotes in background and update smoothly
-    await _refreshQuotesOnly();
-
-    // Step 3: Run Demat portfolio sync in background without blocking UI
-    if (_autoSync) {
-      _syncDematHoldings(user.id);
-    }
   }
 
   Future<void> _syncDematHoldings(String userId) async {
@@ -297,20 +112,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   }
 
   Future<void> _toggleAutoSync(bool val) async {
-    setState(() => _autoSync = val);
-    final user = SupabaseService().currentUser;
-    if (user != null) {
-      await SupabaseService().updateProfile({'demat_auto_sync': val});
-      ApiService().registerDeviceToken(
-        userId: user.id,
-        fcmToken: null,
-        alertSensitivity: null,
-        executionMode: null,
-      );
-    }
-    if (val) {
-      _loadWatchlist();
-    }
+    await context.read<WatchlistProvider>().toggleAutoSync(val);
   }
 
   Future<void> _addSymbol(String symbol, [String? displayName]) async {
@@ -341,57 +143,22 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
     final exchange = validation['exchange'] ?? 'NSE';
     final name = displayName ?? validation['name'] ?? "$sym ($exchange)";
-    final livePrice = validation['price'] != null ? (validation['price'] as num).toDouble() : 0.0;
 
     // Clear suggestions immediately
     setState(() => _suggestions = []);
     _searchController.clear();
 
-    final user = SupabaseService().currentUser;
-    if (user != null) {
-      final ok = await SupabaseService().addToWatchlist(sym, exchange: exchange);
+    final ok = await context.read<WatchlistProvider>().addStock(sym, exchange: exchange);
+    if (mounted) {
       if (ok) {
-        if (mounted) {
-          ErrorHandler.showSuccessSnackBar(context, "✅ $sym ($name) added to watchlist!");
-        }
+        ErrorHandler.showSuccessSnackBar(context, "✅ $sym ($name) added to watchlist!");
       } else {
-        if (mounted) {
-          ErrorHandler.showErrorSnackBar(context, "Failed to add $sym to watchlist.");
-        }
-      }
-    } else {
-      setState(() {
-        if (!_watchlist.any((item) => item['symbol']?.toString().toUpperCase() == sym)) {
-          _watchlist.insert(0, {
-            'symbol': sym,
-            'is_auto_synced': false,
-            'name': name,
-            'price': livePrice,
-            'is_positive': true,
-            'chg': livePrice > 0 ? "+0.00%" : "--",
-            'signal': '--',
-            'target': '--',
-            'stop_loss': '--'
-          });
-        }
-      });
-      if (mounted) {
-        ErrorHandler.showSuccessSnackBar(context, "✅ $sym added to watchlist!");
+        ErrorHandler.showErrorSnackBar(context, "Failed to add $sym to watchlist.");
       }
     }
-    _loadWatchlist();
   }
 
   Future<void> _removeSymbol(String symbol, [dynamic id]) async {
-    final user = SupabaseService().currentUser;
-    if (user == null) {
-      setState(() {
-        _watchlist.removeWhere((item) => item['symbol']?.toString().toUpperCase() == symbol.toUpperCase());
-      });
-      ErrorHandler.showSuccessSnackBar(context, "Removed $symbol from local watchlist.");
-      return;
-    }
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -417,22 +184,24 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
     );
 
     if (confirmed == true) {
-      final ok = await SupabaseService().removeFromWatchlist(id, symbol);
-      if (ok) {
-        setState(() {
-          _watchlist.removeWhere((item) => item['symbol']?.toString().toUpperCase() == symbol.toUpperCase());
-        });
-        if (mounted) {
+      final ok = await context.read<WatchlistProvider>().removeStock(id, symbol);
+      if (mounted) {
+        if (ok) {
           ErrorHandler.showSuccessSnackBar(context, "🗑️ Removed $symbol from watchlist.");
+        } else {
+          ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from database.");
         }
-      } else {
-        ErrorHandler.showErrorSnackBar(context, "Failed to remove $symbol from database.");
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final watchlistProvider = context.watch<WatchlistProvider>();
+    final _watchlist = watchlistProvider.watchlist;
+    final _isLoading = watchlistProvider.isLoading;
+    final _autoSync = watchlistProvider.autoSync;
+
     final combinedList = List<Map<String, dynamic>>.from(_watchlist);
     if (_autoSync) {
       for (final dh in _dematHoldings) {
@@ -756,7 +525,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                             ),
                           )
                         : RefreshIndicator(
-                            onRefresh: _loadWatchlist,
+                            onRefresh: () => context.read<WatchlistProvider>().refreshQuotesOnly(),
                             color: AppTheme.cyan,
                             backgroundColor: AppTheme.cardBackground,
                             child: ListView.builder(

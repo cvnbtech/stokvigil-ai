@@ -1,14 +1,18 @@
 "use client";
-import React, { useState, useRef, useEffect, useCallback } from "react";
-import { C, HoldingItem, SUPABASE_URL, SUPABASE_ANON_KEY, BACKEND_URL, isSupabaseConfigured, supabase } from "../components/ui/DesignTokens";
-import { TradingAILogo, DraggableVerticalCanvas, decodeSafeBase64, encodeSafeBase64 } from "../components/ui/UiAtoms";
+import React, { useState, useRef, useEffect } from "react";
+import { C, HoldingItem, BACKEND_URL } from "../components/ui/DesignTokens";
+import { TradingAILogo, DraggableVerticalCanvas } from "../components/ui/UiAtoms";
 import AuthScreen from "../components/auth/AuthScreen";
 import HomeTab from "../components/tabs/HomeTab";
 import AlertsTab from "../components/tabs/AlertsTab";
 import WatchlistTab from "../components/tabs/WatchlistTab";
 import SettingsTab from "../components/tabs/SettingsTab";
 import dynamic from "next/dynamic";
-import type { AlphaCardData } from "../components/ShareAlphaCardModal";
+
+import { useAuthSession } from "../hooks/useAuthSession";
+import { usePortfolioMetrics } from "../hooks/usePortfolioMetrics";
+import { useWatchlistManager } from "../hooks/useWatchlistManager";
+import { useAlertsManager } from "../hooks/useAlertsManager";
 
 const LightweightCandleChart = dynamic(
   () => import("../components/LightweightCandleChart"),
@@ -23,66 +27,18 @@ const PasswordModal = dynamic(() => import("../components/modals/PasswordModal")
 const DeleteAccountModal = dynamic(() => import("../components/modals/DeleteAccountModal"), { ssr: false });
 const ShareAlphaCardModal = dynamic(() => import("../components/ShareAlphaCardModal"), { ssr: false });
 
-// Client-side module-level L1 cache for instant SWR (<2ms) render
-const clientQuoteCache: Record<string, any> = {};
-
-function getCachedClientQuote(symbol: string): any {
-  const clean = symbol.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
-  return clientQuoteCache[clean] || clientQuoteCache[symbol.trim().toUpperCase()];
-}
-
 export default function App() {
-  const [screen, setScreen] = useState<"auth" | "app">("auth");
-  const [authTab, setAuthTab] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showAuthPassword, setShowAuthPassword] = useState(false);
-  const [name, setName]  = useState("");
-  const [loading, setLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
-  const [user, setUser]  = useState<{ id?: string; name: string; email: string } | null>(null);
-
-  const [tncAccepted, setTncAccepted] = useState(false);
-  const [showTnc, setShowTnc]         = useState(false);
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState("");
-  const [forgotSent, setForgotSent]   = useState(false);
-  const [forgotLoading, setForgotLoading] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [newPasswordDone, setNewPasswordDone] = useState(false);
-  const [newPasswordLoading, setNewPasswordLoading] = useState(false);
-  const [newPasswordError, setNewPasswordError] = useState<string | null>(null);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-
-  const [tab, setTab]     = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger" | "backtest">("home");
+  // Navigation & View State
+  const [tab, setTab] = useState<"home" | "alerts" | "watchlist" | "settings" | "ledger" | "backtest">("home");
   const [backtestSymbol, setBacktestSymbol] = useState<string>("");
-  const [showKeyModal, setShowKeyModal] = useState(false);
-  const [selectedBroker, setSelectedBroker] = useState<string>("icici");
-  const [brokerLoginUrl, setBrokerLoginUrl] = useState<string>("");
-  const [sessionTok, setSessionTok] = useState("");
-  const [authToken, setAuthToken]   = useState<string>("");
-  const [keySaved, setKeySaved]   = useState(false);
-  const [keySaving, setKeySaving] = useState(false);
-  const [hasCredentials, setHasCredentials] = useState(false);
+  const [fiiDiiFlows, setFiiDiiFlows] = useState<any | null>(null);
 
-  const [holdings, setHoldings]   = useState<HoldingItem[]>([]);
-  const [totalValue, setTotalValue] = useState(0);
-  const [totalInvested, setTotalInvested] = useState(0);
-  const [totalPnl, setTotalPnl]   = useState(0);
-  const [totalPnlPct, setTotalPnlPct] = useState(0);
-
-  const [alerts, setAlerts]       = useState<any[]>([]);
-  const [watchlist, setWatchlist] = useState<any[]>([]);
-  const [ticker, setTicker]       = useState("");
-  const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
-  const searchTimerRef            = useRef<NodeJS.Timeout | null>(null);
-  const lastLoadedUidRef          = useRef<string | null>(null);
-  const [alertFilter, setAlertFilter] = useState<string>("all");
+  // Charting & Modal Interaction State
   const [selectedStock, setSelectedStock] = useState<HoldingItem | null>(null);
+  const [chartingSymbol, setChartingSymbol] = useState<string | null>(null);
+  const [isChartMaximized, setIsChartMaximized] = useState<boolean>(false);
+
+  // Trade Execution Modal State
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeData, setTradeData] = useState<{ symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string } | null>(null);
   const [orderQty, setOrderQty] = useState(10);
@@ -92,20 +48,59 @@ export default function App() {
   const [limitPrice, setLimitPrice] = useState<string>("");
   const [targetPriceInput, setTargetPriceInput] = useState<string>("");
   const [stopLossPriceInput, setStopLossPriceInput] = useState<string>("");
-  const [executionMode, setExecutionMode] = useState<"INSTANT" | "CONFIRM">("INSTANT");
-  const [alertSensitivity, setAlertSensitivity] = useState<"HIGH" | "ALL" | "FII">("HIGH");
-  const [fcmEnabled, setFcmEnabled] = useState<boolean>(false);
-  const [telegramChatId, setTelegramChatId] = useState<string>("");
-  const [telegramEnabled, setTelegramEnabled] = useState<boolean>(true);
-  const [telegramSaved, setTelegramSaved] = useState<boolean>(false);
-  const [dematAutoSync, setDematAutoSync] = useState<boolean>(false);
-  const [isPortfolioVisible, setIsPortfolioVisible] = useState<boolean>(false);
-  const [sharingAlert, setSharingAlert] = useState<AlphaCardData | null>(null);
-  const [chartingSymbol, setChartingSymbol] = useState<string | null>(null);
-  const [isChartMaximized, setIsChartMaximized] = useState<boolean>(false);
-  const [fiiDiiFlows, setFiiDiiFlows] = useState<any | null>(null);
-  const [expandedRadarId, setExpandedRadarId] = useState<string | null>(null);
 
+  // Upstream callbacks via refs to prevent circular hook closures
+  const loadUserDataRef = useRef<(uid: string) => void>(null!);
+  const handleSignedOutRef = useRef<() => void>(null!);
+
+  // 1. Auth & User Profile Session
+  const auth = useAuthSession({
+    onSessionLoaded: (uid) => {
+      loadUserDataRef.current?.(uid);
+    },
+    onSignedOut: () => {
+      handleSignedOutRef.current?.();
+    }
+  });
+
+  // 2. Watchlist Manager
+  const watchlist = useWatchlistManager({
+    userId: auth.user?.id
+  });
+
+  // 3. Alerts Manager
+  const alerts = useAlertsManager({
+    userId: auth.user?.id
+  });
+
+  // 4. Portfolio & Demat Broker Metrics
+  const portfolio = usePortfolioMetrics({
+    getAuthHeaders: auth.getAuthHeaders,
+    userId: auth.user?.id,
+    onDematSynced: (uid) => {
+      watchlist.loadWatchlistData(uid);
+    }
+  });
+
+  // Wire callbacks
+  loadUserDataRef.current = (uid: string) => {
+    portfolio.loadPortfolioData(uid);
+    alerts.loadAlertsData(uid);
+    watchlist.loadWatchlistData(uid);
+    portfolio.loadProfileData(uid);
+  };
+
+  handleSignedOutRef.current = () => {
+    portfolio.setHoldings([]);
+    portfolio.setTotalValue(0);
+    portfolio.setTotalInvested(0);
+    portfolio.setTotalPnl(0);
+    portfolio.setTotalPnlPct(0);
+    alerts.setAlerts([]);
+    watchlist.setWatchlist([]);
+  };
+
+  // Initial Market FII/DII Data
   useEffect(() => {
     const fetchFiiDii = async () => {
       try {
@@ -121,811 +116,14 @@ export default function App() {
     fetchFiiDii();
   }, []);
 
-  const getAuthHeaders = useCallback(async () => {
-    let token = "";
-    if (supabase) {
-      const { data } = await supabase.auth.getSession();
-      token = data?.session?.access_token || "";
-    }
-    return {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    };
-  }, []);
-
-  const loadPortfolioData = useCallback(async (uid: string) => {
-    const todayStr = new Date().toISOString().split("T")[0];
-    let portfolioLoaded = false;
-    try {
-      const headers = await getAuthHeaders();
-      const credRes = await fetch(`/api/user/credentials?user_id=${uid}`, { headers });
-      if (credRes.ok) {
-        const credData = await credRes.json();
-        if (credData.has_credentials) {
-          const isTokenValidToday = Boolean(credData.token_date === todayStr);
-          if (isTokenValidToday) setHasCredentials(true);
-        }
-        if (credData.login_url) {
-          setBrokerLoginUrl(credData.login_url);
-        }
-      }
-
-      const res = await fetch(`/api/user/portfolio?user_id=${uid}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        const isTokenValidToday = Boolean(data.has_credentials && data.token_date === todayStr);
-        if (isTokenValidToday) setHasCredentials(true);
-        setTotalValue(data.total_portfolio_value || 0);
-        setTotalInvested(data.total_investment_value || 0);
-        setTotalPnl(data.total_pnl || 0);
-        setTotalPnlPct(data.total_pnl_percent || 0);
-        if (data.holdings && data.holdings.length > 0) {
-          setHoldings(data.holdings.map((h: any) => {
-            const cleanSym = (h.clean_symbol || h.symbol || "").replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
-            const exch = h.exchange || ((h.full_symbol || h.symbol || "").toUpperCase().endsWith(".BO") ? "BSE" : "NSE");
-            const displayName = h.name && h.name !== h.symbol && !h.name.endsWith(".BO") ? h.name : cleanSym;
-            return {
-              symbol: cleanSym,
-              clean_symbol: cleanSym,
-              full_symbol: h.full_symbol || h.symbol,
-              name: displayName,
-              exchange: exch,
-              qty: h.quantity,
-              avg: h.avg_price,
-              price: h.current_price,
-              pnl: h.pnl,
-              pnlPct: h.pnl_percent,
-              changePct: h.change_pct != null ? h.change_pct : null,
-              dayHigh: h.day_high != null ? h.day_high : null,
-              dayLow: h.day_low != null ? h.day_low : null,
-              high52: h.high_52 != null ? h.high_52 : null,
-              sector: `${exch} Equity`,
-              signal: h.signal || null,
-              signalType: h.signal_type || null,
-              target: h.target ? (String(h.target).startsWith("₹") ? h.target : `₹${h.target}`) : "--",
-              sl: h.stop_loss ? (String(h.stop_loss).startsWith("₹") ? h.stop_loss : `₹${h.stop_loss}`) : "--",
-            };
-          }));
-          portfolioLoaded = true;
-
-          // Auto-sync Demat holdings into user_watchlists table (Universal Canonical Suffix Rule)
-          if (supabase && uid) {
-            try {
-              for (const h of data.holdings) {
-                const rawSym = (h.symbol || h.clean_symbol || "").trim().toUpperCase();
-                if (!rawSym) continue;
-                const isBse = rawSym.endsWith(".BO") || (h.exchange && String(h.exchange).toUpperCase() === "BSE") || (/^\d{6}$/.test(rawSym));
-                let cleanS = rawSym;
-                if (cleanS.endsWith(".NS")) {
-                  cleanS = cleanS.replace(/\.NS$/i, "").trim();
-                }
-                if (isBse && !cleanS.endsWith(".BO") && !/^\d{6}$/.test(cleanS)) {
-                  cleanS = `${cleanS}.BO`;
-                }
-                if (cleanS) {
-                  await supabase.from('user_watchlists').upsert({
-                    user_id: uid,
-                    symbol: cleanS,
-                    is_auto_synced: true,
-                  }, { onConflict: 'user_id,symbol' });
-                }
-              }
-              loadWatchlistData(uid);
-            } catch (err) {
-              console.warn("Error auto-syncing demat holdings to watchlists:", err);
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Portfolio fetch fallback:", e);
-    }
-
-    if (!portfolioLoaded) {
-      setHoldings([]);
-      setTotalValue(0);
-      setTotalInvested(0);
-      setTotalPnl(0);
-      setTotalPnlPct(0);
-    }
-  }, [getAuthHeaders]);
-
-  const formatAlertRecord = useCallback((a: any) => {
-    const rawSnap = a.metrics_snapshot || {};
-    const flowData = rawSnap.flow_data || {};
-    const technicals = rawSnap.technicals || {};
-    const macroData = rawSnap.macro_data || {};
-    const dematPos = rawSnap.demat_position || null;
-
-    let livePrice = technicals.current_price || rawSnap.current_price || rawSnap.price || (rawSnap.financials && rawSnap.financials.price) || 0;
-
-    let dematSanitized = null;
-    if (dematPos && dematPos.is_in_portfolio) {
-      const avgP = dematPos.average_buy_price || 0;
-      let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : null;
-      if (pnlPct !== null && pnlPct <= -99.0) {
-        if (livePrice > 0 && avgP > 0) {
-          pnlPct = Number((((livePrice - avgP) / avgP) * 100).toFixed(1));
-        } else {
-          pnlPct = null;
-        }
-      }
-      dematSanitized = {
-        quantity: dematPos.quantity || 0,
-        average_buy_price: avgP,
-        unrealized_pnl_pct: pnlPct
-      };
-    }
-
-    const bias = a.action_bias || rawSnap.action_bias || a.alert_type || "HOLD_NEUTRAL";
-    let tPrice = rawSnap.tactical_levels?.target_1;
-    let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
-
-    const isDummy100 = (tPrice === "₹100.00" || tPrice === "100.0" || tPrice === "100") &&
-                       (sLoss === "₹100.00" || sLoss === "100.0" || sLoss === "100");
-
-    if (isDummy100 || !tPrice) {
-      tPrice = "-";
-    }
-    if (isDummy100 || !sLoss) {
-      sLoss = "-";
-    }
-
-    const deliveryVal = flowData.delivery_pct != null ? `${flowData.delivery_pct}%` : (rawSnap.delivery_pct != null ? `${rawSnap.delivery_pct}%` : "-");
-    const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "-");
-    const vwapVal = technicals.vwap && technicals.vwap > 0 ? `₹${technicals.vwap}` : (rawSnap.vwap && rawSnap.vwap > 0 ? `₹${rawSnap.vwap}` : "-");
-    const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias)
-      ? String(flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias).replace(/_/g, ' ')
-      : "-";
-    const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
-    const vixVal = macroData.india_vix || rawSnap.india_vix || null;
-
-    const biasUpper = bias.toUpperCase();
-    let sigType = "buy";
-    if (biasUpper.includes("CAPITAL_PRESERVATION") || biasUpper.includes("CAPITAL PRESERVATION")) {
-      sigType = "capital_preservation_exit";
-    } else if (biasUpper.includes("MIS_SHORT") || biasUpper.includes("INTRADAY_MIS")) {
-      sigType = "intraday_mis_short";
-    } else if (biasUpper.includes("SELL")) {
-      sigType = "sell";
-    } else if (biasUpper.includes("TRAILING")) {
-      sigType = "med";
-    } else if ((a.impact_score || 0) >= 80) {
-      sigType = "strong_buy";
-    }
-
-    const hasRealFactors = rawSnap.factor_breakdown &&
-      typeof rawSnap.factor_breakdown === 'object' &&
-      rawSnap.factor_breakdown.technicals != null;
-
-    const resolvedFactors = hasRealFactors ? {
-      technicals: Number(rawSnap.factor_breakdown.technicals),
-      flow: Number(rawSnap.factor_breakdown.flow),
-      forensics: Number(rawSnap.factor_breakdown.forensics),
-      catalysts: Number(rawSnap.factor_breakdown.catalysts)
-    } : null;
-
-    const rawAlertSym = (a.symbol || "").toUpperCase();
-    const cleanAlertSym = rawAlertSym.replace(/\.(BO|NS)$/i, "").trim();
-    const alertExch = rawSnap.exchange || (rawAlertSym.endsWith(".BO") ? "BSE" : "NSE");
-    const compName = rawSnap.company_name || rawSnap.financials?.name || rawSnap.stock_name || cleanAlertSym;
-
-    return {
-      id: a.id,
-      symbol: cleanAlertSym,
-      fullSymbol: rawAlertSym,
-      exchange: alertExch,
-      companyName: compName,
-      impact: a.impact_score != null ? a.impact_score : (a.confluence_score != null ? a.confluence_score : "-"),
-      impactColor: (a.impact_score || 0) >= 80 ? "emerald" : "amber",
-      catalyst: a.catalyst_type || "CATALYST",
-      category: a.catalyst_type?.toLowerCase() || "high",
-      signal: bias.replace(/_/g, " "),
-      signalType: sigType,
-      targetPrice: tPrice,
-      stopLoss: sLoss,
-      title: a.alert_title,
-      reasons: a.factual_reasons || [],
-      metrics: {
-        delivery: deliveryVal,
-        rsi: rsiVal,
-        vwap: vwapVal,
-        flow: oiVal
-      },
-      vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
-      vix: vixVal,
-      dematPosition: dematSanitized,
-      factors: resolvedFactors,
-      entryRange: rawSnap.tactical_levels?.entry_range || "-",
-      riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "-",
-      time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-  }, []);
-
-  const loadAlertsData = useCallback(async (uid: string) => {
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('stok_alerts').select('*').eq('user_id', uid).order('created_at', { ascending: false });
-        if (data && data.length > 0) {
-          setAlerts(data.map(formatAlertRecord));
-          return;
-        }
-      } catch (e) {
-        console.warn("Alerts fetch error:", e);
-      }
-    }
-    setAlerts([]);
-  }, [formatAlertRecord]);
-
-  // Realtime Supabase Alert Channel for instantaneous (<50ms) push notifications
-  useEffect(() => {
-    if (!supabase || !user?.id) return;
-
-    const channel = supabase
-      .channel(`stok-alerts-realtime-${user.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'stok_alerts',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload: any) => {
-          if (payload?.new) {
-            const formatted = formatAlertRecord(payload.new);
-            setAlerts((prev) => [formatted, ...prev.filter(a => a.id !== formatted.id)]);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.id, formatAlertRecord]);
-
-  const loadWatchlistData = useCallback(async (uid: string) => {
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('user_watchlists').select('*').eq('user_id', uid).order('created_at', { ascending: false });
-        if (data && data.length > 0) {
-          const mapWatchlistItems = (rawItems: any[], quotesMap: Record<string, any>) => {
-            return rawItems.map((w: any) => {
-              const rawSym = (w.symbol || "").toUpperCase();
-              const cleanSym = rawSym.replace(/\.(BO|NS)$/i, "").trim();
-              const q = quotesMap[cleanSym] || quotesMap[rawSym] || getCachedClientQuote(cleanSym) || {};
-              const price = q.price !== undefined ? q.price : 0;
-              const rawChg = q.change_pct;
-              const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
-              const isPos = chgPct >= 0;
-              const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
-              const hasRealPrice = price > 0;
-              const hasActiveSignal = hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING" && q.signal !== "HOLD";
-              const signal = hasActiveSignal ? q.signal : "--";
-              const signalType = (hasActiveSignal && q.signal_type) ? q.signal_type : "none";
-              const target = (hasActiveSignal && q.target && q.target !== "--" && q.target !== "₹0") ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`) : "--";
-              const sl = (hasActiveSignal && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0") ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`) : "--";
-
-              return {
-                id: w.id,
-                symbol: cleanSym,
-                fullSymbol: rawSym,
-                exchange: exch,
-                name: q.name || cleanSym,
-                auto: w.is_auto_synced || false,
-                price,
-                chg: hasRealPrice ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
-                isPositive: isPos,
-                signal,
-                signalType,
-                target,
-                sl
-              };
-            });
-          };
-
-          // Step 1: Render immediately from SWR memory cache (< 2ms)
-          setWatchlist(mapWatchlistItems(data, clientQuoteCache));
-
-          // Step 2: Fetch fresh quotes from Next.js API route in background (no dead localhost retries)
-          const symbols = data.map((w: any) => (w.symbol || "").toUpperCase());
-          try {
-            const res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
-              signal: AbortSignal.timeout(3500)
-            });
-            if (res.ok) {
-              const qData = await res.json();
-              const freshQuotes = qData.quotes || {};
-              for (const [k, v] of Object.entries(freshQuotes)) {
-                if (v && typeof v === "object") {
-                  clientQuoteCache[k] = v;
-                  const cleanK = k.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
-                  if (cleanK) clientQuoteCache[cleanK] = v;
-                }
-              }
-              // Smooth in-place state update
-              setWatchlist(mapWatchlistItems(data, clientQuoteCache));
-            }
-          } catch (qErr) {
-            console.warn("Background quotes refresh:", qErr);
-          }
-          return;
-        }
-      } catch (e) {
-        console.warn("Watchlist fetch error:", e);
-      }
-    }
-    setWatchlist([]);
-  }, []);
-
-  const loadProfileData = useCallback(async (uid: string) => {
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
-        if (data) {
-          if (data.alert_sensitivity) setAlertSensitivity(data.alert_sensitivity.toUpperCase() as any);
-          if (data.execution_mode) setExecutionMode(data.execution_mode.toUpperCase() as any);
-          if (data.fcm_enabled !== undefined) setFcmEnabled(Boolean(data.fcm_enabled));
-          if (data.demat_auto_sync !== undefined) setDematAutoSync(Boolean(data.demat_auto_sync));
-          if (data.telegram_chat_id) setTelegramChatId(data.telegram_chat_id);
-          if (data.telegram_enabled !== undefined) setTelegramEnabled(Boolean(data.telegram_enabled));
-        }
-      } catch (e) {
-        console.warn("Profile load error:", e);
-      }
-    }
-  }, []);
-
-  const toggleDematAutoSync = async (val: boolean) => {
-    setDematAutoSync(val);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("stokvigil_demat_auto_sync", String(val));
-    }
-    await updatePreference("demat_auto_sync", val);
-    if (val && user?.id) {
-      loadPortfolioData(user.id);
-    }
-  };
-
-  const toggleFcm = async (val: boolean) => {
-    setFcmEnabled(val);
-    if (val && typeof window !== "undefined" && "Notification" in window) {
-      if (Notification.permission === "default") {
-        try {
-          await Notification.requestPermission();
-        } catch (e) {
-          console.warn("Notification permission request error:", e);
-        }
-      }
-    }
-    await updatePreference("fcm_enabled", val);
-  };
-
-  const updatePreference = async (key: string, val: any) => {
-    if (!user?.id) return;
-    if (supabase) {
-      try {
-        await supabase.from('profiles').update({ [key]: val, updated_at: new Date().toISOString() }).eq('id', user.id);
-      } catch (e) {
-        console.warn("Update profile preference in Supabase error:", e);
-      }
-    }
-    try {
-      const headers = await getAuthHeaders();
-      await fetch(`${BACKEND_URL}/api/auth/register-device`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          user_id: user.id,
-          [key]: val,
-        })
-      });
-    } catch (e) {
-      console.warn("Update profile preference via API error:", e);
-    }
-  };
-
-  const openKeyModal = useCallback(async () => {
-    setShowKeyModal(true);
-    let uid = user?.id;
-    if (!uid && supabase) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        uid = session?.user?.id;
-      } catch (_) {}
-    }
-    if (uid) {
-      loadPortfolioData(uid);
-    }
-    try {
-      const headers = await getAuthHeaders();
-      const base = BACKEND_URL ? BACKEND_URL.replace(/\/+$/, '') : '';
-      let res = await fetch(`${base}/api/broker/icici/login-url`, { headers });
-      if (!res.ok && base) {
-        res = await fetch(`/api/broker/icici/login-url`, { headers });
-      }
-      if (res.ok) {
-        const d = await res.json();
-        if (d.login_url) setBrokerLoginUrl(d.login_url);
-      }
-    } catch (err) {
-      console.warn("Could not load broker login URL:", err);
-    }
-  }, [user?.id, loadPortfolioData, getAuthHeaders]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedAutoSync = localStorage.getItem("stokvigil_demat_auto_sync");
-      if (savedAutoSync !== null) setDematAutoSync(savedAutoSync === "true");
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      let sessionParam = "";
-      let foundKey = "";
-
-      for (const [key, val] of params.entries()) {
-        if (key.toLowerCase() === "apisession" && val.trim()) {
-          sessionParam = val.trim();
-          foundKey = key;
-          break;
-        }
-      }
-
-      if (!sessionParam) {
-        try {
-          sessionParam = sessionStorage.getItem("stokvigil_pending_apisession") || "";
-          if (sessionParam) {
-            sessionStorage.removeItem("stokvigil_pending_apisession");
-          }
-        } catch (_) {}
-      }
-
-      if (sessionParam) {
-        setSessionTok(sessionParam);
-        openKeyModal();
-        // Immediately scrub the sensitive session token from the browser URL address bar and history
-        if (foundKey) {
-          params.delete(foundKey);
-          const remaining = params.toString();
-          const cleanUrl = window.location.pathname + (remaining ? `?${remaining}` : "") + window.location.hash;
-          window.history.replaceState({}, document.title, cleanUrl);
-        }
-      }
-    }
-  }, [openKeyModal]);
-
-  useEffect(() => {
-    if (showKeyModal && user?.id) {
-      loadPortfolioData(user.id);
-    }
-  }, [showKeyModal, user?.id, loadPortfolioData]);
-
-  useEffect(() => {
-    if (!supabase) return;
-
-    const handleSession = (session: any) => {
-      if (session?.user) {
-        setAuthToken(session?.access_token || "");
-        const u = {
-          id: session.user.id,
-          name: session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Investor",
-          email: session.user.email || ""
-        };
-        setUser(u);
-        setScreen("app");
-
-        if (lastLoadedUidRef.current !== session.user.id) {
-          lastLoadedUidRef.current = session.user.id;
-          loadPortfolioData(session.user.id);
-          loadAlertsData(session.user.id);
-          loadWatchlistData(session.user.id);
-          loadProfileData(session.user.id);
-        }
-      } else {
-        setAuthToken("");
-        lastLoadedUidRef.current = null;
-        setUser(null);
-        setScreen("auth");
-      }
-    };
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSession(session);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [loadPortfolioData, loadAlertsData, loadWatchlistData, loadProfileData]);
-
-  const doAuth = async () => {
-    if (!tncAccepted) { setShowTnc(true); return; }
-    setLoading(true);
-    setAuthError(null);
-    setAuthSuccess(null);
-
-    if (supabase) {
-      try {
-        if (authTab === "signup") {
-          const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-            options: { data: { full_name: name } }
-          });
-          if (error) throw error;
-          if (data.session) {
-            setUser({ id: data.user?.id, name: name || email.split("@")[0], email });
-            setScreen("app");
-          } else {
-            setAuthSuccess("✉️ Verification link sent! Please check your email inbox to activate your account.");
-          }
-        } else {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-          if (error) throw error;
-          if (data.user) {
-            setUser({
-              id: data.user.id,
-              name: data.user.user_metadata?.full_name || email.split("@")[0],
-              email: data.user.email || email
-            });
-            setScreen("app");
-          }
-        }
-      } catch (err: any) {
-        setAuthError(err.message || "Authentication failed.");
-      } finally {
-        setLoading(false);
-      }
-      return;
-    }
-
-    setTimeout(() => {
-      const fallbackId = "user_" + (email ? email.replace(/[^a-zA-Z0-9]/g, '_') : "investor");
-      setUser({ id: fallbackId, name: name || (email.split("@")[0]) || "Investor", email: email || "investor@gmail.com" });
-      setScreen("app");
-      setLoading(false);
-      loadPortfolioData(fallbackId);
-    }, 900);
-  };
-
-  const doGoogleOAuth = async () => {
-    if (!tncAccepted) { setShowTnc(true); return; }
-    if (supabase) {
-      try {
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: { redirectTo: window.location.origin }
-        });
-      } catch (err: any) {
-        setAuthError(err.message || "Google OAuth failed.");
-      }
-      return;
-    }
-    setLoading(true);
-    setTimeout(() => {
-      const fallbackId = "user_google_investor";
-      setUser({ id: fallbackId, name: "Google Investor", email: "google.user@gmail.com" });
-      setScreen("app");
-      setLoading(false);
-      loadPortfolioData(fallbackId);
-    }, 900);
-  };
-
-  const saveKey = async () => {
-    setKeySaving(true);
-    const cleanSessionTok = sessionTok.trim();
-
-    let currentUserId = user?.id;
-    if (!currentUserId && supabase) {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        currentUserId = session?.user?.id;
-      } catch (_) {}
-    }
-
-    if (currentUserId) {
-      try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`/api/user/credentials`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            user_id: currentUserId,
-            session_token: cleanSessionTok,
-            broker: selectedBroker || "icici"
-          })
-        });
-        if (res.ok) {
-          setHasCredentials(true);
-        }
-      } catch (e) {
-        console.warn("Backend save key error:", e);
-      }
-
-      loadPortfolioData(currentUserId);
-    }
-
-    setKeySaved(true);
-    setKeySaving(false);
-    setTimeout(() => { setShowKeyModal(false); setKeySaved(false); }, 1200);
-  };
-
-  const doDeleteAccount = async () => {
-    if (deleteConfirmText.trim() !== "DELETE" || !user?.id) return;
-    setIsDeletingAccount(true);
-    try {
-      const headers = await getAuthHeaders();
-      await fetch(`${BACKEND_URL}/api/user/delete-account`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ user_id: user.id })
-      });
-      if (supabase) {
-        await supabase.from("user_credentials").delete().eq("user_id", user.id);
-        await supabase.from("user_watchlists").delete().eq("user_id", user.id);
-        await supabase.from("user_devices").delete().eq("user_id", user.id);
-      }
-    } catch (e) {
-      console.warn("Delete account error:", e);
-    }
-    await doSignOut();
-    setIsDeletingAccount(false);
-    setShowDeleteModal(false);
-    alert("✅ Your account and all associated data have been permanently deleted.");
-  };
-
-  const handleStockChange = (val: string) => {
-    setTicker(val);
-    const q = val.trim();
-    if (!q) {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-      setTickerSuggestions([]);
-      return;
-    }
-
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    searchTimerRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/stocks/search?q=${encodeURIComponent(q)}`, {
-          signal: AbortSignal.timeout(30000)
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setTickerSuggestions(data.stocks || []);
-        }
-      } catch (e) {
-        console.warn("Dynamic stock search error:", e);
-      }
-    }, 300);
-  };
-
-  const addStock = async (explicitSym?: string, explicitName?: string) => {
-    const raw = (explicitSym || ticker).trim().toUpperCase();
-    if (!raw) return;
-
-    let isValid = false;
-    let isTimeout = false;
-    let stockName = explicitName || raw;
-
-    if (raw.length < 2) {
-      alert(`⚠️ '${raw}' is too short. Please enter a valid NSE or BSE stock symbol.`);
-      return;
-    }
-
-    let livePrice = 0;
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`, {
-        signal: AbortSignal.timeout(30000)
-      });
-      if (res.ok) {
-        const valData = await res.json();
-        if (valData.is_valid === true) {
-          isValid = true;
-          if (valData.name) stockName = valData.name;
-          if (valData.price) livePrice = Number(valData.price);
-        } else if (valData.is_timeout) {
-          isTimeout = true;
-        }
-      }
-    } catch (e: any) {
-      if (e?.name === 'TimeoutError' || e?.name === 'AbortError') {
-        isTimeout = true;
-      }
-      console.warn("Stock validation error:", e);
-      isValid = false;
-    }
-
-    if (isTimeout) {
-      alert(`⏳ Connection to exchange timed out for '${raw}'. Please check your connection and try again.`);
-      return;
-    }
-
-    if (!isValid) {
-      alert(`⚠️ '${raw}' is not a recognized or actively traded stock on NSE or BSE.\n\nPlease select from the live search suggestions.`);
-      return;
-    }
-
-    setTickerSuggestions([]);
-    setTicker("");
-
-    const isBse = raw.toUpperCase().endsWith('.BO') || /^\d{6}$/.test(raw.trim());
-    let cleanRaw = raw.trim().toUpperCase();
-    if (cleanRaw.endsWith('.NS')) {
-      cleanRaw = cleanRaw.replace(/\.NS$/i, "").trim();
-    }
-    // Universal Canonical Suffix Rule: NSE bare, BSE preserves .BO or 6-digit scrip
-    const dbSymbol = isBse ? (cleanRaw.endsWith('.BO') || /^\d{6}$/.test(cleanRaw) ? cleanRaw : `${cleanRaw}.BO`) : cleanRaw;
-    const displaySymbol = cleanRaw.replace(/\.BO$/i, "").trim();
-
-    if (user?.id && supabase) {
-      setWatchlist(prev => [
-        {
-          id: Date.now().toString(),
-          symbol: displaySymbol,
-          fullSymbol: dbSymbol,
-          exchange: isBse ? 'BSE' : 'NSE',
-          name: stockName && stockName !== raw ? stockName : displaySymbol,
-          auto: false,
-          price: livePrice,
-          chg: livePrice > 0 ? "+0.00%" : "--",
-          isPositive: true,
-          signal: "--",
-          signalType: "none",
-          target: "--",
-          sl: "--"
-        },
-        ...prev.filter(p => p.symbol !== displaySymbol && p.fullSymbol !== dbSymbol)
-      ]);
-
-      await supabase.from('user_watchlists').upsert({
-        user_id: user.id,
-        symbol: dbSymbol,
-        is_auto_synced: false
-      }, { onConflict: 'user_id,symbol' });
-      loadWatchlistData(user.id);
-    } else {
-      setWatchlist(prev => [
-        {
-          id: Date.now().toString(),
-          symbol: displaySymbol,
-          fullSymbol: dbSymbol,
-          exchange: isBse ? 'BSE' : 'NSE',
-          name: stockName && stockName !== raw ? stockName : displaySymbol,
-          auto: false,
-          price: livePrice,
-          chg: livePrice > 0 ? "+0.00%" : "--",
-          isPositive: true,
-          signal: "--",
-          signalType: "none",
-          target: "--",
-          sl: "--"
-        },
-        ...prev.filter(p => p.symbol !== displaySymbol && p.fullSymbol !== dbSymbol)
-      ]);
-    }
-  };
-
-  const removeTicker = async (id: string) => {
-    setWatchlist(prev => prev.filter(w => w.id !== id));
-    if (user?.id && supabase) {
-      await supabase.from('user_watchlists').delete().eq('id', id);
-    }
-  };
-
+  // Trade Execution Handler
   const executeTrade = async () => {
     if (!tradeData) return;
     setOrderSending(true);
-    if (user?.id) {
+    if (auth.user?.id) {
       try {
-        const headers = await getAuthHeaders();
-        const idempotencyKey = `${user.id}-${tradeData.symbol}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const headers = await auth.getAuthHeaders();
+        const idempotencyKey = `${auth.user.id}-${tradeData.symbol}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const res = await fetch(`${BACKEND_URL}/api/v1/orders/place`, {
           method: "POST",
           headers: {
@@ -933,7 +131,7 @@ export default function App() {
             "X-Idempotency-Key": idempotencyKey
           },
           body: JSON.stringify({
-            user_id: user.id,
+            user_id: auth.user.id,
             symbol: tradeData.symbol,
             action: tradeData.type,
             order_type: orderType,
@@ -958,35 +156,6 @@ export default function App() {
     }
     setOrderSending(false);
     setOrderSent(true);
-  };
-
-  const doSignOut = async () => {
-    if (supabase) {
-      await supabase.auth.signOut();
-    }
-    setUser(null);
-    setScreen("auth");
-  };
-
-  const rootStyle: React.CSSProperties = {
-    minHeight: "100vh",
-    background: "#060812",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "0",
-  };
-
-  const phoneStyle: React.CSSProperties = {
-    width: "100%",
-    maxWidth: 430,
-    height: "100vh",
-    maxHeight: "100vh",
-    background: C.bg,
-    display: "flex",
-    flexDirection: "column",
-    position: "relative",
-    overflow: "hidden",
   };
 
   const handlePlaceOrderFromStock = (stock: HoldingItem) => {
@@ -1028,29 +197,29 @@ export default function App() {
   // ─────────────────────────────────────────────
   // AUTHENTICATION SCREEN
   // ─────────────────────────────────────────────
-  if (screen === "auth") {
+  if (auth.screen === "auth") {
     return (
       <AuthScreen
-        authTab={authTab}
-        setAuthTab={setAuthTab}
-        doGoogleOAuth={doGoogleOAuth}
-        name={name}
-        setName={setName}
-        email={email}
-        setEmail={setEmail}
-        password={password}
-        setPassword={setPassword}
-        showAuthPassword={showAuthPassword}
-        setShowAuthPassword={setShowAuthPassword}
-        setShowForgotModal={setShowForgotModal}
-        tncAccepted={tncAccepted}
-        setTncAccepted={setTncAccepted}
-        showTnc={showTnc}
-        setShowTnc={setShowTnc}
-        authError={authError}
-        authSuccess={authSuccess}
-        doAuth={doAuth}
-        loading={loading}
+        authTab={auth.authTab}
+        setAuthTab={auth.setAuthTab}
+        doGoogleOAuth={auth.doGoogleOAuth}
+        name={auth.name}
+        setName={auth.setName}
+        email={auth.email}
+        setEmail={auth.setEmail}
+        password={auth.password}
+        setPassword={auth.setPassword}
+        showAuthPassword={auth.showAuthPassword}
+        setShowAuthPassword={auth.setShowAuthPassword}
+        setShowForgotModal={auth.setShowForgotModal}
+        tncAccepted={auth.tncAccepted}
+        setTncAccepted={auth.setTncAccepted}
+        showTnc={auth.showTnc}
+        setShowTnc={auth.setShowTnc}
+        authError={auth.authError}
+        authSuccess={auth.authSuccess}
+        doAuth={auth.doAuth}
+        loading={auth.loading}
       />
     );
   }
@@ -1058,8 +227,29 @@ export default function App() {
   // ─────────────────────────────────────────────
   // MAIN AUTHENTICATED APP VIEW
   // ─────────────────────────────────────────────
+  const rootStyle: React.CSSProperties = {
+    minHeight: "100vh",
+    background: "#060812",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0",
+  };
+
+  const phoneStyle: React.CSSProperties = {
+    width: "100%",
+    maxWidth: 430,
+    height: "100vh",
+    maxHeight: "100vh",
+    background: C.bg,
+    display: "flex",
+    flexDirection: "column",
+    position: "relative",
+    overflow: "hidden",
+  };
+
   const headerH = 60;
-  const navH    = 64;
+  const navH = 64;
 
   const NavItem = ({ id, label, icon }: { id: typeof tab; label: string; icon: (active: boolean, color: string) => React.ReactNode }) => {
     const isActive = tab === id;
@@ -1120,7 +310,7 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={openKeyModal} style={{
+            <button onClick={portfolio.openKeyModal} style={{
               background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
               borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 5,
@@ -1128,7 +318,7 @@ export default function App() {
               🔑 Key Active
             </button>
             <button
-              onClick={() => { setScreen("auth"); setUser(null); setTncAccepted(false); }}
+              onClick={() => { auth.setScreen("auth"); auth.setUser(null); auth.setTncAccepted(false); }}
               title="Sign Out"
               style={{
                 background: "rgba(239,68,68,0.1)", border: `1px solid rgba(239,68,68,0.25)`,
@@ -1150,17 +340,17 @@ export default function App() {
           {/* HOME PORTFOLIO TAB */}
           {tab === "home" && (
             <HomeTab
-              user={user}
+              user={auth.user}
               fiiDiiFlows={fiiDiiFlows}
-              isPortfolioVisible={isPortfolioVisible}
-              setIsPortfolioVisible={setIsPortfolioVisible}
-              totalValue={totalValue}
-              totalInvested={totalInvested}
-              totalPnl={totalPnl}
-              totalPnlPct={totalPnlPct}
-              hasCredentials={hasCredentials}
-              holdings={holdings}
-              openKeyModal={openKeyModal}
+              isPortfolioVisible={portfolio.isPortfolioVisible}
+              setIsPortfolioVisible={portfolio.setIsPortfolioVisible}
+              totalValue={portfolio.totalValue}
+              totalInvested={portfolio.totalInvested}
+              totalPnl={portfolio.totalPnl}
+              totalPnlPct={portfolio.totalPnlPct}
+              hasCredentials={portfolio.hasCredentials}
+              holdings={portfolio.holdings}
+              openKeyModal={portfolio.openKeyModal}
               setSelectedStock={setSelectedStock}
             />
           )}
@@ -1168,30 +358,30 @@ export default function App() {
           {/* ALERTS TAB WITH FILTER PILLS */}
           {tab === "alerts" && (
             <AlertsTab
-              alerts={alerts}
-              alertFilter={alertFilter}
-              setAlertFilter={setAlertFilter}
+              alerts={alerts.alerts}
+              alertFilter={alerts.alertFilter}
+              setAlertFilter={alerts.setAlertFilter}
               setTab={setTab}
-              expandedRadarId={expandedRadarId}
-              setExpandedRadarId={setExpandedRadarId}
+              expandedRadarId={alerts.expandedRadarId}
+              setExpandedRadarId={alerts.setExpandedRadarId}
               setChartingSymbol={setChartingSymbol}
-              setSharingAlert={setSharingAlert}
+              setSharingAlert={alerts.setSharingAlert}
             />
           )}
 
           {/* WATCHLIST TAB */}
           {tab === "watchlist" && (
             <WatchlistTab
-              watchlist={watchlist}
-              holdings={holdings}
-              dematAutoSync={dematAutoSync}
-              toggleDematAutoSync={toggleDematAutoSync}
-              ticker={ticker}
-              handleStockChange={handleStockChange}
-              tickerSuggestions={tickerSuggestions}
-              setTickerSuggestions={setTickerSuggestions}
-              addStock={addStock}
-              removeTicker={removeTicker}
+              watchlist={watchlist.watchlist}
+              holdings={portfolio.holdings}
+              dematAutoSync={portfolio.dematAutoSync}
+              toggleDematAutoSync={portfolio.toggleDematAutoSync}
+              ticker={watchlist.ticker}
+              handleStockChange={watchlist.handleStockChange}
+              tickerSuggestions={watchlist.tickerSuggestions}
+              setTickerSuggestions={watchlist.setTickerSuggestions}
+              addStock={watchlist.addStock}
+              removeTicker={watchlist.removeTicker}
               onOpenTradeModal={handleOpenTradeModalFromWatchlist}
             />
           )}
@@ -1199,25 +389,25 @@ export default function App() {
           {/* SETTINGS TAB */}
           {tab === "settings" && (
             <SettingsTab
-              user={user}
-              openKeyModal={openKeyModal}
-              executionMode={executionMode}
-              setExecutionMode={setExecutionMode}
-              updatePreference={updatePreference}
-              telegramChatId={telegramChatId}
-              setTelegramChatId={setTelegramChatId}
-              telegramSaved={telegramSaved}
-              setTelegramSaved={setTelegramSaved}
-              setTelegramEnabled={setTelegramEnabled}
-              alertSensitivity={alertSensitivity}
-              setAlertSensitivity={setAlertSensitivity}
-              fcmEnabled={fcmEnabled}
-              toggleFcm={toggleFcm}
-              setForgotEmail={setForgotEmail}
-              setShowForgotModal={setShowForgotModal}
-              setDeleteConfirmText={setDeleteConfirmText}
-              setShowDeleteModal={setShowDeleteModal}
-              doSignOut={doSignOut}
+              user={auth.user}
+              openKeyModal={portfolio.openKeyModal}
+              executionMode={portfolio.executionMode}
+              setExecutionMode={portfolio.setExecutionMode}
+              updatePreference={portfolio.updatePreference}
+              telegramChatId={portfolio.telegramChatId}
+              setTelegramChatId={portfolio.setTelegramChatId}
+              telegramSaved={portfolio.telegramSaved}
+              setTelegramSaved={portfolio.setTelegramSaved}
+              setTelegramEnabled={portfolio.setTelegramEnabled}
+              alertSensitivity={portfolio.alertSensitivity}
+              setAlertSensitivity={portfolio.setAlertSensitivity}
+              fcmEnabled={portfolio.fcmEnabled}
+              toggleFcm={portfolio.toggleFcm}
+              setForgotEmail={auth.setForgotEmail}
+              setShowForgotModal={auth.setShowForgotModal}
+              setDeleteConfirmText={auth.setDeleteConfirmText}
+              setShowDeleteModal={auth.setShowDeleteModal}
+              doSignOut={auth.doSignOut}
               onOpenLedger={() => setTab("ledger")}
               onOpenBacktest={() => setTab("backtest")}
             />
@@ -1233,7 +423,7 @@ export default function App() {
           {/* STRATEGY BACKTESTER TAB */}
           {tab === "backtest" && (
             <div className="anim-fadeup" style={{ paddingBottom: 24 }}>
-              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("settings")} authToken={authToken} />
+              <BacktestView initialSymbol={backtestSymbol} onBack={() => setTab("settings")} authToken={auth.authToken} />
             </div>
           )}
         </DraggableVerticalCanvas>
@@ -1300,17 +490,17 @@ export default function App() {
         )}
 
         {/* ICICI Key Setup Modal */}
-        {showKeyModal && (
+        {portfolio.showKeyModal && (
           <IciciKeyModal
-            onClose={() => setShowKeyModal(false)}
-            sessionTok={sessionTok}
-            setSessionTok={setSessionTok}
-            keySaved={keySaved}
-            keySaving={keySaving}
-            saveKey={saveKey}
-            loginUrl={brokerLoginUrl}
-            selectedBroker={selectedBroker}
-            setSelectedBroker={setSelectedBroker}
+            onClose={() => portfolio.setShowKeyModal(false)}
+            sessionTok={portfolio.sessionTok}
+            setSessionTok={portfolio.setSessionTok}
+            keySaved={portfolio.keySaved}
+            keySaving={portfolio.keySaving}
+            saveKey={portfolio.saveKey}
+            loginUrl={portfolio.brokerLoginUrl}
+            selectedBroker={portfolio.selectedBroker}
+            setSelectedBroker={portfolio.setSelectedBroker}
           />
         )}
 
@@ -1336,51 +526,51 @@ export default function App() {
         )}
 
         {/* GLOBAL FORGOT / CHANGE PASSWORD MODAL */}
-        {showForgotModal && (
+        {auth.showForgotModal && (
           <PasswordModal
-            user={user}
+            user={auth.user}
             onClose={() => {
-              setShowForgotModal(false);
-              setForgotSent(false);
-              setNewPasswordDone(false);
-              setNewPassword("");
-              setNewPasswordError(null);
+              auth.setShowForgotModal(false);
+              auth.setForgotSent(false);
+              auth.setNewPasswordDone(false);
+              auth.setNewPassword("");
+              auth.setNewPasswordError(null);
             }}
-            forgotEmail={forgotEmail}
-            setForgotEmail={setForgotEmail}
-            forgotSent={forgotSent}
-            setForgotSent={setForgotSent}
-            forgotLoading={forgotLoading}
-            setForgotLoading={setForgotLoading}
-            newPassword={newPassword}
-            setNewPassword={setNewPassword}
-            newPasswordDone={newPasswordDone}
-            setNewPasswordDone={setNewPasswordDone}
-            newPasswordLoading={newPasswordLoading}
-            setNewPasswordLoading={setNewPasswordLoading}
-            newPasswordError={newPasswordError}
-            setNewPasswordError={setNewPasswordError}
-            showNewPassword={showNewPassword}
-            setShowNewPassword={setShowNewPassword}
+            forgotEmail={auth.forgotEmail}
+            setForgotEmail={auth.setForgotEmail}
+            forgotSent={auth.forgotSent}
+            setForgotSent={auth.setForgotSent}
+            forgotLoading={auth.forgotLoading}
+            setForgotLoading={auth.setForgotLoading}
+            newPassword={auth.newPassword}
+            setNewPassword={auth.setNewPassword}
+            newPasswordDone={auth.newPasswordDone}
+            setNewPasswordDone={auth.setNewPasswordDone}
+            newPasswordLoading={auth.newPasswordLoading}
+            setNewPasswordLoading={auth.setNewPasswordLoading}
+            newPasswordError={auth.newPasswordError}
+            setNewPasswordError={auth.setNewPasswordError}
+            showNewPassword={auth.showNewPassword}
+            setShowNewPassword={auth.setShowNewPassword}
           />
         )}
 
         {/* GLOBAL DELETE ACCOUNT MODAL */}
-        {showDeleteModal && (
+        {auth.showDeleteModal && (
           <DeleteAccountModal
-            onClose={() => setShowDeleteModal(false)}
-            deleteConfirmText={deleteConfirmText}
-            setDeleteConfirmText={setDeleteConfirmText}
-            doDeleteAccount={doDeleteAccount}
-            isDeletingAccount={isDeletingAccount}
+            onClose={() => auth.setShowDeleteModal(false)}
+            deleteConfirmText={auth.deleteConfirmText}
+            setDeleteConfirmText={auth.setDeleteConfirmText}
+            doDeleteAccount={auth.doDeleteAccount}
+            isDeletingAccount={auth.isDeletingAccount}
           />
         )}
 
         {/* PHASE 1: 1-TAP SHAREABLE ALPHA CARD MODAL */}
-        {sharingAlert && (
+        {alerts.sharingAlert && (
           <ShareAlphaCardModal
-            alert={sharingAlert}
-            onClose={() => setSharingAlert(null)}
+            alert={alerts.sharingAlert}
+            onClose={() => alerts.setSharingAlert(null)}
           />
         )}
 

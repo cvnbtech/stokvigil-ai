@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import 'config/theme.dart';
 import 'screens/auth_screen.dart';
 import 'screens/icici_credentials_screen.dart';
@@ -11,12 +12,22 @@ import 'screens/notification_settings_screen.dart';
 import 'screens/watchlist_screen.dart';
 import 'services/supabase_service.dart';
 import 'services/fcm_service.dart';
+import 'providers/watchlist_provider.dart';
+import 'providers/alerts_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
   await FcmService().initialize();
-  runApp(const StokVigilApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => WatchlistProvider()),
+        ChangeNotifierProvider(create: (_) => AlertsProvider()),
+      ],
+      child: const StokVigilApp(),
+    ),
+  );
 }
 
 class StokVigilApp extends StatelessWidget {
@@ -49,14 +60,33 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkInitialDeepLink();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _initializeProviders();
+      }
+    });
+
     if (SupabaseService.isConfigured) {
       _authSubscription = SupabaseService().client.auth.onAuthStateChange.listen((data) {
         if (mounted) {
           setState(() {
             _currentIndex = 0;
           });
+          _initializeProviders();
         }
       });
+    }
+  }
+
+  void _initializeProviders() {
+    final user = SupabaseService().currentUser;
+    if (user != null) {
+      context.read<WatchlistProvider>().initialize(user.id);
+      context.read<AlertsProvider>().initialize(user.id);
+    } else {
+      context.read<WatchlistProvider>().clear();
+      context.read<AlertsProvider>().clear();
     }
   }
 
@@ -134,6 +164,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
       return AuthScreen(
         onLoginSuccess: () {
           setState(() {});
+          _initializeProviders();
         },
       );
     }
@@ -216,7 +247,7 @@ class _MainNavigationWrapperState extends State<MainNavigationWrapper> with Widg
               ),
             ),
             const SizedBox(height: 4),
-            // Glowing Indicator Pill (Matches User Screenshot)
+            // Glowing Indicator Pill
             if (isSelected)
               Container(
                 width: 24,
