@@ -349,7 +349,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
     final user = SupabaseService().currentUser;
     if (user != null) {
-      final ok = await SupabaseService().addToWatchlist(sym);
+      final ok = await SupabaseService().addToWatchlist(sym, exchange: exchange);
       if (ok) {
         if (mounted) {
           ErrorHandler.showSuccessSnackBar(context, "✅ $sym ($name) added to watchlist!");

@@ -462,12 +462,16 @@ Every broker adapter inherits from `BaseBrokerAdapter` in `backend/app/brokers/b
 3. **`user_watchlists`** (Enhanced via `20261004_persist_demat_cost_basis.sql`):
    - `id` (UUID PK)
    - `user_id` (UUID, references `auth.users`)
-   - `symbol` (TEXT)
+   - `symbol` (TEXT) — **Universal Canonical Suffix Rule**:
+     - **NSE Equities**: `.NS` suffix is strictly stripped $\rightarrow$ stored as bare uppercase symbol (e.g., `RELIANCE`, `TCS`, `INFY`).
+     - **BSE Equities**: `.BO` suffix is strictly preserved (e.g., `RELIANCE.BO`, `500325.BO`), or 6-digit numeric scrips (`500325`).
+     - **Payload Deduplication**: Ingestion across Web Portal, Mobile App, and Demat Auto-Sync deduplicates keys in memory before calling Supabase `.upsert(..., on_conflict="user_id,symbol")` to prevent PostgreSQL duplicate row collisions.
    - `is_auto_synced` (BOOLEAN DEFAULT FALSE)
    - `average_buy_price` (NUMERIC DEFAULT NULL) — Demat Cost Basis Persistence
    - `quantity` (INTEGER DEFAULT NULL)
    - `last_synced_at` (TIMESTAMPTZ DEFAULT NOW())
    - `created_at` (TIMESTAMPTZ)
+   - Unique Constraint: `UNIQUE(user_id, symbol)`
    - Index: `idx_watchlists_user_auto_sync ON user_watchlists(user_id, is_auto_synced)`
 4. **`stok_alerts`**:
    - `id` (UUID PK)

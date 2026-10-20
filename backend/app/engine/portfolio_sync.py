@@ -16,6 +16,25 @@ _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
 _DEMAT_PORTFOLIO_CACHE_TTL: float = 14400.0  # 4 hours
 
 
+def normalize_watchlist_symbol(symbol: str, exchange: Optional[str] = None) -> str:
+    """
+    Standardizes a ticker symbol for database storage in user_watchlists table:
+    - NSE equities: Suffix .NS is stripped -> bare symbol (e.g. 'RELIANCE', 'TCS').
+    - BSE equities: Suffix .BO is preserved (e.g. 'RELIANCE.BO', '500325.BO'),
+      or 6-digit numeric BSE scrip code (e.g. '500325').
+      If exchange is BSE and no .BO suffix, appends .BO (unless 6-digit).
+    """
+    clean = str(symbol or "").strip().upper()
+    if not clean:
+        return ""
+    if clean.endswith(".NS"):
+        clean = clean[:-3]
+    if exchange and str(exchange).upper() == "BSE":
+        if not clean.endswith(".BO") and not (clean.isdigit() and len(clean) == 6):
+            clean = f"{clean}.BO"
+    return clean
+
+
 def resolve_isin_to_nse_symbol(isin: str, fallback_code: str = "") -> str:
     """
     Dynamically resolves any Indian stock ISIN (e.g. INE750C01026) or 6-digit BSE scrip code (e.g. 500325)
@@ -163,8 +182,12 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 return None
             raw_code = item.get('stock_code') or item.get('symbol') or item.get('stock_name') or ''
             isin_code = item.get('stock_ISIN') or item.get('isin') or ''
+            raw_exch = str(item.get('exchange_code') or item.get('exchange') or '').upper()
             clean_symbol = resolve_isin_to_nse_symbol(isin_code, fallback_code=raw_code)
-            
+            is_bse = clean_symbol.endswith(".BO") or raw_exch == "BSE" or (clean_symbol.replace(".BO", "").isdigit() and len(clean_symbol.replace(".BO", "")) == 6)
+            clean_symbol = normalize_watchlist_symbol(clean_symbol, exchange="BSE" if is_bse else "NSE")
+            bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+
             try:
                 qty = float(item.get('quantity') or item.get('demat_total_bulk_quantity') or item.get('demat_avail_quantity') or 0)
             except (ValueError, TypeError):
@@ -184,8 +207,6 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
                 cmp = 0.0
 
             stock_name = str(item.get('stock_name') or item.get('company_name') or item.get('stock_description') or '').strip()
-            bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
-            is_bse = clean_symbol.endswith(".BO") or str(item.get('exchange_code', '')).upper() == "BSE" or (bare_symbol.isdigit() and len(bare_symbol) == 6)
 
             if clean_symbol and qty > 0:
                 return {

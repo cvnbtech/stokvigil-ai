@@ -196,15 +196,32 @@ class SupabaseService {
     }
   }
 
-  Future<bool> addToWatchlist(String symbol, {bool isAutoSynced = false}) async {
+  static String normalizeSymbol(String raw, [String? exchange]) {
+    String clean = raw.trim().toUpperCase();
+    if (clean.isEmpty) return clean;
+    if (clean.endsWith('.NS')) {
+      clean = clean.substring(0, clean.length - 3);
+    }
+    final isSixDigit = RegExp(r'^\d{6}$').hasMatch(clean);
+    if (exchange != null && exchange.toUpperCase() == 'BSE') {
+      if (!clean.endsWith('.BO') && !isSixDigit) {
+        clean = '$clean.BO';
+      }
+    }
+    return clean;
+  }
+
+  Future<bool> addToWatchlist(String symbol, {String? exchange, bool isAutoSynced = false}) async {
     final user = currentUser;
     if (user == null || !isConfigured) return false;
+    final normalized = normalizeSymbol(symbol, exchange);
+    if (normalized.isEmpty) return false;
     try {
       await client.from('user_watchlists').upsert({
         'user_id': user.id,
-        'symbol': symbol.toUpperCase(),
+        'symbol': normalized,
         'is_auto_synced': isAutoSynced,
-      });
+      }, onConflict: 'user_id,symbol');
       return true;
     } catch (e) {
       debugPrint("Error adding to watchlist: $e");
@@ -216,14 +233,18 @@ class SupabaseService {
     final user = currentUser;
     if (user == null || !isConfigured || symbols.isEmpty) return false;
     try {
-      final records = symbols
-          .where((s) => s.trim().isNotEmpty)
-          .map((s) => {
-                'user_id': user.id,
-                'symbol': s.trim().toUpperCase(),
-                'is_auto_synced': isAutoSynced,
-              })
-          .toList();
+      final Map<String, Map<String, dynamic>> deduped = {};
+      for (final s in symbols) {
+        final norm = normalizeSymbol(s);
+        if (norm.isNotEmpty && !deduped.containsKey(norm)) {
+          deduped[norm] = {
+            'user_id': user.id,
+            'symbol': norm,
+            'is_auto_synced': isAutoSynced,
+          };
+        }
+      }
+      final records = deduped.values.toList();
       if (records.isEmpty) return true;
       await client.from('user_watchlists').upsert(
         records,
@@ -245,7 +266,8 @@ class SupabaseService {
         return true;
       }
       if (symbol != null && symbol.isNotEmpty) {
-        await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', symbol.toUpperCase());
+        final norm = normalizeSymbol(symbol);
+        await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', norm);
         return true;
       }
       return true;
@@ -253,7 +275,8 @@ class SupabaseService {
       debugPrint("Error removing from watchlist by ID: $e");
       if (symbol != null && symbol.isNotEmpty) {
         try {
-          await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', symbol.toUpperCase());
+          final norm = normalizeSymbol(symbol);
+          await client.from('user_watchlists').delete().eq('user_id', user.id).eq('symbol', norm);
           return true;
         } catch (e2) {
           debugPrint("Fallback error removing from watchlist by symbol: $e2");

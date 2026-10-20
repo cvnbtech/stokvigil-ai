@@ -182,11 +182,20 @@ export default function App() {
           }));
           portfolioLoaded = true;
 
-          // Auto-sync Demat holdings into user_watchlists table
+          // Auto-sync Demat holdings into user_watchlists table (Universal Canonical Suffix Rule)
           if (supabase && uid) {
             try {
               for (const h of data.holdings) {
-                const cleanS = (h.clean_symbol || h.symbol || "").replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+                const rawSym = (h.symbol || h.clean_symbol || "").trim().toUpperCase();
+                if (!rawSym) continue;
+                const isBse = rawSym.endsWith(".BO") || (h.exchange && String(h.exchange).toUpperCase() === "BSE") || (/^\d{6}$/.test(rawSym));
+                let cleanS = rawSym;
+                if (cleanS.endsWith(".NS")) {
+                  cleanS = cleanS.replace(/\.NS$/i, "").trim();
+                }
+                if (isBse && !cleanS.endsWith(".BO") && !/^\d{6}$/.test(cleanS)) {
+                  cleanS = `${cleanS}.BO`;
+                }
                 if (cleanS) {
                   await supabase.from('user_watchlists').upsert({
                     user_id: uid,
@@ -810,16 +819,23 @@ export default function App() {
     setTickerSuggestions([]);
     setTicker("");
 
-    const cleanRaw = raw.replace(/\.(BO|NS)$/i, "").trim();
+    const isBse = raw.toUpperCase().endsWith('.BO') || /^\d{6}$/.test(raw.trim());
+    let cleanRaw = raw.trim().toUpperCase();
+    if (cleanRaw.endsWith('.NS')) {
+      cleanRaw = cleanRaw.replace(/\.NS$/i, "").trim();
+    }
+    // Universal Canonical Suffix Rule: NSE bare, BSE preserves .BO or 6-digit scrip
+    const dbSymbol = isBse ? (cleanRaw.endsWith('.BO') || /^\d{6}$/.test(cleanRaw) ? cleanRaw : `${cleanRaw}.BO`) : cleanRaw;
+    const displaySymbol = cleanRaw.replace(/\.BO$/i, "").trim();
 
     if (user?.id && supabase) {
       setWatchlist(prev => [
         {
           id: Date.now().toString(),
-          symbol: cleanRaw,
-          fullSymbol: raw,
-          exchange: raw.endsWith('.BO') ? 'BSE' : 'NSE',
-          name: stockName && stockName !== raw ? stockName : cleanRaw,
+          symbol: displaySymbol,
+          fullSymbol: dbSymbol,
+          exchange: isBse ? 'BSE' : 'NSE',
+          name: stockName && stockName !== raw ? stockName : displaySymbol,
           auto: false,
           price: livePrice,
           chg: livePrice > 0 ? "+0.00%" : "--",
@@ -829,12 +845,12 @@ export default function App() {
           target: "--",
           sl: "--"
         },
-        ...prev.filter(p => p.symbol !== cleanRaw)
+        ...prev.filter(p => p.symbol !== displaySymbol && p.fullSymbol !== dbSymbol)
       ]);
 
       await supabase.from('user_watchlists').upsert({
         user_id: user.id,
-        symbol: cleanRaw,
+        symbol: dbSymbol,
         is_auto_synced: false
       }, { onConflict: 'user_id,symbol' });
       loadWatchlistData(user.id);
@@ -842,10 +858,10 @@ export default function App() {
       setWatchlist(prev => [
         {
           id: Date.now().toString(),
-          symbol: cleanRaw,
-          fullSymbol: raw,
-          exchange: raw.endsWith('.BO') ? 'BSE' : 'NSE',
-          name: stockName && stockName !== raw ? stockName : cleanRaw,
+          symbol: displaySymbol,
+          fullSymbol: dbSymbol,
+          exchange: isBse ? 'BSE' : 'NSE',
+          name: stockName && stockName !== raw ? stockName : displaySymbol,
           auto: false,
           price: livePrice,
           chg: livePrice > 0 ? "+0.00%" : "--",
@@ -855,7 +871,7 @@ export default function App() {
           target: "--",
           sl: "--"
         },
-        ...prev.filter(p => p.symbol !== cleanRaw)
+        ...prev.filter(p => p.symbol !== displaySymbol && p.fullSymbol !== dbSymbol)
       ]);
     }
   };

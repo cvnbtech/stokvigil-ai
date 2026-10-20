@@ -27,7 +27,10 @@ from app.brokers import (
 from app.vault import vault
 from app.market_cache import market_cache
 from app.engine.data_fetcher import fetch_stock_financials
-from app.engine.portfolio_sync import update_demat_portfolio_cache
+from app.engine.portfolio_sync import (
+    update_demat_portfolio_cache,
+    normalize_watchlist_symbol,
+)
 from app.accuracy_verifier import batch_verify_alerts
 from app.db_pool import (
     fetch_one,
@@ -57,17 +60,20 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
     """
     Background task to sync Demat holdings (including average cost basis & quantity)
     to user_watchlists without blocking HTTP response.
+    Normalizes symbols via Universal Canonical Suffix Rule (.NS stripped, .BO preserved)
+    and deduplicates payloads in-memory to prevent Postgres ON CONFLICT batch errors.
     """
     if not holdings_or_symbols:
         return
     try:
-        sync_payload = []
+        sync_payload_map: Dict[str, Dict[str, Any]] = {}
         for item in holdings_or_symbols:
             if isinstance(item, dict):
                 raw_sym = item.get("symbol") or item.get("clean_symbol") or ""
-                if not raw_sym:
+                exch = item.get("exchange")
+                clean_sym = normalize_watchlist_symbol(raw_sym, exchange=exch)
+                if not clean_sym:
                     continue
-                clean_sym = raw_sym.replace(".BO", "").replace(".NS", "").strip().upper()
                 avg_price = float(item.get("average_price") or item.get("avg_price") or 0.0)
                 qty = int(item.get("quantity") or item.get("qty") or 0)
                 row = {
@@ -79,15 +85,19 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
                     row["average_buy_price"] = avg_price
                 if qty > 0:
                     row["quantity"] = qty
-                sync_payload.append(row)
+                sync_payload_map[clean_sym] = row
             elif isinstance(item, str) and item.strip():
-                clean_sym = item.replace(".BO", "").replace(".NS", "").strip().upper()
-                sync_payload.append({
-                    "user_id": user_id,
-                    "symbol": clean_sym,
-                    "is_auto_synced": True
-                })
+                clean_sym = normalize_watchlist_symbol(item)
+                if not clean_sym:
+                    continue
+                if clean_sym not in sync_payload_map:
+                    sync_payload_map[clean_sym] = {
+                        "user_id": user_id,
+                        "symbol": clean_sym,
+                        "is_auto_synced": True
+                    }
 
+        sync_payload = list(sync_payload_map.values())
         if sync_payload:
             db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
             logger.info(f"Background auto-synced {len(sync_payload)} Demat holdings with cost-basis to user_watchlists for user {mask_id(user_id)}")
