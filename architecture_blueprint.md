@@ -314,9 +314,10 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
     - *Asymmetric Long Gatekeeper*: Vetoes `BUY_WATCH` breakouts to `HOLD_NEUTRAL` unless extraordinary institutional volume surge occurs ($\text{RVOL} \ge 3.0\times$).
     - *BSE Microstructure Awareness*: Identifies BSE scrips (`.BO` and 6-digit codes), flagging wide bid-ask spread risks. For watchlist breakdowns, automatically dispatches `SELL_WATCH` (delivery liquidation / avoid buying) rather than unsupported naked MIS shorts.
     - *Zero-Veto Defense Guarantee*: Wyckoff Institutional Block Dumps (`is_block_dump`), Demat `CAPITAL_PRESERVATION_EXIT`, Lower Circuit Locks (`LOWER_CIRCUIT`), and Trailing Stop-Loss triggers are **100% unthrottled and accelerated at all times**.
-24. **Top Liquid Market Anchors Auto-Inclusion (Continuous Macro Surveillance)**:
-    - Automatically pre-seeds 15 high-beta index anchors (RELIANCE, HDFCBANK, ICICIBANK, INFY, TCS, ITC, LT, SBIN, BHARTIARTL, AXISBANK, KOTAKBANK, HINDUNILVR, TATAMOTORS, BAJFINANCE, MARUTI) into the 5-minute RAM cache.
-    - Ensures systemic institutional block dumps and breadth trends are continuously tracked even if not explicitly present in a user's manual watchlist.
+24. **Dynamic Real-Time Market Anchors Discovery (`get_dynamic_realtime_market_anchors`)**:
+    - **Zero-Hardcoding Invariant**: Dynamically retrieves the active NIFTY 50 constituent equities directly from the official live NSE archives feed (`https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv`, 24h RAM cache) with ZERO static ticker arrays.
+    - If the live feed fails or is offline, strictly propagates an empty list (`[]`) with zero synthetic fallbacks, upholding the Zero-Default Policy.
+    - Pre-seeds authentic liquid anchors into the 5-minute RAM market cache, ensuring broad market leadership and institutional dumps on market-moving bellwethers are tracked in real time.
 
 ---
 

@@ -237,6 +237,35 @@ class TestTimeOfDayAndBSEFilter(unittest.TestCase):
         self.assertTrue(res["has_actionable_signal"])
         self.assertFalse(any("Lunch-Hour Trap Veto" in d for d in res["confluence_drivers"]))
 
+    def test_09_dynamic_realtime_market_anchors_zero_hardcoding(self):
+        """Dynamic market anchors are fetched from live exchange feed with ZERO hardcoded tickers."""
+        from app.macro_filter import get_dynamic_realtime_market_anchors
+        anchors = get_dynamic_realtime_market_anchors()
+        self.assertIsInstance(anchors, list)
+        if anchors:
+            self.assertGreater(len(anchors), 10)
+            self.assertTrue(all(isinstance(s, str) and s.isupper() for s in anchors))
+
+    def test_10_dynamic_market_anchors_zero_default_on_failure(self):
+        """When live exchange feed fails, returns empty list with ZERO hardcoded fallback."""
+        from unittest.mock import patch
+        import app.macro_filter as mf
+
+        # Temporarily clear cache
+        old_cache = mf._DYNAMIC_ANCHORS_CACHE
+        old_ts = mf._DYNAMIC_ANCHORS_TS
+        try:
+            mf._DYNAMIC_ANCHORS_CACHE = []
+            mf._DYNAMIC_ANCHORS_TS = 0.0
+
+            with patch("urllib.request.urlopen", side_effect=Exception("Network Timeout")):
+                result = mf.get_dynamic_realtime_market_anchors()
+                # Must return [] with zero synthetic/hardcoded symbols
+                self.assertEqual(result, [])
+        finally:
+            mf._DYNAMIC_ANCHORS_CACHE = old_cache
+            mf._DYNAMIC_ANCHORS_TS = old_ts
+
 
 if __name__ == "__main__":
     unittest.main()

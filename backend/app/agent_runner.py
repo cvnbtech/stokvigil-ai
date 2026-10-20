@@ -12,7 +12,11 @@ from app.technical_engine import (
     batch_fetch_multi_timeframe_technicals,
 )
 from app.flow_tracker import fetch_delivery_and_fo_flow
-from app.macro_filter import fetch_macro_market_regime, evaluate_forensic_health
+from app.macro_filter import (
+    fetch_macro_market_regime,
+    evaluate_forensic_health,
+    get_dynamic_realtime_market_anchors,
+)
 from app.alert_limiter import should_dispatch_alert
 from app.notifications import (
     send_fcm_notification,
@@ -430,15 +434,12 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
         except Exception as rest_err:
             logger.error(f"REST symbol query failed: {rest_err}")
 
-    # Auto-Include Top Liquid Market Anchors (Nifty 50 & Sensex heavyweights)
-    # Ensures systemic institutional block dumps and breadth leaders are continuously cached in RAM
-    # even if not explicitly present in any individual user's manual watchlist.
-    MARKET_ANCHORS = [
-        "RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS",
-        "ITC", "LT", "SBIN", "BHARTIARTL", "AXISBANK",
-        "KOTAKBANK", "HINDUNILVR", "TATAMOTORS", "BAJFINANCE", "MARUTI"
-    ]
-    symbols = list(set(symbols + MARKET_ANCHORS))
+    # Dynamic Real-Time Market Anchors Discovery (Official Live NSE Feed)
+    # STRICT ZERO-HARDCODING POLICY: Dynamically retrieves real-time market anchors from the exchange.
+    # If the exchange feed is unreachable, gracefully falls back to empty list with zero synthetic ticker injection.
+    dynamic_anchors = await asyncio.to_thread(get_dynamic_realtime_market_anchors)
+    if dynamic_anchors:
+        symbols = list(set(symbols + dynamic_anchors[:15]))
 
     if not symbols:
         logger.info("No active symbols found across user watchlists to pre-compute.")

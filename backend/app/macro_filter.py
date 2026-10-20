@@ -146,6 +146,56 @@ def get_dynamic_sector_map() -> Dict[str, str]:
         return _DYNAMIC_SECTOR_CACHE
 
 
+_DYNAMIC_ANCHORS_CACHE: List[str] = []
+_DYNAMIC_ANCHORS_TS: float = 0.0
+_DYNAMIC_ANCHORS_TTL: float = 86400.0  # 24 hours
+_DYNAMIC_ANCHORS_LOCK = threading.Lock()
+
+def get_dynamic_realtime_market_anchors() -> List[str]:
+    """
+    Dynamically fetches the official active NIFTY 50 constituent symbols in real time
+    from official NSE archives (https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv).
+    STRICT ZERO-HARDCODING POLICY: Zero static ticker arrays. If the live feed fails,
+    returns an empty list [] with zero synthetic fallbacks.
+    """
+    global _DYNAMIC_ANCHORS_CACHE, _DYNAMIC_ANCHORS_TS
+    now = time.time()
+    if _DYNAMIC_ANCHORS_CACHE and (now - _DYNAMIC_ANCHORS_TS) < _DYNAMIC_ANCHORS_TTL:
+        return _DYNAMIC_ANCHORS_CACHE
+
+    with _DYNAMIC_ANCHORS_LOCK:
+        if _DYNAMIC_ANCHORS_CACHE and (now - _DYNAMIC_ANCHORS_TS) < _DYNAMIC_ANCHORS_TTL:
+            return _DYNAMIC_ANCHORS_CACHE
+
+        url = "https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+            "Accept": "text/csv, text/plain, */*",
+        }
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                if resp.status == 200:
+                    content = resp.read().decode("utf-8", errors="ignore")
+                    reader = csv.reader(io.StringIO(content))
+                    next(reader, None)  # Skip header row
+                    symbols = []
+                    for row in reader:
+                        if len(row) > 2:
+                            sym = row[2].strip().upper()
+                            if sym and sym not in ("SYMBOL", "COMPANY NAME", "SERIES"):
+                                symbols.append(sym)
+                    if symbols:
+                        _DYNAMIC_ANCHORS_CACHE = symbols
+                        _DYNAMIC_ANCHORS_TS = now
+                        logger.info(f"✅ Dynamic market anchors loaded from live NSE feed: {len(symbols)} active NIFTY 50 equities.")
+                        return _DYNAMIC_ANCHORS_CACHE
+        except Exception as err:
+            logger.debug(f"Dynamic NSE market anchor fetch note: {err}")
+
+        return _DYNAMIC_ANCHORS_CACHE
+
+
 def get_symbol_sector(symbol: str) -> Optional[str]:
     """
     Dynamically resolves the sector for any NSE ticker or dual-listed BSE scrip.
