@@ -134,15 +134,28 @@ class WatchlistProvider extends ChangeNotifier {
 
     try {
       final liveQuotes = await ApiService().fetchBatchQuotes(symbols);
+      bool hasFlashes = false;
       for (var item in _watchlist) {
         final sym = (item['symbol']?.toString() ?? '').toUpperCase();
         final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
         final q = liveQuotes[sym] ?? liveQuotes[cleanSym];
         if (q != null && q is Map<String, dynamic>) {
           _applyQuoteToItem(item, q);
+          if (item['tick_direction'] != null) {
+            hasFlashes = true;
+          }
         }
       }
       notifyListeners();
+
+      if (hasFlashes) {
+        Timer(const Duration(milliseconds: 1200), () {
+          for (var item in _watchlist) {
+            item.remove('tick_direction');
+          }
+          notifyListeners();
+        });
+      }
     } catch (e) {
       debugPrint("Error in WatchlistProvider.refreshQuotesOnly: $e");
     }
@@ -159,6 +172,11 @@ class WatchlistProvider extends ChangeNotifier {
       item['trailing_sl'] = null;
       item['is_high_beta'] = false;
       return;
+    }
+
+    final oldPrice = (item['price'] as num? ?? 0.0).toDouble();
+    if (oldPrice > 0 && price > 0 && price != oldPrice) {
+      item['tick_direction'] = price > oldPrice ? 'up' : 'down';
     }
 
     item['price'] = price;

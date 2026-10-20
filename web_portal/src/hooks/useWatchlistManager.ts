@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { BACKEND_URL, supabase } from "../components/ui/DesignTokens";
 
 export const clientQuoteCache: Record<string, any> = {};
@@ -17,7 +17,11 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
   const [watchlist, setWatchlist] = useState<any[]>([]);
   const [ticker, setTicker] = useState("");
   const [tickerSuggestions, setTickerSuggestions] = useState<any[]>([]);
+  const [flashMap, setFlashMap] = useState<Record<string, "up" | "down">>({});
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const flashTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const watchlistRef = useRef<any[]>([]);
+  watchlistRef.current = watchlist;
 
   const loadWatchlistData = useCallback(async (uid: string) => {
     if (supabase) {
@@ -228,6 +232,98 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
     }
   };
 
+  const refreshQuotesOnly = useCallback(async () => {
+    const currentList = watchlistRef.current;
+    if (!currentList || currentList.length === 0) return;
+
+    const symbols = currentList
+      .map((w: any) => (w.fullSymbol || w.symbol || "").toUpperCase())
+      .filter((s: string) => s.length > 0);
+    if (symbols.length === 0) return;
+
+    try {
+      const res = await fetch(`/api/stocks/quotes?symbols=${encodeURIComponent(symbols.join(','))}`, {
+        signal: AbortSignal.timeout(4000)
+      });
+      if (res.ok) {
+        const qData = await res.json();
+        const freshQuotes = qData.quotes || {};
+        const newFlashMap: Record<string, "up" | "down"> = {};
+
+        for (const [k, v] of Object.entries(freshQuotes)) {
+          if (v && typeof v === "object") {
+            const cleanK = k.replace(/\.(BO|NS)$/i, "").trim().toUpperCase();
+            const prevQ = clientQuoteCache[cleanK] || clientQuoteCache[k];
+            const oldPrice = prevQ?.price ? Number(prevQ.price) : 0;
+            const newPrice = (v as any).price ? Number((v as any).price) : 0;
+
+            if (oldPrice > 0 && newPrice > 0 && oldPrice !== newPrice) {
+              newFlashMap[cleanK] = newPrice > oldPrice ? "up" : "down";
+            }
+
+            clientQuoteCache[k] = v;
+            if (cleanK) clientQuoteCache[cleanK] = v;
+          }
+        }
+
+        setWatchlist(prev => prev.map(item => {
+          const cleanSym = (item.symbol || "").toUpperCase();
+          const fullSym = (item.fullSymbol || cleanSym).toUpperCase();
+          const q = freshQuotes[cleanSym] || freshQuotes[fullSym] || clientQuoteCache[cleanSym] || {};
+          const price = q.price !== undefined ? q.price : item.price;
+          const rawChg = q.change_pct !== undefined ? q.change_pct : null;
+          const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : null);
+          const isPos = chgPct != null ? chgPct >= 0 : item.isPositive;
+          const hasRealPrice = price > 0;
+          const hasActiveSignal = hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING" && q.signal !== "HOLD";
+          const signal = hasActiveSignal ? q.signal : item.signal;
+          const signalType = (hasActiveSignal && q.signal_type) ? q.signal_type : item.signalType;
+          const target = (hasActiveSignal && q.target && q.target !== "--" && q.target !== "₹0")
+            ? (String(q.target).startsWith("₹") ? q.target : `₹${q.target}`)
+            : item.target;
+          const sl = (hasActiveSignal && q.stop_loss && q.stop_loss !== "--" && q.stop_loss !== "₹0")
+            ? (String(q.stop_loss).startsWith("₹") ? q.stop_loss : `₹${q.stop_loss}`)
+            : item.sl;
+
+          return {
+            ...item,
+            price,
+            chg: (hasRealPrice && chgPct != null) ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : item.chg,
+            isPositive: isPos,
+            signal,
+            signalType,
+            target,
+            sl
+          };
+        }));
+
+        if (Object.keys(newFlashMap).length > 0) {
+          setFlashMap(newFlashMap);
+          if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+          flashTimeoutRef.current = setTimeout(() => {
+            setFlashMap({});
+          }, 1200);
+        }
+      }
+    } catch (e) {
+      console.debug("Background auto-refresh note:", e);
+    }
+  }, []);
+
+  // 30-Second Background Auto-Refresh (Silent In-Place Sync)
+  useEffect(() => {
+    if (!userId) return;
+
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      refreshQuotesOnly();
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [userId, refreshQuotesOnly]);
+
   return {
     watchlist, setWatchlist,
     ticker, setTicker,
@@ -235,6 +331,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
     handleStockChange,
     addStock,
     removeTicker,
-    loadWatchlistData
+    loadWatchlistData,
+    refreshQuotesOnly,
+    flashMap
   };
 }

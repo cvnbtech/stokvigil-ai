@@ -383,6 +383,7 @@ export default function App() {
               addStock={watchlist.addStock}
               removeTicker={watchlist.removeTicker}
               onOpenTradeModal={handleOpenTradeModalFromWatchlist}
+              flashMap={watchlist.flashMap}
             />
           )}
 

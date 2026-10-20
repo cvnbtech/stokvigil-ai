@@ -239,22 +239,58 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      "Watchlist",
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                    Row(
+                      children: [
+                        const Text(
+                          "Watchlist",
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 20),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cyan.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppTheme.borderCyan),
+                          ),
+                          child: Text(
+                            "${_watchlist.length} Stocks",
+                            style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppTheme.cyan.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.borderCyan),
+                        color: const Color(0xFF10B981).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.35)),
                       ),
-                      child: Text(
-                        "${_watchlist.length} Stocks",
-                        style: const TextStyle(color: AppTheme.cyan, fontSize: 11, fontWeight: FontWeight.w900),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          const Text(
+                            "LIVE 30s TICK",
+                            style: TextStyle(
+                              color: Color(0xFF10B981),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -744,24 +780,55 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          priceNum > 0 ? "₹${priceNum.toStringAsFixed(2)}" : "--",
-                                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          priceNum > 0 ? "${isPos ? '▲' : '▼'} $chg" : "--",
-                                          style: TextStyle(
-                                            color: priceNum > 0 ? (isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose) : AppTheme.textSecondary,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                     Builder(
+                                       builder: (context) {
+                                         final tickDir = item['tick_direction'];
+                                         final isTickUp = tickDir == 'up';
+                                         final isTickDown = tickDir == 'down';
+
+                                         return AnimatedContainer(
+                                           duration: const Duration(milliseconds: 350),
+                                           curve: Curves.easeOut,
+                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                           decoration: BoxDecoration(
+                                             color: isTickUp
+                                                 ? AppTheme.primaryEmerald.withOpacity(0.2)
+                                                 : (isTickDown ? AppTheme.dangerRose.withOpacity(0.2) : Colors.transparent),
+                                             borderRadius: BorderRadius.circular(8),
+                                             border: Border.all(
+                                               color: isTickUp
+                                                   ? AppTheme.primaryEmerald.withOpacity(0.6)
+                                                   : (isTickDown ? AppTheme.dangerRose.withOpacity(0.6) : Colors.transparent),
+                                               width: 1,
+                                             ),
+                                           ),
+                                           child: Column(
+                                             crossAxisAlignment: CrossAxisAlignment.end,
+                                             children: [
+                                               Text(
+                                                 priceNum > 0 ? "\u20B9${priceNum.toStringAsFixed(2)}" : "--",
+                                                 style: TextStyle(
+                                                   color: isTickUp
+                                                       ? AppTheme.primaryEmerald
+                                                       : (isTickDown ? AppTheme.dangerRose : Colors.white),
+                                                   fontWeight: FontWeight.w900,
+                                                   fontSize: 15,
+                                                 ),
+                                               ),
+                                               const SizedBox(height: 2),
+                                               Text(
+                                                 priceNum > 0 ? "${isPos ? '\u25B2' : '\u25BC'} $chg" : "--",
+                                                 style: TextStyle(
+                                                   color: priceNum > 0 ? (isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose) : AppTheme.textSecondary,
+                                                   fontSize: 11,
+                                                   fontWeight: FontWeight.w800,
+                                                 ),
+                                               ),
+                                             ],
+                                           ),
+                                         );
+                                       },
+                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),

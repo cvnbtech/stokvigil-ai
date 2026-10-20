@@ -15,6 +15,7 @@ interface WatchlistTabProps {
   addStock: (symbolToAdd?: string, nameToAdd?: string) => void;
   removeTicker: (id: string) => void;
   onOpenTradeModal: (stock: { symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; qty?: number }) => void;
+  flashMap?: Record<string, "up" | "down">;
 }
 
 export default function WatchlistTab({
@@ -29,6 +30,7 @@ export default function WatchlistTab({
   addStock,
   removeTicker,
   onOpenTradeModal,
+  flashMap,
 }: WatchlistTabProps) {
   return (
     <div className="anim-fadeup" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -47,6 +49,19 @@ export default function WatchlistTab({
           <div style={{ fontSize: 10.5, color: C.gray2, marginTop: 2 }}>
             Real-time market feed • Auto-synced with ICICI Demat
           </div>
+        </div>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
+          borderRadius: 20, padding: "4px 10px", fontSize: 10, fontWeight: 800, color: C.emerald
+        }}>
+          <span style={{
+            width: 7, height: 7, borderRadius: "50%",
+            backgroundColor: C.emerald,
+            boxShadow: `0 0 8px ${C.emerald}`,
+            display: "inline-block"
+          }} />
+          <span>LIVE 30s TICK</span>
         </div>
       </div>
 
@@ -350,19 +365,38 @@ export default function WatchlistTab({
                   </div>
                 </div>
 
-                {/* Price & Change Pill */}
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: C.white }}>
-                    {item.price > 0 ? `₹${item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--"}
-                  </div>
-                  <div style={{
-                    fontSize: 10.5, fontWeight: 800,
-                    color: item.price > 0 ? (isPos ? C.emerald : C.rose) : C.gray2,
-                    display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2
-                  }}>
-                    {item.price > 0 ? `${isPos ? "▲" : "▼"} ${item.chg}` : "--"}
-                  </div>
-                </div>
+                {/* Price & Change Pill with Realtime Tick Flash */}
+                {(() => {
+                  const flash = flashMap?.[item.symbol] || flashMap?.[item.fullSymbol];
+                  const isFlashUp = flash === "up";
+                  const isFlashDown = flash === "down";
+                  return (
+                    <div style={{
+                      textAlign: "right",
+                      padding: "4px 8px",
+                      borderRadius: 8,
+                      border: isFlashUp ? "1px solid rgba(16,185,129,0.7)" : (isFlashDown ? "1px solid rgba(239,68,68,0.7)" : "1px solid transparent"),
+                      background: isFlashUp ? "rgba(16,185,129,0.18)" : (isFlashDown ? "rgba(239,68,68,0.18)" : "transparent"),
+                      boxShadow: isFlashUp ? "0 0 12px rgba(16,185,129,0.35)" : (isFlashDown ? "0 0 12px rgba(239,68,68,0.35)" : "none"),
+                      transition: "all 0.35s ease",
+                    }}>
+                      <div style={{
+                        fontSize: 14, fontWeight: 900,
+                        color: isFlashUp ? C.emerald : (isFlashDown ? C.rose : C.white),
+                        transition: "color 0.35s ease",
+                      }}>
+                        {item.price > 0 ? `₹${item.price.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "--"}
+                      </div>
+                      <div style={{
+                        fontSize: 10.5, fontWeight: 800,
+                        color: item.price > 0 ? (isPos ? C.emerald : C.rose) : C.gray2,
+                        display: "inline-flex", alignItems: "center", gap: 3, marginTop: 2
+                      }}>
+                        {item.price > 0 ? `${isPos ? "▲" : "▼"} ${item.chg}` : "--"}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Bottom Action & Signal Ribbon */}
