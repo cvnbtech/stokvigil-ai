@@ -24,6 +24,8 @@ class AlertsScreen extends StatefulWidget {
 class _AlertsScreenState extends State<AlertsScreen> {
   final Set<String> _expandedRadarIds = {};
 
+  String get _selectedFilter => context.read<AlertsProvider>().selectedFilter;
+
   void _shareAlphaCard(StokAlert alert, String targetStr, String slStr, String rrStr) {
     final shareText = '''⚡ STOKVIGIL AI ALPHA SIGNAL ⚡
 
@@ -218,14 +220,14 @@ Automated surveillance via StokVigil AI 🛡️''';
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  _buildFilterChip('all', '⚡ All Alerts'),
-                  _buildFilterChip('defense', '🛡️ Capital Defense'),
-                  _buildFilterChip('high', '🔥 High Impact'),
-                  _buildFilterChip('trailing', '🟡 Trailing SL'),
-                  _buildFilterChip('earnings', '📈 Earnings'),
-                  _buildFilterChip('breakout', '🚀 Breakout'),
-                  _buildFilterChip('volume', '⚡ Volume Surge'),
-                  _buildFilterChip('fii', '📊 FII / Deals'),
+                  _buildFilterChip('all', '⚡ All Alerts', _selectedFilter),
+                  _buildFilterChip('defense', '🛡️ Capital Defense', _selectedFilter),
+                  _buildFilterChip('high', '🔥 High Impact', _selectedFilter),
+                  _buildFilterChip('trailing', '🟡 Trailing SL', _selectedFilter),
+                  _buildFilterChip('earnings', '📈 Earnings', _selectedFilter),
+                  _buildFilterChip('breakout', '🚀 Breakout', _selectedFilter),
+                  _buildFilterChip('volume', '⚡ Volume Surge', _selectedFilter),
+                  _buildFilterChip('fii', '📊 FII / Deals', _selectedFilter),
                 ],
               ),
             ),
@@ -701,8 +703,8 @@ Automated surveillance via StokVigil AI 🛡️''';
     );
   }
 
-  Widget _buildFilterChip(String filterKey, String label) {
-    final active = _selectedFilter == filterKey;
+  Widget _buildFilterChip(String filterKey, String label, [String? currentFilter]) {
+    final active = (currentFilter ?? _selectedFilter) == filterKey;
     return GestureDetector(
       onTap: () => context.read<AlertsProvider>().setFilter(filterKey),
       child: Container(
