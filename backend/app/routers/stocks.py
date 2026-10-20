@@ -60,6 +60,21 @@ _QUOTE_HTTP_SESSION.headers.update({
     "Referer": "https://finance.yahoo.com/"
 })
 
+# Persistent, bounded ThreadPoolExecutor for concurrent batch stock quote queries
+# Eliminates per-request thread churn, reducing Cloud Run CPU spikes & latency
+_STOCK_QUOTE_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=20,
+    thread_name_prefix="stokvigil_quote_worker"
+)
+
+
+def shutdown_quote_executor():
+    """Gracefully drains and terminates the persistent quote worker pool."""
+    try:
+        _STOCK_QUOTE_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+    except Exception as e:
+        logger.debug(f"Note on shutting down quote executor: {e}")
+
 
 def _cache_set_quote(sym: str, data: Dict[str, Any], timestamp: float):
     if len(_QUOTE_CACHE) >= _MAX_QUOTE_CACHE_SIZE:
@@ -731,10 +746,8 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
             missing_symbols.append(sym)
 
     if missing_symbols:
-        max_workers = min(15, max(1, len(missing_symbols)))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-            future_to_sym = {pool.submit(_fetch_single_stock_quote, sym): sym for sym in missing_symbols}
-            for future in concurrent.futures.as_completed(future_to_sym):
+        future_to_sym = {_STOCK_QUOTE_EXECUTOR.submit(_fetch_single_stock_quote, sym): sym for sym in missing_symbols}
+        for future in concurrent.futures.as_completed(future_to_sym):
                 sym = future_to_sym[future]
                 try:
                     q_data = future.result()

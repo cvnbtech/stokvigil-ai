@@ -7,15 +7,21 @@ import HomeTab from "../components/tabs/HomeTab";
 import AlertsTab from "../components/tabs/AlertsTab";
 import WatchlistTab from "../components/tabs/WatchlistTab";
 import SettingsTab from "../components/tabs/SettingsTab";
-import AuditLedgerView from "../components/AuditLedgerView";
-import BacktestView from "../components/BacktestView";
-import TradeOrderModal from "../components/modals/TradeOrderModal";
-import StockDetailModal from "../components/modals/StockDetailModal";
-import IciciKeyModal from "../components/modals/IciciKeyModal";
-import PasswordModal from "../components/modals/PasswordModal";
-import DeleteAccountModal from "../components/modals/DeleteAccountModal";
-import ShareAlphaCardModal, { AlphaCardData } from "../components/ShareAlphaCardModal";
-import LightweightCandleChart from "../components/LightweightCandleChart";
+import dynamic from "next/dynamic";
+import type { AlphaCardData } from "../components/ShareAlphaCardModal";
+
+const LightweightCandleChart = dynamic(
+  () => import("../components/LightweightCandleChart"),
+  { ssr: false, loading: () => <div className="h-64 flex items-center justify-center text-slate-500 font-mono text-xs">Loading Chart Engine...</div> }
+);
+const BacktestView = dynamic(() => import("../components/BacktestView"), { ssr: false });
+const AuditLedgerView = dynamic(() => import("../components/AuditLedgerView"), { ssr: false });
+const TradeOrderModal = dynamic(() => import("../components/modals/TradeOrderModal"), { ssr: false });
+const StockDetailModal = dynamic(() => import("../components/modals/StockDetailModal"), { ssr: false });
+const IciciKeyModal = dynamic(() => import("../components/modals/IciciKeyModal"), { ssr: false });
+const PasswordModal = dynamic(() => import("../components/modals/PasswordModal"), { ssr: false });
+const DeleteAccountModal = dynamic(() => import("../components/modals/DeleteAccountModal"), { ssr: false });
+const ShareAlphaCardModal = dynamic(() => import("../components/ShareAlphaCardModal"), { ssr: false });
 
 // Client-side module-level L1 cache for instant SWR (<2ms) render
 const clientQuoteCache: Record<string, any> = {};
@@ -224,122 +230,124 @@ export default function App() {
     }
   }, [getAuthHeaders]);
 
+  const formatAlertRecord = useCallback((a: any) => {
+    const rawSnap = a.metrics_snapshot || {};
+    const flowData = rawSnap.flow_data || {};
+    const technicals = rawSnap.technicals || {};
+    const macroData = rawSnap.macro_data || {};
+    const dematPos = rawSnap.demat_position || null;
+
+    let livePrice = technicals.current_price || rawSnap.current_price || rawSnap.price || (rawSnap.financials && rawSnap.financials.price) || 0;
+
+    let dematSanitized = null;
+    if (dematPos && dematPos.is_in_portfolio) {
+      const avgP = dematPos.average_buy_price || 0;
+      let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : null;
+      if (pnlPct !== null && pnlPct <= -99.0) {
+        if (livePrice > 0 && avgP > 0) {
+          pnlPct = Number((((livePrice - avgP) / avgP) * 100).toFixed(1));
+        } else {
+          pnlPct = null;
+        }
+      }
+      dematSanitized = {
+        quantity: dematPos.quantity || 0,
+        average_buy_price: avgP,
+        unrealized_pnl_pct: pnlPct
+      };
+    }
+
+    const bias = a.action_bias || rawSnap.action_bias || a.alert_type || "HOLD_NEUTRAL";
+    let tPrice = rawSnap.tactical_levels?.target_1;
+    let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
+
+    const isDummy100 = (tPrice === "₹100.00" || tPrice === "100.0" || tPrice === "100") &&
+                       (sLoss === "₹100.00" || sLoss === "100.0" || sLoss === "100");
+
+    if (isDummy100 || !tPrice) {
+      tPrice = "-";
+    }
+    if (isDummy100 || !sLoss) {
+      sLoss = "-";
+    }
+
+    const deliveryVal = flowData.delivery_pct != null ? `${flowData.delivery_pct}%` : (rawSnap.delivery_pct != null ? `${rawSnap.delivery_pct}%` : "-");
+    const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "-");
+    const vwapVal = technicals.vwap && technicals.vwap > 0 ? `₹${technicals.vwap}` : (rawSnap.vwap && rawSnap.vwap > 0 ? `₹${rawSnap.vwap}` : "-");
+    const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias)
+      ? String(flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias).replace(/_/g, ' ')
+      : "-";
+    const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
+    const vixVal = macroData.india_vix || rawSnap.india_vix || null;
+
+    const biasUpper = bias.toUpperCase();
+    let sigType = "buy";
+    if (biasUpper.includes("CAPITAL_PRESERVATION") || biasUpper.includes("CAPITAL PRESERVATION")) {
+      sigType = "capital_preservation_exit";
+    } else if (biasUpper.includes("MIS_SHORT") || biasUpper.includes("INTRADAY_MIS")) {
+      sigType = "intraday_mis_short";
+    } else if (biasUpper.includes("SELL")) {
+      sigType = "sell";
+    } else if (biasUpper.includes("TRAILING")) {
+      sigType = "med";
+    } else if ((a.impact_score || 0) >= 80) {
+      sigType = "strong_buy";
+    }
+
+    const hasRealFactors = rawSnap.factor_breakdown &&
+      typeof rawSnap.factor_breakdown === 'object' &&
+      rawSnap.factor_breakdown.technicals != null;
+
+    const resolvedFactors = hasRealFactors ? {
+      technicals: Number(rawSnap.factor_breakdown.technicals),
+      flow: Number(rawSnap.factor_breakdown.flow),
+      forensics: Number(rawSnap.factor_breakdown.forensics),
+      catalysts: Number(rawSnap.factor_breakdown.catalysts)
+    } : null;
+
+    const rawAlertSym = (a.symbol || "").toUpperCase();
+    const cleanAlertSym = rawAlertSym.replace(/\.(BO|NS)$/i, "").trim();
+    const alertExch = rawSnap.exchange || (rawAlertSym.endsWith(".BO") ? "BSE" : "NSE");
+    const compName = rawSnap.company_name || rawSnap.financials?.name || rawSnap.stock_name || cleanAlertSym;
+
+    return {
+      id: a.id,
+      symbol: cleanAlertSym,
+      fullSymbol: rawAlertSym,
+      exchange: alertExch,
+      companyName: compName,
+      impact: a.impact_score != null ? a.impact_score : (a.confluence_score != null ? a.confluence_score : "-"),
+      impactColor: (a.impact_score || 0) >= 80 ? "emerald" : "amber",
+      catalyst: a.catalyst_type || "CATALYST",
+      category: a.catalyst_type?.toLowerCase() || "high",
+      signal: bias.replace(/_/g, " "),
+      signalType: sigType,
+      targetPrice: tPrice,
+      stopLoss: sLoss,
+      title: a.alert_title,
+      reasons: a.factual_reasons || [],
+      metrics: {
+        delivery: deliveryVal,
+        rsi: rsiVal,
+        vwap: vwapVal,
+        flow: oiVal
+      },
+      vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
+      vix: vixVal,
+      dematPosition: dematSanitized,
+      factors: resolvedFactors,
+      entryRange: rawSnap.tactical_levels?.entry_range || "-",
+      riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "-",
+      time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+  }, []);
+
   const loadAlertsData = useCallback(async (uid: string) => {
     if (supabase) {
       try {
         const { data } = await supabase.from('stok_alerts').select('*').eq('user_id', uid).order('created_at', { ascending: false });
         if (data && data.length > 0) {
-          setAlerts(data.map((a: any) => {
-            const rawSnap = a.metrics_snapshot || {};
-            const flowData = rawSnap.flow_data || {};
-            const technicals = rawSnap.technicals || {};
-            const macroData = rawSnap.macro_data || {};
-            const dematPos = rawSnap.demat_position || null;
-
-            let livePrice = technicals.current_price || rawSnap.current_price || rawSnap.price || (rawSnap.financials && rawSnap.financials.price) || 0;
-
-            let dematSanitized = null;
-            if (dematPos && dematPos.is_in_portfolio) {
-              const avgP = dematPos.average_buy_price || 0;
-              let pnlPct = dematPos.unrealized_pnl_pct != null ? Number(dematPos.unrealized_pnl_pct) : null;
-              if (pnlPct !== null && pnlPct <= -99.0) {
-                if (livePrice > 0 && avgP > 0) {
-                  pnlPct = Number((((livePrice - avgP) / avgP) * 100).toFixed(1));
-                } else {
-                  pnlPct = null;
-                }
-              }
-              dematSanitized = {
-                quantity: dematPos.quantity || 0,
-                average_buy_price: avgP,
-                unrealized_pnl_pct: pnlPct
-              };
-            }
-
-            const bias = a.action_bias || rawSnap.action_bias || a.alert_type || "HOLD_NEUTRAL";
-            let tPrice = rawSnap.tactical_levels?.target_1;
-            let sLoss = rawSnap.tactical_levels?.protective_stop_loss;
-
-            const isDummy100 = (tPrice === "₹100.00" || tPrice === "100.0" || tPrice === "100") &&
-                               (sLoss === "₹100.00" || sLoss === "100.0" || sLoss === "100");
-
-            if (isDummy100 || !tPrice) {
-              tPrice = "-";
-            }
-            if (isDummy100 || !sLoss) {
-              sLoss = "-";
-            }
-
-            const deliveryVal = flowData.delivery_pct != null ? `${flowData.delivery_pct}%` : (rawSnap.delivery_pct != null ? `${rawSnap.delivery_pct}%` : "-");
-            const rsiVal = technicals.rsi_15m != null ? `${technicals.rsi_15m}` : (rawSnap.rsi_15m != null ? `${rawSnap.rsi_15m}` : "-");
-            const vwapVal = technicals.vwap && technicals.vwap > 0 ? `₹${technicals.vwap}` : (rawSnap.vwap && rawSnap.vwap > 0 ? `₹${rawSnap.vwap}` : "-");
-            const oiVal = (flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias)
-              ? String(flowData.fo_oi_status || flowData.flow_bias || rawSnap.fo_oi_status || rawSnap.flow_bias).replace(/_/g, ' ')
-              : "-";
-            const vsaNote = flowData.vsa_note || flowData.vsa_regime || rawSnap.vsa_regime || "";
-            const vixVal = macroData.india_vix || rawSnap.india_vix || null;
-
-            const biasUpper = bias.toUpperCase();
-            let sigType = "buy";
-            if (biasUpper.includes("CAPITAL_PRESERVATION") || biasUpper.includes("CAPITAL PRESERVATION")) {
-              sigType = "capital_preservation_exit";
-            } else if (biasUpper.includes("MIS_SHORT") || biasUpper.includes("INTRADAY_MIS")) {
-              sigType = "intraday_mis_short";
-            } else if (biasUpper.includes("SELL")) {
-              sigType = "sell";
-            } else if (biasUpper.includes("TRAILING")) {
-              sigType = "med";
-            } else if ((a.impact_score || 0) >= 80) {
-              sigType = "strong_buy";
-            }
-
-            const hasRealFactors = rawSnap.factor_breakdown &&
-              typeof rawSnap.factor_breakdown === 'object' &&
-              rawSnap.factor_breakdown.technicals != null;
-
-            const resolvedFactors = hasRealFactors ? {
-              technicals: Number(rawSnap.factor_breakdown.technicals),
-              flow: Number(rawSnap.factor_breakdown.flow),
-              forensics: Number(rawSnap.factor_breakdown.forensics),
-              catalysts: Number(rawSnap.factor_breakdown.catalysts)
-            } : null;
-
-            const rawAlertSym = (a.symbol || "").toUpperCase();
-            const cleanAlertSym = rawAlertSym.replace(/\.(BO|NS)$/i, "").trim();
-            const alertExch = rawSnap.exchange || (rawAlertSym.endsWith(".BO") ? "BSE" : "NSE");
-            const compName = rawSnap.company_name || rawSnap.financials?.name || rawSnap.stock_name || cleanAlertSym;
-
-            return {
-              id: a.id,
-              symbol: cleanAlertSym,
-              fullSymbol: rawAlertSym,
-              exchange: alertExch,
-              companyName: compName,
-              impact: a.impact_score != null ? a.impact_score : (a.confluence_score != null ? a.confluence_score : "-"),
-              impactColor: (a.impact_score || 0) >= 80 ? "emerald" : "amber",
-              catalyst: a.catalyst_type || "CATALYST",
-              category: a.catalyst_type?.toLowerCase() || "high",
-              signal: bias.replace(/_/g, " "),
-              signalType: sigType,
-              targetPrice: tPrice,
-              stopLoss: sLoss,
-              title: a.alert_title,
-              reasons: a.factual_reasons || [],
-              metrics: {
-                delivery: deliveryVal,
-                rsi: rsiVal,
-                vwap: vwapVal,
-                flow: oiVal
-              },
-              vsaNote: vsaNote ? String(vsaNote).replace(/_/g, ' ') : "",
-              vix: vixVal,
-              dematPosition: dematSanitized,
-              factors: resolvedFactors,
-              entryRange: rawSnap.tactical_levels?.entry_range || "-",
-              riskReward: rawSnap.tactical_levels?.risk_reward_ratio || "-",
-              time: new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            };
-          }));
+          setAlerts(data.map(formatAlertRecord));
           return;
         }
       } catch (e) {
@@ -347,7 +355,35 @@ export default function App() {
       }
     }
     setAlerts([]);
-  }, []);
+  }, [formatAlertRecord]);
+
+  // Realtime Supabase Alert Channel for instantaneous (<50ms) push notifications
+  useEffect(() => {
+    if (!supabase || !user?.id) return;
+
+    const channel = supabase
+      .channel(`stok-alerts-realtime-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'stok_alerts',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          if (payload?.new) {
+            const formatted = formatAlertRecord(payload.new);
+            setAlerts((prev) => [formatted, ...prev.filter(a => a.id !== formatted.id)]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, formatAlertRecord]);
 
   const loadWatchlistData = useCallback(async (uid: string) => {
     if (supabase) {

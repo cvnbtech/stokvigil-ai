@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -27,6 +28,34 @@ logging.getLogger("APILogger").setLevel(logging.WARNING)
 logger = logging.getLogger("stokvigil.main")
 
 # ==========================================
+# APPLICATION LIFESPAN CONTEXT MANAGER
+# ==========================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manages application startup and shutdown lifecycle gracefully.
+    Initializes Supabase PgBouncer Connection Pool on Port 6543, Telegram queue worker,
+    and WebSocket Ticker Stream on startup, and safely drains resources on shutdown.
+    Eliminates deprecated on_event handlers in compliance with Starlette lifespan protocol.
+    """
+    await init_db_pool()
+    start_telegram_worker()
+    ticker_task = asyncio.create_task(ticker_manager.start())
+    yield
+    ticker_manager.stop()
+    ticker_task.cancel()
+    await stop_telegram_worker()
+    await close_db_pool()
+    await close_telegram_client()
+    try:
+        from app.routers.stocks import shutdown_quote_executor
+        shutdown_quote_executor()
+    except Exception as e:
+        logger.debug(f"Note on shutting down quote executor: {e}")
+
+
+# ==========================================
 # FASTAPI APPLICATION ORCHESTRATOR
 # ==========================================
 
@@ -35,6 +64,7 @@ app = FastAPI(
     description="Multi-Tenant Market Intelligence & Factual Alert Platform",
     version="1.0.0",
     default_response_class=SafeJSONResponse,
+    lifespan=lifespan,
 )
 
 # Defensive HTTP Security Headers Middleware
@@ -64,23 +94,6 @@ app.include_router(orders_router.router)
 app.include_router(stocks_router.router)
 app.include_router(market_router.router)
 app.include_router(cron_router.router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initializes Supabase PgBouncer Connection Pool on Port 6543, Telegram queue worker, and WebSocket Ticker Stream."""
-    await init_db_pool()
-    start_telegram_worker()
-    asyncio.create_task(ticker_manager.start())
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Gracefully closes all connections in the database pool, HTTP clients, and background workers on shutdown."""
-    ticker_manager.stop()
-    await stop_telegram_worker()
-    await close_db_pool()
-    await close_telegram_client()
 
 
 # ==========================================
