@@ -201,17 +201,20 @@ def calculate_ttm_squeeze(df: pd.DataFrame, bb_period: int = 20, bb_mult: float 
         delta = close - midpoint
         
         mom_hist = delta.ewm(span=5, adjust=False).mean()
-        curr_hist = round(float(mom_hist.iloc[-1]), 2)
-        prev_hist = round(float(mom_hist.iloc[-2]), 2) if len(mom_hist) > 1 else curr_hist
+        curr_hist = round(float(mom_hist.iloc[-1]), 2) if (not mom_hist.empty and not pd.isna(mom_hist.iloc[-1])) else None
+        prev_hist = round(float(mom_hist.iloc[-2]), 2) if (len(mom_hist) > 1 and not pd.isna(mom_hist.iloc[-2])) else curr_hist
 
-        if curr_hist > prev_hist and curr_hist > 0:
-            mom_trend = "EXPANDING_BULLISH"
-        elif curr_hist <= prev_hist and curr_hist > 0:
-            mom_trend = "CONTRACTING_BULLISH"
-        elif curr_hist < prev_hist and curr_hist < 0:
-            mom_trend = "EXPANDING_BEARISH"
+        if curr_hist is not None and prev_hist is not None:
+            if curr_hist > prev_hist and curr_hist > 0:
+                mom_trend = "EXPANDING_BULLISH"
+            elif curr_hist <= prev_hist and curr_hist > 0:
+                mom_trend = "CONTRACTING_BULLISH"
+            elif curr_hist < prev_hist and curr_hist < 0:
+                mom_trend = "EXPANDING_BEARISH"
+            else:
+                mom_trend = "CONTRACTING_BEARISH"
         else:
-            mom_trend = "CONTRACTING_BEARISH"
+            mom_trend = "DATA_INSUFFICIENT"
 
         if curr_squeeze_on:
             status = "SQUEEZE_ON"
@@ -306,16 +309,19 @@ def calculate_adx(df: pd.DataFrame, period: int = 14) -> Dict[str, Any]:
         dx = ((plus_di - minus_di).abs() / di_sum.replace(0, np.nan) * 100).fillna(0.0)
         adx = dx.ewm(alpha=1.0 / period, adjust=False).mean()
 
-        adx_val = round(float(adx.iloc[-1]), 2)
-        plus_di_val = round(float(plus_di.iloc[-1]), 2)
-        minus_di_val = round(float(minus_di.iloc[-1]), 2)
+        adx_val = round(float(adx.iloc[-1]), 2) if (not adx.empty and not pd.isna(adx.iloc[-1])) else None
+        plus_di_val = round(float(plus_di.iloc[-1]), 2) if (not plus_di.empty and not pd.isna(plus_di.iloc[-1])) else None
+        minus_di_val = round(float(minus_di.iloc[-1]), 2) if (not minus_di.empty and not pd.isna(minus_di.iloc[-1])) else None
 
-        if adx_val >= 25.0:
-            regime = "STRONG_TREND"
-        elif adx_val >= 20.0:
-            regime = "MODERATE_TREND"
+        if adx_val is not None:
+            if adx_val >= 25.0:
+                regime = "STRONG_TREND"
+            elif adx_val >= 20.0:
+                regime = "MODERATE_TREND"
+            else:
+                regime = "CHOPPY_SIDEWAYS"
         else:
-            regime = "CHOPPY_SIDEWAYS"
+            regime = "DATA_INSUFFICIENT"
 
         return {
             "adx_14": adx_val,
@@ -358,7 +364,7 @@ def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[flo
         c = float(ref_row['Close'])
         rng = h - l
 
-        if rng <= 0 or pd.isna(rng):
+        if pd.isna(c) or pd.isna(h) or pd.isna(l) or rng <= 0 or pd.isna(rng):
             return default_pivots
 
         h4 = round(c + (rng * 1.1 / 2.0), 2)
@@ -913,11 +919,14 @@ def compute_technicals_from_frames(
             rsi_d_series = calculate_rsi(df_daily['Close'], 14)
             rsi_daily = round(float(rsi_d_series.iloc[-1]), 2) if not rsi_d_series.empty and not pd.isna(rsi_d_series.iloc[-1]) else None
             
-            ema_20 = round(float(df_daily['Close'].ewm(span=20, adjust=False).mean().iloc[-1]), 2)
+            ema20_s = df_daily['Close'].ewm(span=20, adjust=False).mean()
+            ema_20 = round(float(ema20_s.iloc[-1]), 2) if (not ema20_s.empty and not pd.isna(ema20_s.iloc[-1])) else None
             if len(df_daily) >= 50:
-                ema_50 = round(float(df_daily['Close'].ewm(span=50, adjust=False).mean().iloc[-1]), 2)
+                ema50_s = df_daily['Close'].ewm(span=50, adjust=False).mean()
+                ema_50 = round(float(ema50_s.iloc[-1]), 2) if (not ema50_s.empty and not pd.isna(ema50_s.iloc[-1])) else None
             if len(df_daily) >= 200:
-                ema_200 = round(float(df_daily['Close'].ewm(span=200, adjust=False).mean().iloc[-1]), 2)
+                ema200_s = df_daily['Close'].ewm(span=200, adjust=False).mean()
+                ema_200 = round(float(ema200_s.iloc[-1]), 2) if (not ema200_s.empty and not pd.isna(ema200_s.iloc[-1])) else None
                 
             is_above_200_ema = bool(current_price > ema_200) if (ema_200 is not None and current_price is not None) else None
 

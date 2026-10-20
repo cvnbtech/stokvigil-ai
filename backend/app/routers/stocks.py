@@ -953,22 +953,34 @@ def get_stock_candles(
     for idx, row in df_candles.iterrows():
         try:
             bar_time = int(idx.timestamp())
-            c_vwap = float(vwap_series.loc[idx]) if (vwap_series is not None and not vwap_series.empty and idx in vwap_series) else None
-            c_sd = float(std_dev_series.loc[idx]) if (std_dev_series is not None and not std_dev_series.empty and idx in std_dev_series) else None
+            raw_vwap = float(vwap_series.loc[idx]) if (vwap_series is not None and not vwap_series.empty and idx in vwap_series) else None
+            c_vwap = raw_vwap if (raw_vwap is not None and not pd.isna(raw_vwap)) else None
+
+            raw_sd = float(std_dev_series.loc[idx]) if (std_dev_series is not None and not std_dev_series.empty and idx in std_dev_series) else None
+            c_sd = raw_sd if (raw_sd is not None and not pd.isna(raw_sd)) else None
+
             c_u1 = (c_vwap + c_sd) if (c_vwap is not None and c_sd is not None) else None
             c_l1 = max(0.01, c_vwap - c_sd) if (c_vwap is not None and c_sd is not None) else None
-            c_sl = float(chandelier_sl_series.loc[idx]) if (chandelier_sl_series is not None and not chandelier_sl_series.empty and idx in chandelier_sl_series) else None
+
+            raw_sl = float(chandelier_sl_series.loc[idx]) if (chandelier_sl_series is not None and not chandelier_sl_series.empty and idx in chandelier_sl_series) else None
+            c_sl = raw_sl if (raw_sl is not None and not pd.isna(raw_sl)) else None
+
+            r_open = float(row["Open"]) if not pd.isna(row["Open"]) else None
+            r_high = float(row["High"]) if not pd.isna(row["High"]) else None
+            r_low = float(row["Low"]) if not pd.isna(row["Low"]) else None
+            r_close = float(row["Close"]) if not pd.isna(row["Close"]) else None
+
             candles.append({
                 "time": bar_time,
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "close": round(float(row["Close"]), 2),
-                "volume": int(row.get("Volume", 0)),
-                "vwap": round(c_vwap, 2) if c_vwap is not None and not pd.isna(c_vwap) else None,
+                "open": round(r_open, 2) if r_open is not None else None,
+                "high": round(r_high, 2) if r_high is not None else None,
+                "low": round(r_low, 2) if r_low is not None else None,
+                "close": round(r_close, 2) if r_close is not None else None,
+                "volume": int(row.get("Volume", 0)) if not pd.isna(row.get("Volume", 0)) else 0,
+                "vwap": round(c_vwap, 2) if c_vwap is not None else None,
                 "vwap_upper_1s": round(c_u1, 2) if c_u1 is not None and not pd.isna(c_u1) else None,
                 "vwap_lower_1s": round(c_l1, 2) if c_l1 is not None and not pd.isna(c_l1) else None,
-                "chandelier_sl": round(c_sl, 2) if c_sl is not None and not pd.isna(c_sl) else None
+                "chandelier_sl": round(c_sl, 2) if c_sl is not None else None
             })
         except Exception:
             continue

@@ -12,6 +12,7 @@ from app.notifications import (
 )
 from app.engine.ticker_stream import ticker_manager
 from app.core.dependencies import get_supabase
+from app.core.responses import SafeJSONResponse
 from app.routers import (
     orders as orders_router,
     stocks as stocks_router,
@@ -33,6 +34,7 @@ app = FastAPI(
     title="StokVigil AI Engine API",
     description="Multi-Tenant Market Intelligence & Factual Alert Platform",
     version="1.0.0",
+    default_response_class=SafeJSONResponse,
 )
 
 # Defensive HTTP Security Headers Middleware

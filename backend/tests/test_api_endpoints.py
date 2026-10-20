@@ -827,6 +827,38 @@ class TestApiEndpoints(unittest.TestCase):
         self.assertEqual(res.headers.get("X-XSS-Protection"), "1; mode=block")
         self.assertEqual(res.headers.get("Referrer-Policy"), "strict-origin-when-cross-origin")
 
+    # 41. Reliability & Zero-Default: SafeJSONResponse converts NaN and Inf to JSON null
+    def test_41_safe_json_response_sanitizes_nan_and_inf(self):
+        import math
+        from app.core.responses import SafeJSONResponse, sanitize_non_compliant_floats
+
+        payload = {
+            "symbol": "INFY",
+            "nan_val": float("nan"),
+            "inf_val": float("inf"),
+            "neg_inf_val": float("-inf"),
+            "valid_float": 1450.25,
+            "nested": {
+                "inner_nan": float("nan"),
+                "list_with_nan": [1.0, float("nan"), 3.0]
+            }
+        }
+        sanitized = sanitize_non_compliant_floats(payload)
+        self.assertIsNone(sanitized["nan_val"])
+        self.assertIsNone(sanitized["inf_val"])
+        self.assertIsNone(sanitized["neg_inf_val"])
+        self.assertEqual(sanitized["valid_float"], 1450.25)
+        self.assertIsNone(sanitized["nested"]["inner_nan"])
+        self.assertIsNone(sanitized["nested"]["list_with_nan"][1])
+
+        # Test SafeJSONResponse rendering bytes without ValueError
+        response = SafeJSONResponse(content=payload)
+        rendered_bytes = response.render(payload)
+        rendered_text = rendered_bytes.decode("utf-8")
+        self.assertIn('"nan_val":null', rendered_text)
+        self.assertIn('"inf_val":null', rendered_text)
+        self.assertIn('"valid_float":1450.25', rendered_text)
+
 
 if __name__ == "__main__":
     unittest.main()
