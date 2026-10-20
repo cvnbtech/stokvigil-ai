@@ -5,7 +5,7 @@
 [![Cloud Run Free Tier](https://img.shields.io/badge/Cloud%20Run-100%25%20Free%20Tier%20(360k%20vCPU--s)-10B981?style=flat-square)](https://cloud.google.com/run)
 [![Database Pool](https://img.shields.io/badge/Supabase%20PgBouncer-Port%206543%20Multiplexed-3ECF8E?style=flat-square)](https://supabase.com)
 [![AI Engine](https://img.shields.io/badge/AI%20Reasoning-Google%20Gemini%203.5%20Flash%20Lite-6366F1?style=flat-square)](https://ai.google.dev)
-[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-169%2F169%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
+[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-170%2F170%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
 [![Client Platforms](https://img.shields.io/badge/Clients-Flutter%203%20%7C%20Next.js%2016%20PWA-8B5CF6?style=flat-square)](mobile_app)
 
 ---
@@ -344,6 +344,8 @@ StokVigil AI's deterministic engine enforces strict mathematical guardrails to e
 3. **Multi-Day Rolling Drawdown Veto**: Flags multi-session market liquidations when 3-day drop reaches $R_{3D} \le -3.0\%$ below the 20 EMA, or 5-day drop reaches $R_{5D} \le -4.5\%$, forcing `SELL_WATCH` and preventing premature dip-buying.
 4. **200 EMA Supply Shock Override**: While the engine normally prevents shorting stocks above their 200 EMA, during broad market distribution ($\text{ADR} < 0.80$, elevated VIX, or Nifty $\le -0.50\%$), the long-trend veto is automatically overridden to preserve breakdown warnings (`SELL_WATCH`, `INTRADAY_MIS_SHORT`).
 5. **Macro Gatekeeper Long Veto**: Automatically vetoes `BUY_WATCH` setups to `HOLD_NEUTRAL` during market-wide drops ($\text{ADR} < 0.60$ or elevated VIX), eliminating bull-trap breakout entries.
+6. **Wyckoff Microstructure Block Dump & Supply Shock Engine**: Eliminates slow news RSS dependency. Detects real-time institutional liquidation directly from 5-minute tick volume ($RVOL_{20} \ge 2.2\times$), VWAP breakdown ($\Delta P_{\text{VWAP}} \le -0.80\%$), and Close Location Quartile ($\text{CLQ} \le 0.35$), while rejecting false-alarm absorption springs. Triggers instant `CAPITAL_PRESERVATION_EXIT` (Demat) or `INTRADAY_MIS_SHORT` (Watchlist).
+7. **RFC 8259 Standard Safe Float Serialization (`SafeJSONResponse`)**: Converts `NaN`, `+Infinity`, and `-Infinity` into standard JSON `null`, completely preventing `ValueError: Out of range float values are not JSON compliant` and HTTP 500 errors across all API routes while strictly upholding the Zero-Default Policy.
 
 ---
 
@@ -431,7 +433,7 @@ stokvigil-ai/
    .\.venv\Scripts\pip.exe install -r requirements.txt
    ```
 2. Configure environment variables in `backend/.env` (see `.env.example`).
-3. Run the automated test suite (verifying all 169 tests pass):
+3. Run the automated test suite (verifying all 170 tests pass):
    ```bash
    $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
    ```

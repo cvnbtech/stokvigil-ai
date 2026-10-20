@@ -230,8 +230,10 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
 │ 6. Circuit Lock Freeze Detection     15. 1% Capital Risk Sizer         │
 │ 7. Granular Near-Month Expiry Filter 16. Vectorized Backtester Engine  │
 │ 8. Universal Sensitivity Gate        17. 03:45 PM Closing Bell Digest  │
-│ 9. Two-Way 200 EMA & Supply Override 18. Public Audited Accuracy Ledger│
-│ 10. Multi-Day Rolling Drawdown Veto  19. Macro Crash Hysteresis Shield │
+│ 9. Two-Way 200 EMA & Supply Override 18. Macro Crash Hysteresis Shield │
+│ 10. Multi-Day Rolling Drawdown Veto  19. Wyckoff Block Dump Detector   │
+│ 11. 15m Close & Wick Rejection       20. RFC 8259 Safe JSON Serialization│
+│ 12. Target 1 Trail-to-Cost Alert     21. Public Audited Accuracy Ledger│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -293,7 +295,18 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
       - NIFTY 50 intraday drop reaches $\le -0.75\%$, OR
       - India VIX surges $\ge 14.5$ with Advance-Decline Ratio $\text{ADR} < 0.75$, OR
       - Severe market distribution occurs ($\text{ADR} < 0.55$, or $>65\%$ of index constituents declining with negative NIFTY trend).
-20. **Public Audited Accuracy & Transparency Ledger (`/transparency`)**:
+20. **Wyckoff Microstructure Institutional Block Dump & Supply Shock Engine**:
+    - Replaces lagging news RSS with pure 5-minute microstructure order flow to detect institutional block dumps in real time:
+      - Volume Multiple $\ge 2.2\times$ trailing 20 MA ($RVOL_{20}$).
+      - Price $\le -0.80\%$ below intraday VWAP.
+      - Candle Close Location Quartile $\text{CLQ} = \frac{C - L}{H - L} \le 0.35$ (closes near extreme low, confirming dominant supply).
+      - Negative intraday price momentum ($\Delta P < 0$ or $\Delta P_{5m} < 0$).
+    - *Anti-False-Alarm Guard*: High-volume dips with hammer wicks ($\text{CLQ} > 0.35$) are classified as institutional absorption springs and strictly rejected from generating false sell alerts.
+    - *Dual-Role Dispatch*: Triggers `CAPITAL_PRESERVATION_EXIT` for Demat holdings and `INTRADAY_MIS_SHORT` for watchlist tickers with `BLOCK_DEAL` Tier-1 cooldown bypass.
+21. **RFC 8259 Standard Safe Float Serialization (`SafeJSONResponse`)**:
+    - Built on `app/core/responses.py` and configured as `default_response_class` on FastAPI.
+    - Recursively converts `NaN`, `+Infinity`, and `-Infinity` into standard JSON `null`, completely eliminating `ValueError: Out of range float values are not JSON compliant` and HTTP 500 server crashes across all routes while strictly enforcing the Zero-Default Policy.
+22. **Public Audited Accuracy & Transparency Ledger (`/transparency`)**:
     - Real price-tracking verification engine (`app/accuracy_verifier.py`) that continuously verifies historical alerts against authentic subsequent OHLCV candles (`TARGET_1_REACHED`, `STOP_LOSS_HIT`, `OPEN_MONITORING`).
     - Reports genuine Target 1 hit rates, peak gains (`max_gain_pct`), and hold durations with zero mock data and zero PII exposure.
 
@@ -589,9 +602,9 @@ StokVigil AI maintains an exhaustive automated test suite covering all security 
   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
   ```
 - **Test Metrics & Verification Results**:
-  - **Total Tests Executed:** 169 tests across 16 test modules.
-  - **Pass Rate:** **100% (169/169 Passing, 0 Failures, 0 Errors)**.
-  - **Test Execution Duration:** ~130.4 seconds.
+  - **Total Tests Executed:** 170 tests across 16 test modules.
+  - **Pass Rate:** **100% (170/170 Passing, 0 Failures, 0 Errors)**.
+  - **Test Execution Duration:** ~26.0 seconds.
   - **Modules Verified:**
     1. `test_500_user_optimizations.py` (Multi-user bulk prefetch & PgBouncer throughput)
     2. `test_advanced_accuracy.py` (Price-tracking verification & Sharpe calculations)
