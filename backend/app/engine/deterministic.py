@@ -543,10 +543,26 @@ def compute_deterministic_confluence(
     day_change = technicals.get("change_pct")
     p_vs_vwap = technicals.get("price_vs_vwap_pct")
     l4_level = technicals.get("camarilla_pivots", {}).get("l4")
+    vol_mult = technicals.get("volume_multiple")
+    clq = technicals.get("close_location_pct")
+    c5_chg = technicals.get("candle_5m_change_pct")
     
     is_severe_breakdown = False
+    is_block_dump = False
     breakdown_reasons = []
 
+    # 1. Wyckoff Microstructure Institutional Supply Shock / Block Dump
+    if vol_mult is not None and vol_mult >= 2.2:
+        if p_vs_vwap is not None and p_vs_vwap <= -0.80:
+            if clq is not None and clq <= 0.35:
+                if (day_change is not None and day_change < 0) or (c5_chg is not None and c5_chg < 0):
+                    is_block_dump = True
+                    is_severe_breakdown = True
+                    breakdown_reasons.append(
+                        f"Institutional Block Dump: {vol_mult:.1f}x volume surge closing at session low ({p_vs_vwap:+.2f}% vs VWAP)"
+                    )
+
+    # 2. Standard Intraday Breakdown Benchmarks
     if day_change is not None and day_change <= -3.5:
         is_severe_breakdown = True
         breakdown_reasons.append(f"Severe intraday price drop ({day_change:+.2f}%)")
@@ -572,23 +588,24 @@ def compute_deterministic_confluence(
         multiday_reasons.append(f"5-Day Cumulative Drop of {r_5d:+.1f}%")
 
     if is_severe_breakdown or is_multiday_breakdown:
-        confluence_score = min(25 if is_multiday_breakdown else 28, confluence_score)
+        confluence_score = min(20 if is_block_dump else (25 if is_multiday_breakdown else 28), confluence_score)
         chg_fmt = (
-            f"{r_3d:+.1f}% (3D)" if is_multiday_breakdown and r_3d is not None else
+            f"{vol_mult:.1f}x Vol Dump" if is_block_dump and vol_mult is not None else
+            (f"{r_3d:+.1f}% (3D)" if is_multiday_breakdown and r_3d is not None else
             (f"{r_5d:+.1f}% (5D)" if is_multiday_breakdown and r_5d is not None else
-            (f"{day_change:+.1f}%" if day_change is not None else "-3.5%"))
+            (f"{day_change:+.1f}%" if day_change is not None else "-3.5%")))
         )
         if demat_context["is_in_portfolio"]:
             action_bias = "CAPITAL_PRESERVATION_EXIT"
             has_actionable_signal = True
-            catalyst_category = "TRAILING_STOP_TRIGGER"
-            alert_title = f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
+            catalyst_category = "BLOCK_DEAL" if is_block_dump else "TRAILING_STOP_TRIGGER"
+            alert_title = f"🚨 {symbol}: Institutional Block Dump / Exit Defense ({chg_fmt})" if is_block_dump else f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
             confluence_drivers.insert(0, f"Portfolio Defense Override: Cumulative breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
         else:
             action_bias = "SELL_WATCH" if is_multiday_breakdown else "INTRADAY_MIS_SHORT"
             has_actionable_signal = True
-            catalyst_category = "PRICE_BREAKOUT"
-            alert_title = f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})"
+            catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
+            alert_title = f"🚨 {symbol}: Institutional Block Breakdown ({chg_fmt})" if is_block_dump else (f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})")
             confluence_drivers.insert(0, f"Supply Shock Breakdown: Cumulative liquidation ({chg_fmt}) detected.")
         for r in reversed(breakdown_reasons + multiday_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
@@ -673,7 +690,7 @@ def compute_deterministic_confluence(
 
     if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
         is_market_dist = bool(adr_val is not None and float(adr_val) < 0.80) or is_high_vix or bool(macro_data.get("nifty_change_pct") is not None and float(macro_data.get("nifty_change_pct")) <= -0.50)
-        if is_severe_breakdown or is_multiday_breakdown or (directional_score is not None and directional_score <= 40) or is_market_dist:
+        if is_severe_breakdown or is_multiday_breakdown or is_block_dump or (directional_score is not None and directional_score <= 40) or is_market_dist:
             logger.info(f"Supply Shock Override triggered for {symbol}: Above 200 EMA (₹{ema_200_val:,.2f}) but breakdown or broad market distribution active. Preserving {action_bias}.")
             confluence_drivers.append(f"Supply Shock Override: Institutional breakdown / Market distribution overrides 200 EMA uptrend (₹{ema_200_val:,.2f}).")
         else:

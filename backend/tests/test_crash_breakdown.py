@@ -198,3 +198,102 @@ def test_async_sync_demat_to_watchlists_cost_basis():
     assert call_args[1]["symbol"] == "HDFCBANK"
     assert call_args[1]["average_buy_price"] == 1620.0
     assert call_args[1]["quantity"] == 50
+
+
+def test_wyckoff_institutional_block_dump_trigger():
+    """
+    Tests that a real-time institutional block sell:
+    - Volume 3.2x 20MA
+    - Price -1.2% below VWAP
+    - Candle Close Location Quartile 0.18 (Closes at the bottom 18% of bar)
+    - Moderate drop of -1.8% (which would have been missed by the old -3.5% rule)
+    immediately triggers BLOCK_DEAL and CAPITAL_PRESERVATION_EXIT with zero news dependency.
+    """
+    technicals = {
+        "current_price": 2850.0,
+        "ema_200": 2700.0,
+        "change_pct": -1.8,  # Moderate drop, not -3.5%!
+        "candle_5m_change_pct": -1.2,
+        "price_vs_vwap_pct": -1.2,
+        "is_volume_surge": True,
+        "volume_multiple": 3.2,
+        "close_location_pct": 0.18,  # Closed at the low!
+        "rsi_15m": 38.0,
+        "camarilla_pivots": {"l4": 2830.0, "h4": 2920.0}
+    }
+    demat_holding = {
+        "symbol": "TITAN",
+        "average_price": 2950.0,
+        "quantity": 25,
+        "current_market_price": 2850.0
+    }
+    macro_data = {"india_vix": 15.0, "adr_ratio": 0.65, "allow_breakout_trades": True}
+
+    # 1. Test for Demat Holding -> CAPITAL_PRESERVATION_EXIT
+    res_demat = compute_deterministic_confluence(
+        symbol="TITAN",
+        technicals=technicals,
+        macro_data=macro_data,
+        flow_data={"delivery_pct": 35.0},
+        forensics={"debt_to_equity": 0.2},
+        financials={"price": 2850.0},
+        holding_info=demat_holding
+    )
+    assert res_demat["has_actionable_signal"] is True
+    assert res_demat["action_bias"] == "CAPITAL_PRESERVATION_EXIT"
+    assert res_demat["catalyst_category"] == "BLOCK_DEAL"
+    assert "Institutional Block Dump" in res_demat["alert_title"]
+    assert res_demat["confluence_score"] <= 20
+
+    # 2. Test for Watchlist Ticker (Unheld) -> INTRADAY_MIS_SHORT
+    res_watchlist = compute_deterministic_confluence(
+        symbol="TITAN",
+        technicals=technicals,
+        macro_data=macro_data,
+        flow_data={"delivery_pct": 35.0},
+        forensics={"debt_to_equity": 0.2},
+        financials={"price": 2850.0},
+        holding_info=None
+    )
+    assert res_watchlist["has_actionable_signal"] is True
+    assert res_watchlist["action_bias"] == "INTRADAY_MIS_SHORT"
+    assert res_watchlist["catalyst_category"] == "BLOCK_DEAL"
+    assert "Institutional Block Breakdown" in res_watchlist["alert_title"]
+    assert res_watchlist["confluence_score"] <= 20
+
+
+def test_wyckoff_false_alarm_absorption_spring_rejected():
+    """
+    Tests that a high-volume dip with a hammer/absorption wick:
+    - Volume 3.5x 20MA
+    - Price -1.0% below VWAP
+    - Candle Close Location Quartile 0.85 (Closes near top 85% of bar - institutional absorption!)
+    does NOT trigger a false block dump sell alert, protecting the trader from selling at the bottom.
+    """
+    technicals = {
+        "current_price": 2900.0,
+        "ema_200": 2700.0,
+        "change_pct": -1.2,
+        "candle_5m_change_pct": 0.6,
+        "price_vs_vwap_pct": -0.9,
+        "is_volume_surge": True,
+        "volume_multiple": 3.5,
+        "close_location_pct": 0.85,  # Absorption! Closed near highs!
+        "rsi_15m": 42.0,
+        "camarilla_pivots": {"l4": 2840.0, "h4": 2960.0}
+    }
+    macro_data = {"india_vix": 14.0, "adr_ratio": 0.95, "allow_breakout_trades": True}
+
+    res = compute_deterministic_confluence(
+        symbol="TITAN",
+        technicals=technicals,
+        macro_data=macro_data,
+        flow_data={"delivery_pct": 55.0},
+        forensics={"debt_to_equity": 0.2},
+        financials={"price": 2900.0},
+        holding_info=None
+    )
+    # Must NOT be classified as BLOCK_DEAL or severe supply shock
+    assert res["catalyst_category"] != "BLOCK_DEAL"
+    assert res["action_bias"] != "INTRADAY_MIS_SHORT"
+

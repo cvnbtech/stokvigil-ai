@@ -470,6 +470,8 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         },
         "volume_multiple": None,
         "is_volume_surge": False,
+        "close_location_pct": None,
+        "candle_5m_change_pct": None,
         "technical_score": 50
     }
 
@@ -641,6 +643,8 @@ def compute_technicals_from_frames(
         },
         "volume_multiple": None,
         "is_volume_surge": False,
+        "close_location_pct": None,
+        "candle_5m_change_pct": None,
         "technical_score": 50
     }
 
@@ -872,6 +876,24 @@ def compute_technicals_from_frames(
             if vol_ma_20 > 0:
                 volume_mult = round(recent_vol / vol_ma_20, 2)
                 is_volume_surge = (volume_mult >= 2.0)
+
+        # Wyckoff VSA Candle Range-Location (CLQ) & Intraday 5m Momentum
+        close_location_pct = None
+        candle_5m_change_pct = None
+        if not df_5m.empty:
+            last_5m_bar = df_5m.iloc[-1]
+            b_high = float(last_5m_bar['High']) if ('High' in last_5m_bar and not pd.isna(last_5m_bar['High'])) else None
+            b_low = float(last_5m_bar['Low']) if ('Low' in last_5m_bar and not pd.isna(last_5m_bar['Low'])) else None
+            b_close = float(last_5m_bar['Close']) if ('Close' in last_5m_bar and not pd.isna(last_5m_bar['Close'])) else None
+            b_open = float(last_5m_bar['Open']) if ('Open' in last_5m_bar and not pd.isna(last_5m_bar['Open'])) else None
+            
+            if b_high is not None and b_low is not None and b_close is not None:
+                b_rng = b_high - b_low
+                if b_rng > 0:
+                    close_location_pct = round((b_close - b_low) / b_rng, 3)
+            
+            if b_open is not None and b_close is not None and b_open > 0:
+                candle_5m_change_pct = round(((b_close - b_open) / b_open) * 100.0, 2)
         
         # 15m Resampling for Multi-Timeframe Confirmation
         df_15m = df_5m.resample('15min').agg({
@@ -1052,6 +1074,8 @@ def compute_technicals_from_frames(
             "ttm_squeeze": ttm_squeeze,
             "volume_multiple": volume_mult,
             "is_volume_surge": is_volume_surge,
+            "close_location_pct": close_location_pct,
+            "candle_5m_change_pct": candle_5m_change_pct,
             "technical_score": tech_score
         }
 
