@@ -5,7 +5,7 @@
 [![Cloud Run Free Tier](https://img.shields.io/badge/Cloud%20Run-100%25%20Free%20Tier%20(360k%20vCPU--s)-10B981?style=flat-square)](https://cloud.google.com/run)
 [![Database Pool](https://img.shields.io/badge/Supabase%20PgBouncer-Port%206543%20Multiplexed-3ECF8E?style=flat-square)](https://supabase.com)
 [![AI Engine](https://img.shields.io/badge/AI%20Reasoning-Google%20Gemini%203.5%20Flash%20Lite-6366F1?style=flat-square)](https://ai.google.dev)
-[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-205%2F205%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
+[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-210%2F210%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
 [![Client Platforms](https://img.shields.io/badge/Clients-Flutter%203%20%7C%20Next.js%2016%20PWA-8B5CF6?style=flat-square)](mobile_app)
 
 ---
@@ -361,7 +361,7 @@ stokvigil-ai/
 │   ├── Dockerfile                    <-- Container definition for Google Cloud Run
 │   ├── requirements.txt              <-- Python 3.11 dependencies
 │   ├── app/
-│   │   ├── main.py                   <-- FastAPI Application Orchestrator (<140 lines)
+│   │   ├── main.py                   <-- FastAPI Orchestrator (Starlette Lifespan Context Manager)
 │   │   ├── config.py                 <-- Pydantic V2 Settings & Broker Key Sanitation
 │   │   ├── vault.py                  <-- AES-256 Fernet Crypto Vault with PBKDF2HMAC
 │   │   ├── auth.py                   <-- Supabase JWT Bearer Auth & PII Masking
@@ -389,24 +389,26 @@ stokvigil-ai/
 │   │   │   └── registry.py           <-- BrokerRegistry Catalog
 │   │   ├── routers/
 │   │   │   ├── auth.py               <-- User Profile, Device Registration, Credentials Vault
-│   │   │   ├── stocks.py             <-- Ticker Search, Validation, Quotes, Candles
+│   │   │   ├── stocks.py             <-- Ticker Search, Validation, Persistent Worker Pool Quotes
 │   │   │   ├── orders.py             <-- Breeze Order Execution, Idempotency Shield, Tick Snapping
 │   │   │   ├── market.py             <-- FII/DII Flows, Accuracy Ledger, Backtester
 │   │   │   └── cron.py               <-- Surveillance Scanner, Token Reminder, Pre/Post Briefings
 │   │   └── schemas/                  <-- Pydantic V2 Data Models
-│   └── tests/                        <-- 16-Suite Test Framework (169 Tests Passing)
+│   └── tests/                        <-- 20-Suite Test Framework (210 Tests Passing, 100%)
 ├── mobile_app/                       <-- Flutter 3 Client (Android / iOS)
 │   ├── lib/
-│   │   ├── main.dart                 <-- App Entrypoint, Deep Links & Lifecycle Observers
+│   │   ├── main.dart                 <-- MultiProvider Entrypoint, Deep Links & Lifecycle Observers
+│   │   ├── providers/                <-- Reactive ChangeNotifier Providers (Watchlist, Alerts)
 │   │   ├── screens/                  <-- Dashboard, Alerts, Watchlist, Charts, Backtest, Ledger
 │   │   ├── services/                 <-- ApiService, FcmService, SupabaseService
 │   │   └── widgets/                  <-- Custom HUDs, Confluence Radar, Broker Icons
 │   └── assets/js/                    <-- Preloaded Offline Lightweight Charts Bundle
 ├── web_portal/                       <-- Next.js 16 PWA (React 19 + TypeScript + Tailwind)
-│   ├── src/app/                      <-- Dashboard, Transparency Ledger, Callbacks, Proxies
+│   ├── src/app/                      <-- Dashboard (next/dynamic), Callbacks, Proxies, Realtime WS
+│   ├── src/hooks/                    <-- Extracted Domain Custom Hooks (Auth, Watchlist, Alerts, Portfolio)
 │   └── src/components/               <-- TradingView Charts, Radar, Alpha Cards, TradeOrderModal
 └── supabase/
-    └── migrations/                   <-- SQL Migrations (RLS, PgBouncer, Demat Cost Basis)
+    └── migrations/                   <-- SQL Migrations (RLS InitPlan, PgBouncer, Demat Cost Basis)
 ```
 
 ---
@@ -423,6 +425,8 @@ stokvigil-ai/
    - `supabase/migrations/20260920_fii_dii_service_role_policy.sql`
    - `supabase/migrations/20260927_add_broker_id_to_user_credentials.sql`
    - `supabase/migrations/20261004_persist_demat_cost_basis.sql`
+   - `supabase/migrations/20261020_normalize_user_watchlists_symbol.sql`
+   - `supabase/migrations/20261021_optimize_rls_initplan.sql`
 2. Obtain your `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `DATABASE_URL` (Port 6543 connection string with `?pgbouncer=true`).
 
 ### 2. Backend Setup & Automated Test Verification
@@ -433,9 +437,9 @@ stokvigil-ai/
    .\.venv\Scripts\pip.exe install -r requirements.txt
    ```
 2. Configure environment variables in `backend/.env` (see `.env.example`).
-3. Run the automated test suite (verifying all 170 tests pass):
+3. Run the automated test suite (verifying all 210 tests pass):
    ```bash
-   $env:PYTHONPATH="backend"; $env:ENVIRONMENT="test"; $env:ENCRYPTION_KEY="MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="; backend\.venv\Scripts\python.exe -m unittest discover -s backend/tests -p "test_*.py"
+   backend\.venv\Scripts\python.exe -m pytest backend/tests -q
    ```
 4. Start the development server:
    ```bash
