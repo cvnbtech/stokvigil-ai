@@ -1,0 +1,149 @@
+"""
+Tests for StokVigil AI Security Master & ISIN Resolution Architecture.
+Validates ISIN format validation, bidirectional ISIN <-> Ticker resolution,
+ICICI Direct legacy code translation, and watchlist deduplication logic.
+"""
+
+import pytest
+from app.engine.security_master import (
+    is_valid_isin,
+    init_security_master,
+    resolve_isin_to_symbol,
+    resolve_symbol_to_isin,
+    resolve_security,
+    ICICI_PROPRIETARY_CODE_MAP,
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_security_master():
+    """Ensure Security Master is initialized before running tests."""
+    init_security_master()
+
+
+def test_is_valid_isin():
+    # Valid Indian equity ISINs
+    assert is_valid_isin("INE002A01018") is True  # Reliance
+    assert is_valid_isin("INE155A01022") is True  # Tata Motors
+    assert is_valid_isin("INE009A01021") is True  # Infosys
+    assert is_valid_isin("INF760C01018") is True  # Mutual Fund / ETF
+    assert is_valid_isin("IN9155A01020") is True  # Partly paid shares
+
+    # Invalid ISINs
+    assert is_valid_isin("") is False
+    assert is_valid_isin(None) is False
+    assert is_valid_isin("RELIANCE") is False
+    assert is_valid_isin("TELCO") is False
+    assert is_valid_isin("INE155A0102") is False  # 11 chars (short)
+    assert is_valid_isin("INE155A010222") is False  # 13 chars (long)
+    assert is_valid_isin("USA002A01018") is False  # Foreign
+
+
+def test_icici_proprietary_code_resolution():
+    # Test major ICICI proprietary codes
+    telco = resolve_security("TELCO")
+    assert telco["symbol"] == "TATAMOTORS"
+    assert telco["isin"] == "INE155A01022"
+    assert telco["exchange"] == "NSE"
+
+    inftec = resolve_security("INFTEC")
+    assert inftec["symbol"] == "INFY"
+    assert inftec["isin"] == "INE009A01021"
+
+    hdfban = resolve_security("HDFBAN")
+    assert hdfban["symbol"] == "HDFCBANK"
+    assert hdfban["isin"] == "INE040A01034"
+
+    lartou = resolve_security("LARTOU")
+    assert lartou["symbol"] == "LT"
+    assert lartou["isin"] == "INE018A01030"
+
+    staban = resolve_security("STABAN")
+    assert staban["symbol"] == "SBIN"
+    assert staban["isin"] == "INE062A01020"
+
+
+def test_isin_to_symbol_resolution():
+    # Reliance
+    assert resolve_isin_to_symbol("INE002A01018") == "RELIANCE"
+    # Infosys
+    assert resolve_isin_to_symbol("INE009A01021") == "INFY"
+    # Tata Motors
+    assert resolve_isin_to_symbol("INE155A01022") == "TATAMOTORS"
+
+
+def test_symbol_to_isin_resolution():
+    assert resolve_symbol_to_isin("RELIANCE") == "INE002A01018"
+    assert resolve_symbol_to_isin("RELIANCE.NS") == "INE002A01018"
+    assert resolve_symbol_to_isin("INFY") == "INE009A01021"
+    assert resolve_symbol_to_isin("TATAMOTORS") == "INE155A01022"
+    # ICICI Code directly to ISIN
+    assert resolve_symbol_to_isin("TELCO") == "INE155A01022"
+    assert resolve_symbol_to_isin("INFTEC") == "INE009A01021"
+
+
+def test_resolve_security_any_identifier():
+    # 1. By ISIN
+    res1 = resolve_security("INE002A01018")
+    assert res1["isin"] == "INE002A01018"
+    assert res1["symbol"] == "RELIANCE"
+    assert res1["full_symbol"] == "RELIANCE.NS"
+
+    # 2. By Clean Ticker
+    res2 = resolve_security("TCS")
+    assert res2["isin"] == "INE467B01029"
+    assert res2["symbol"] == "TCS"
+    assert res2["full_symbol"] == "TCS.NS"
+
+    # 3. By Suffix Ticker
+    res3 = resolve_security("HDFCBANK.NS")
+    assert res3["isin"] == "INE040A01034"
+    assert res3["symbol"] == "HDFCBANK"
+
+    # 4. By BSE Scrip Code
+    res4 = resolve_security("500570", exchange="BSE")
+    assert res4["exchange"] == "BSE"
+    assert res4["full_symbol"] == "500570.BO"
+
+
+def test_deduplication_grouping_logic():
+    # Simulate rows in database that represent the same stock
+    sample_rows = [
+        {"id": "1", "symbol": "TELCO", "average_buy_price": None, "quantity": None, "is_auto_synced": True},
+        {"id": "2", "symbol": "TATAMOTORS", "average_buy_price": 750.50, "quantity": 100, "is_auto_synced": True},
+        {"id": "3", "symbol": "TATAMOTORS.NS", "average_buy_price": None, "quantity": None, "is_auto_synced": False},
+        {"id": "4", "symbol": "INE155A01022", "average_buy_price": None, "quantity": None, "is_auto_synced": True},
+    ]
+
+    # Map each row through resolve_security
+    resolved_groups = {}
+    for r in sample_rows:
+        sec = resolve_security(r["symbol"])
+        isin = sec.get("isin")
+        assert isin == "INE155A01022"  # ALL 4 resolve to the identical ISIN!
+        if isin not in resolved_groups:
+            resolved_groups[isin] = []
+        resolved_groups[isin].append(r)
+
+    # All 4 rows collapsed into 1 single ISIN group
+    assert len(resolved_groups) == 1
+    tata_group = resolved_groups["INE155A01022"]
+    assert len(tata_group) == 4
+
+    # Best master row selection: row with average_buy_price > 0
+    sorted_group = sorted(
+        tata_group,
+        key=lambda x: (
+            1 if (x.get("average_buy_price") and float(x.get("average_buy_price") or 0) > 0) else 0,
+            1 if x.get("is_auto_synced") else 0
+        ),
+        reverse=True
+    )
+    master = sorted_group[0]
+    duplicates = sorted_group[1:]
+
+    assert master["id"] == "2"
+    assert master["average_buy_price"] == 750.50
+    assert master["quantity"] == 100
+    assert len(duplicates) == 3
+    assert set(d["id"] for d in duplicates) == {"1", "3", "4"}

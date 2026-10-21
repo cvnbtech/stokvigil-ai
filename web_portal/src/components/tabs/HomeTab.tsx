@@ -142,7 +142,7 @@ export default function HomeTab({
           {isPortfolioVisible
             ? (totalValue > 0
                 ? `₹${totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                : (hasCredentials ? "₹0.00" : "--"))
+                : "--")
             : "₹ • • • • • •"}
         </div>
 

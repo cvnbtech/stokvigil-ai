@@ -690,11 +690,17 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
                     clean_name = getattr(fast, "short_name", None) or getattr(fast, "long_name", None) or clean_name
                 except Exception:
                     pass
+
+                from app.engine.security_master import resolve_security
+                sec_info = resolve_security(clean_sym, exchange=exch)
+                isin_val = sec_info.get("isin")
+
                 return {
                     "is_valid": True,
                     "symbol": clean_sym,
                     "clean_symbol": clean_sym,
-                    "name": clean_name,
+                    "isin": isin_val,
+                    "name": clean_name or sec_info.get("company_name", clean_sym),
                     "exchange": exch,
                     "price": float(price),
                     "full_symbol": f"{clean_sym}{suffix}"

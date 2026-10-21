@@ -35,8 +35,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
               const q = quotesMap[cleanSym] || quotesMap[rawSym] || getCachedClientQuote(cleanSym) || {};
               const price = q.price !== undefined ? q.price : 0;
               const rawChg = q.change_pct;
-              const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : 0.0);
-              const isPos = chgPct >= 0;
+              const chgPct = typeof rawChg === "number" ? rawChg : (rawChg != null ? parseFloat(rawChg) : null);
+              const isPos = chgPct != null ? chgPct >= 0 : true;
               const exch = q.exchange || (rawSym.endsWith(".BO") ? "BSE" : "NSE");
               const hasRealPrice = price > 0;
               const hasActiveSignal = hasRealPrice && q.signal && q.signal !== "--" && q.signal !== "MONITORING" && q.signal !== "HOLD";
@@ -53,7 +53,7 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
                 name: q.name || cleanSym,
                 auto: w.is_auto_synced || false,
                 price,
-                chg: hasRealPrice ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
+                chg: (hasRealPrice && chgPct != null) ? `${isPos ? "+" : ""}${chgPct.toFixed(2)}%` : "--",
                 isPositive: isPos,
                 signal,
                 signalType,
@@ -133,6 +133,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
 
     let livePrice = 0;
 
+    let validatedIsin: string | undefined = undefined;
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/stocks/validate?symbol=${encodeURIComponent(raw)}`, {
         signal: AbortSignal.timeout(30000)
@@ -143,6 +145,7 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
           isValid = true;
           if (valData.name) stockName = valData.name;
           if (valData.price) livePrice = Number(valData.price);
+          if (valData.isin) validatedIsin = String(valData.isin).trim().toUpperCase();
         } else if (valData.is_timeout) {
           isTimeout = true;
         }
@@ -187,7 +190,7 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
           name: stockName && stockName !== raw ? stockName : displaySymbol,
           auto: false,
           price: livePrice,
-          chg: livePrice > 0 ? "+0.00%" : "--",
+          chg: "--",
           isPositive: true,
           signal: "--",
           signalType: "none",
@@ -197,11 +200,20 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
         ...prev.filter(p => p.symbol !== displaySymbol && p.fullSymbol !== dbSymbol)
       ]);
 
-      await supabase.from('user_watchlists').upsert({
+      const payload: any = {
         user_id: userId,
         symbol: dbSymbol,
         is_auto_synced: false
-      }, { onConflict: 'user_id,symbol' });
+      };
+      if (validatedIsin) payload.isin = validatedIsin;
+      if (stockName) payload.company_name = stockName;
+
+      const conflictTarget = validatedIsin ? 'user_id,isin' : 'user_id,symbol';
+      try {
+        await supabase.from('user_watchlists').upsert(payload, { onConflict: conflictTarget });
+      } catch {
+        await supabase.from('user_watchlists').upsert(payload, { onConflict: 'user_id,symbol' });
+      }
       loadWatchlistData(userId);
     } else {
       setWatchlist(prev => [
@@ -213,7 +225,7 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
           name: stockName && stockName !== raw ? stockName : displaySymbol,
           auto: false,
           price: livePrice,
-          chg: livePrice > 0 ? "+0.00%" : "--",
+          chg: "--",
           isPositive: true,
           signal: "--",
           signalType: "none",

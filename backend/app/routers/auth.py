@@ -31,6 +31,11 @@ from app.engine.portfolio_sync import (
     update_demat_portfolio_cache,
     normalize_watchlist_symbol,
 )
+from app.engine.security_master import (
+    resolve_security,
+    resolve_symbol_to_isin,
+    is_valid_isin,
+)
 from app.accuracy_verifier import batch_verify_alerts
 from app.db_pool import (
     fetch_one,
@@ -58,10 +63,10 @@ _FUNDAMENTALS_CACHE_TTL = 86400.0  # 24 hours
 
 def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbols: Union[List[Dict[str, Any]], List[str]]):
     """
-    Background task to sync Demat holdings (including average cost basis & quantity)
+    Background task to sync Demat holdings (including average cost basis, quantity & ISIN)
     to user_watchlists without blocking HTTP response.
     Normalizes symbols via Universal Canonical Suffix Rule (.NS stripped, .BO preserved)
-    and deduplicates payloads in-memory to prevent Postgres ON CONFLICT batch errors.
+    and deduplicates payloads in-memory by immutable ISIN to prevent duplicate database rows.
     """
     if not holdings_or_symbols:
         return
@@ -74,33 +79,56 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
                 clean_sym = normalize_watchlist_symbol(raw_sym, exchange=exch)
                 if not clean_sym:
                     continue
+
+                raw_isin = str(item.get("isin") or "").strip().upper()
+                isin_val = raw_isin if is_valid_isin(raw_isin) else resolve_symbol_to_isin(clean_sym)
+                comp_name = item.get("company_name") or item.get("name") or clean_sym
+
                 avg_price = float(item.get("average_price") or item.get("avg_price") or 0.0)
                 qty = int(item.get("quantity") or item.get("qty") or 0)
                 row = {
                     "user_id": user_id,
                     "symbol": clean_sym,
+                    "company_name": comp_name,
                     "is_auto_synced": True,
                 }
+                if isin_val:
+                    row["isin"] = isin_val
                 if avg_price > 0:
                     row["average_buy_price"] = avg_price
                 if qty > 0:
                     row["quantity"] = qty
-                sync_payload_map[clean_sym] = row
+
+                dedup_key = isin_val if isin_val else clean_sym
+                sync_payload_map[dedup_key] = row
+
             elif isinstance(item, str) and item.strip():
                 clean_sym = normalize_watchlist_symbol(item)
                 if not clean_sym:
                     continue
-                if clean_sym not in sync_payload_map:
-                    sync_payload_map[clean_sym] = {
+                isin_val = resolve_symbol_to_isin(clean_sym)
+                dedup_key = isin_val if isin_val else clean_sym
+                if dedup_key not in sync_payload_map:
+                    row_entry = {
                         "user_id": user_id,
                         "symbol": clean_sym,
                         "is_auto_synced": True
                     }
+                    if isin_val:
+                        row_entry["isin"] = isin_val
+                    sync_payload_map[dedup_key] = row_entry
 
         sync_payload = list(sync_payload_map.values())
         if sync_payload:
-            db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
-            logger.info(f"Background auto-synced {len(sync_payload)} Demat holdings with cost-basis to user_watchlists for user {mask_id(user_id)}")
+            all_have_isin = all(bool(r.get("isin")) for r in sync_payload)
+            target_conflict = "user_id,isin" if all_have_isin else "user_id,symbol"
+            try:
+                db.table("user_watchlists").upsert(sync_payload, on_conflict=target_conflict).execute()
+            except Exception as isin_err:
+                logger.debug(f"Upsert fallback on conflict: {isin_err}")
+                db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
+
+            logger.info(f"Background auto-synced {len(sync_payload)} Demat holdings with cost-basis and ISIN to user_watchlists for user {mask_id(user_id)}")
     except Exception as sync_err:
         logger.warning(f"Note on background auto-syncing Demat holdings: {sync_err}")
 
@@ -444,7 +472,7 @@ def get_user_portfolio(
 
     cred_res = db.table("user_credentials").select("*").eq("user_id", user_id).execute()
     if not cred_res.data:
-        return {"has_credentials": False, "is_expired": False, "holdings": [], "total_portfolio_value": 0.0}
+        return {"has_credentials": False, "is_expired": False, "holdings": [], "total_portfolio_value": None}
 
     cred = cred_res.data[0]
     today_str = str(date.today())
@@ -456,10 +484,10 @@ def get_user_portfolio(
             "has_credentials": False,
             "is_expired": True,
             "token_date": token_date,
-            "total_portfolio_value": 0.0,
-            "total_investment_value": 0.0,
-            "total_pnl": 0.0,
-            "total_pnl_percent": 0.0,
+            "total_portfolio_value": None,
+            "total_investment_value": None,
+            "total_pnl": None,
+            "total_pnl_percent": None,
             "holdings": []
         }
 
@@ -482,6 +510,8 @@ def get_user_portfolio(
     def _price_single_holding(h: Dict[str, Any]) -> Dict[str, Any]:
         sym = h['symbol']
         clean_sym = sym.replace(".NS", "").replace(".BO", "").strip().upper()
+        raw_isin = str(h.get('isin') or "").strip().upper()
+        isin = raw_isin if is_valid_isin(raw_isin) else (resolve_symbol_to_isin(clean_sym) or resolve_symbol_to_isin(sym))
 
         live_price = 0.0
         current_ttl = get_quote_cache_ttl()
@@ -503,21 +533,34 @@ def get_user_portfolio(
         if live_price <= 0.0:
             live_price = float(h.get('current_market_price') or h.get('last_price') or 0.0)
 
+        has_live_price = live_price > 0.0
+
         pe_ratio, debt_to_equity = _get_holding_fundamentals(clean_sym, now)
 
         qty = h.get('quantity', 0)
-        avg_price = h.get('average_price', 0)
-        
-        current_val = (live_price * qty) if live_price > 0 else 0.0
-        investment_val = (avg_price * qty) if avg_price > 0 else 0.0
-        pnl = (current_val - investment_val) if (live_price > 0 and avg_price > 0) else 0.0
-        pnl_pct = ((pnl / investment_val) * 100) if (live_price > 0 and avg_price > 0 and investment_val > 0) else 0.0
+        raw_avg = h.get('average_price') or h.get('avg_price') or 0.0
+        try:
+            avg_price = float(raw_avg)
+        except (ValueError, TypeError):
+            avg_price = 0.0
+
+        current_val = round(live_price * qty, 2) if has_live_price else None
+        investment_val = round(avg_price * qty, 2) if avg_price > 0 else None
+        pnl = round(current_val - investment_val, 2) if (current_val is not None and investment_val is not None) else None
+        pnl_pct = round(((live_price - avg_price) / avg_price) * 100.0, 2) if (has_live_price and avg_price > 0) else None
 
         quote_obj = cached_quote["data"] if cached_quote else quote_data
-        day_high = (quote_obj.get("day_high") if quote_obj else None) if live_price > 0 else None
-        day_low = (quote_obj.get("day_low") if quote_obj else None) if live_price > 0 else None
-        chg_pct = float(quote_obj.get("change_pct", 0.0)) if (quote_obj and live_price > 0) else 0.0
-        day_pnl = round(current_val * (chg_pct / 100.0), 2) if (chg_pct != 0.0 and live_price > 0) else 0.0
+        day_high = (quote_obj.get("day_high") if quote_obj else None) if has_live_price else None
+        day_low = (quote_obj.get("day_low") if quote_obj else None) if has_live_price else None
+
+        chg_pct = None
+        if quote_obj and has_live_price and quote_obj.get("change_pct") is not None:
+            try:
+                chg_pct = round(float(quote_obj["change_pct"]), 2)
+            except (ValueError, TypeError):
+                chg_pct = None
+
+        day_pnl = round(current_val * (chg_pct / 100.0), 2) if (chg_pct is not None and current_val is not None) else None
 
         is_bse = sym.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6) or h.get("exchange") == "BSE"
         exch = "BSE" if is_bse else (quote_obj.get("exchange", "NSE") if quote_obj else "NSE")
@@ -546,31 +589,35 @@ def get_user_portfolio(
             h_target = h_target or p_tactical.get("target_1") or p_tactical.get("tactical_resistance_1")
             h_stop_loss = h_stop_loss or p_tactical.get("protective_stop_loss")
 
+        avg_price_ret = round(avg_price, 2) if avg_price > 0 else None
+
         return {
             "symbol": clean_sym,
             "clean_symbol": clean_sym,
             "full_symbol": sym,
+            "isin": isin,
             "name": proper_name,
             "exchange": exch,
             "quantity": qty,
-            "avg_price": avg_price,
-            "current_price": round(live_price, 2) if live_price > 0 else 0.0,
-            "current_value": round(current_val, 2) if live_price > 0 else 0.0,
-            "pnl": round(pnl, 2) if (live_price > 0 and avg_price > 0) else None,
-            "pnl_percent": round(pnl_pct, 2) if (live_price > 0 and avg_price > 0) else None,
+            "avg_price": avg_price_ret,
+            "average_price": avg_price_ret,
+            "current_price": round(live_price, 2) if has_live_price else None,
+            "current_value": current_val,
+            "pnl": pnl,
+            "pnl_percent": pnl_pct,
             "day_high": day_high,
             "day_low": day_low,
             "change_pct": chg_pct,
-            "day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
+            "day_pnl": day_pnl,
             "pe_ratio": pe_ratio,
             "debt_to_equity": debt_to_equity,
-            "signal": h_signal if live_price > 0 else None,
-            "signal_type": h_signal_type if live_price > 0 else None,
-            "target": h_target if live_price > 0 else None,
-            "stop_loss": h_stop_loss if live_price > 0 else None,
-            "_curr_val": current_val,
-            "_inv_val": investment_val,
-            "_day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
+            "signal": h_signal if has_live_price else None,
+            "signal_type": h_signal_type if has_live_price else None,
+            "target": h_target if has_live_price else None,
+            "stop_loss": h_stop_loss if has_live_price else None,
+            "_curr_val": (live_price * qty) if has_live_price else 0.0,
+            "_inv_val": (avg_price * qty) if avg_price > 0 else 0.0,
+            "_day_pnl": day_pnl,
         }
 
     detailed_holdings = []
@@ -593,8 +640,8 @@ def get_user_portfolio(
                 has_day_pnl = True
             detailed_holdings.append(item)
 
-    total_pnl = total_val - total_investment
-    total_pnl_pct = ((total_pnl / total_investment) * 100) if total_investment > 0 else 0.0
+    total_pnl = round(total_val - total_investment, 2) if (total_val > 0 and total_investment > 0) else None
+    total_pnl_pct = round(((total_pnl / total_investment) * 100), 2) if (total_pnl is not None and total_investment > 0) else None
 
     if detailed_holdings:
         background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, detailed_holdings)
@@ -614,10 +661,10 @@ def get_user_portfolio(
     response_payload = {
         "has_credentials": True,
         "token_date": cred.get("token_date"),
-        "total_portfolio_value": round(total_val, 2),
-        "total_investment_value": round(total_investment, 2),
-        "total_pnl": round(total_pnl, 2),
-        "total_pnl_percent": round(total_pnl_pct, 2),
+        "total_portfolio_value": round(total_val, 2) if total_val > 0 else None,
+        "total_investment_value": round(total_investment, 2) if total_investment > 0 else None,
+        "total_pnl": total_pnl,
+        "total_pnl_percent": total_pnl_pct,
         "total_day_pnl": round(total_day_pnl, 2) if has_day_pnl else None,
         "holdings": detailed_holdings
     }

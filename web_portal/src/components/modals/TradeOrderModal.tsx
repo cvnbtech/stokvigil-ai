@@ -146,7 +146,7 @@ export default function TradeOrderModal({
                   step="0.05"
                   value={limitPrice}
                   onChange={e => setLimitPrice(e.target.value)}
-                  placeholder={tradeData.price > 0 ? tradeData.price.toFixed(2) : "0.00"}
+                  placeholder={tradeData.price > 0 ? tradeData.price.toFixed(2) : "Enter limit price"}
                   style={{
                     background: "#04060E", border: `1px solid ${C.borderCyan}`, borderRadius: 10,
                     padding: "10px 14px", fontSize: 16, fontWeight: 800, color: C.cyan, outline: "none",

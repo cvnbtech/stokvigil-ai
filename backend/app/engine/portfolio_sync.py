@@ -6,10 +6,9 @@ import urllib.parse
 import urllib.request
 from typing import List, Dict, Any, Optional
 
-logger = logging.getLogger("stokvigil.engine.portfolio_sync")
+from app.engine.security_master import resolve_security, is_valid_isin, resolve_symbol_to_isin
 
-# Universal Dynamic ISIN RAM Cache (<0.001ms)
-_ISIN_CACHE: Dict[str, str] = {}
+logger = logging.getLogger("stokvigil.engine.portfolio_sync")
 
 # User Demat Portfolio Cache: user_id -> {holdings, timestamp} (TTL: 14400 seconds / 4 hours)
 _DEMAT_PORTFOLIO_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -37,65 +36,33 @@ def normalize_watchlist_symbol(symbol: str, exchange: Optional[str] = None) -> s
 
 def resolve_isin_to_nse_symbol(isin: str, fallback_code: str = "") -> str:
     """
-    Dynamically resolves any Indian stock ISIN (e.g. INE750C01026) or 6-digit BSE scrip code (e.g. 500325)
-    to its official exchange ticker using real-time exchange security search. 100% dynamic for all 2,000+ stocks.
+    Authoritatively resolves any Indian stock ISIN (e.g. INE155A01022), 6-digit BSE scrip code (500325),
+    or broker code (e.g. TELCO) to its official exchange ticker using the in-memory Security Master.
+    Sub-millisecond O(1) in RAM with zero network scraping.
     """
-    isin_clean = str(isin).strip().upper()
-    fallback = str(fallback_code).strip().upper()
+    isin_clean = str(isin or "").strip().upper()
+    fallback = str(fallback_code or "").strip().upper()
 
     if isin_clean.endswith(".BO") or isin_clean.endswith(".NS"):
         return isin_clean
-
     if isin_clean.isdigit() and len(isin_clean) == 6:
         return f"{isin_clean}.BO"
     if fallback.isdigit() and len(fallback) == 6:
         return f"{fallback}.BO"
     if fallback.endswith(".BO") or fallback.endswith(".NS"):
         return fallback
-    
-    if not isin_clean or not isin_clean.startswith("INE"):
-        return fallback or isin_clean
 
-    # 1. Check in-memory RAM cache (<0.001ms)
-    if isin_clean in _ISIN_CACHE:
-        return _ISIN_CACHE[isin_clean]
+    if is_valid_isin(isin_clean):
+        sec = resolve_security(isin_clean)
+        if sec.get("symbol"):
+            return sec["symbol"]
 
-    # 2. Dynamic Exchange Search via Yahoo Finance Search API
-    try:
-        search_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "application/json, text/plain, */*",
-        }
-        url = f"https://query1.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(isin_clean)}&quotesCount=5"
-        req = urllib.request.Request(url, headers=search_headers)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            quotes = data.get("quotes", [])
-            for quote in quotes:
-                sym = quote.get("symbol", "")
-                if sym.endswith(".NS"):
-                    clean_sym = sym.replace(".NS", "").strip().upper()
-                    if clean_sym:
-                        _ISIN_CACHE[isin_clean] = clean_sym
-                        return clean_sym
+    if fallback:
+        sec = resolve_security(fallback)
+        if sec.get("symbol"):
+            return sec["symbol"]
 
-            for quote in quotes:
-                sym = quote.get("symbol", "")
-                if sym.endswith(".BO"):
-                    clean_sym = sym.replace(".BO", "").strip().upper()
-                    if clean_sym and not clean_sym.startswith("0P"):
-                        bse_sym = f"{clean_sym}.BO"
-                        _ISIN_CACHE[isin_clean] = bse_sym
-                        return bse_sym
-                elif quote.get("quoteType") == "EQUITY":
-                    clean_sym = sym.replace(".BO", "").replace(".NS", "").strip().upper()
-                    if clean_sym and not clean_sym.startswith("0P"):
-                        _ISIN_CACHE[isin_clean] = clean_sym
-                        return clean_sym
-    except Exception as e:
-        logger.warning(f"Dynamic ISIN resolution failed for {isin_clean}: {e}")
-
-    return fallback
+    return fallback or isin_clean
 
 
 def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> List[Dict[str, Any]]:
@@ -183,9 +150,15 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
             raw_code = item.get('stock_code') or item.get('symbol') or item.get('stock_name') or ''
             isin_code = item.get('stock_ISIN') or item.get('isin') or ''
             raw_exch = str(item.get('exchange_code') or item.get('exchange') or '').upper()
-            clean_symbol = resolve_isin_to_nse_symbol(isin_code, fallback_code=raw_code)
-            is_bse = clean_symbol.endswith(".BO") or raw_exch == "BSE" or (clean_symbol.replace(".BO", "").isdigit() and len(clean_symbol.replace(".BO", "")) == 6)
-            clean_symbol = normalize_watchlist_symbol(clean_symbol, exchange="BSE" if is_bse else "NSE")
+
+            # Universal Security Master resolution
+            sec_meta = resolve_security(isin_code or raw_code, exchange=raw_exch)
+            resolved_isin = sec_meta.get("isin") or (isin_code.strip().upper() if is_valid_isin(isin_code) else None)
+            clean_symbol = sec_meta.get("symbol") or normalize_watchlist_symbol(raw_code, exchange=raw_exch)
+            if not resolved_isin:
+                resolved_isin = resolve_symbol_to_isin(clean_symbol) or resolve_symbol_to_isin(raw_code)
+            company_name = sec_meta.get("company_name") or str(item.get('stock_name') or item.get('company_name') or '').strip()
+            is_bse = sec_meta.get("exchange") == "BSE" or raw_exch == "BSE" or clean_symbol.endswith(".BO")
             bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
 
             try:
@@ -206,14 +179,14 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
             except (ValueError, TypeError):
                 cmp = 0.0
 
-            stock_name = str(item.get('stock_name') or item.get('company_name') or item.get('stock_description') or '').strip()
-
             if clean_symbol and qty > 0:
                 return {
+                    "isin": resolved_isin,
                     "symbol": clean_symbol,
                     "clean_symbol": bare_symbol,
-                    "name": stock_name or bare_symbol,
-                    "stock_name": stock_name or bare_symbol,
+                    "name": company_name or bare_symbol,
+                    "stock_name": company_name or bare_symbol,
+                    "company_name": company_name or bare_symbol,
                     "exchange": "BSE" if is_bse else "NSE",
                     "quantity": qty,
                     "average_price": avg_p,
@@ -222,15 +195,22 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
             return None
 
         result = []
-        seen_symbols = set()
+        seen_keys = set()
         max_workers = min(10, max(1, len(raw_holdings)))
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
             parsed_items = list(pool.map(_parse_holding, raw_holdings))
 
         for parsed in parsed_items:
-            if parsed and parsed["symbol"] not in seen_symbols:
-                seen_symbols.add(parsed["symbol"])
+            if not parsed:
+                continue
+            isin = parsed.get("isin")
+            if isin:
+                if isin not in seen_keys:
+                    seen_keys.add(isin)
+                    result.append(parsed)
+            elif parsed["symbol"] not in seen_keys:
+                seen_keys.add(parsed["symbol"])
                 result.append(parsed)
 
         logger.info(f"Successfully retrieved {len(result)} ICICI Demat holdings: {[r['symbol'] for r in result]}")

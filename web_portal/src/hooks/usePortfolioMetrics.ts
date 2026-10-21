@@ -87,7 +87,7 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
           }));
           portfolioLoaded = true;
 
-          // Auto-sync Demat holdings into user_watchlists table (Universal Canonical Suffix Rule)
+          // Auto-sync Demat holdings into user_watchlists table (Universal Canonical Suffix Rule + ISIN)
           if (supabase && uid) {
             try {
               for (const h of data.holdings) {
@@ -102,11 +102,22 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
                   cleanS = `${cleanS}.BO`;
                 }
                 if (cleanS) {
-                  await supabase.from('user_watchlists').upsert({
+                  const payload: any = {
                     user_id: uid,
                     symbol: cleanS,
                     is_auto_synced: true,
-                  }, { onConflict: 'user_id,symbol' });
+                  };
+                  if (h.isin) payload.isin = h.isin;
+                  if (h.name || h.company_name) payload.company_name = h.name || h.company_name;
+                  if (h.average_price && Number(h.average_price) > 0) payload.average_buy_price = Number(h.average_price);
+                  if (h.quantity && Number(h.quantity) > 0) payload.quantity = Math.round(Number(h.quantity));
+
+                  const conflictTarget = h.isin ? 'user_id,isin' : 'user_id,symbol';
+                  try {
+                    await supabase.from('user_watchlists').upsert(payload, { onConflict: conflictTarget });
+                  } catch {
+                    await supabase.from('user_watchlists').upsert(payload, { onConflict: 'user_id,symbol' });
+                  }
                 }
               }
               if (onDematSynced) {
