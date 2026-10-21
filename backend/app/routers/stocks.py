@@ -8,7 +8,7 @@ import concurrent.futures
 from collections import OrderedDict
 from datetime import timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Path
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -769,7 +769,62 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
                 except Exception as e:
                     logger.warning(f"Error fetching quote for {sym}: {e}")
 
+    # Enrich quotes with pre-computed institutional market cache analysis (signals, targets, stop-loss)
+    for sym_key, q_dict in list(results.items()):
+        if not isinstance(q_dict, dict):
+            continue
+        clean_s = q_dict.get("clean_symbol") or sym_key.replace(".NS", "").replace(".BO", "").strip().upper()
+        pack = market_cache.get_stock(clean_s) or market_cache.get_stock(sym_key)
+        if pack:
+            analysis = pack.get("analysis", {})
+            tactical = analysis.get("tactical_levels") or pack.get("tactical_levels", {})
+            tech = pack.get("technicals", {})
+            bias = analysis.get("action_bias") or pack.get("action_bias")
+            score = pack.get("confluence_score") or analysis.get("confluence_score")
+            if score is not None:
+                q_dict["confluence_score"] = score
+            if bias and bias not in ["HOLD_NEUTRAL", "DATA_UNAVAILABLE"]:
+                t1 = tactical.get("target_1") or tactical.get("tactical_resistance_1")
+                sl = tactical.get("protective_stop_loss")
+                if t1 and sl and t1 not in ["-", "₹0", "0"] and sl not in ["-", "₹0", "0"]:
+                    q_dict["signal"] = bias.replace("_", " ")
+                    q_dict["action_bias"] = bias
+                    q_dict["signal_type"] = "strong_buy" if "BUY" in bias else "sell"
+                    q_dict["target"] = t1
+                    q_dict["stop_loss"] = sl
+                    tsl = tactical.get("trailing_stop_loss")
+                    if tsl:
+                        q_dict["trailing_sl"] = tsl
+            if q_dict.get("change_pct") is None and tech.get("change_pct") is not None:
+                q_dict["change_pct"] = tech.get("change_pct")
+
     return {"quotes": results}
+
+
+@router.get("/api/stocks/{symbol}/analysis", dependencies=[Depends(check_rate_limit)])
+async def get_single_stock_analysis(
+    symbol: str = Path(..., description="Stock symbol (e.g. TATAMOTORS, RELIANCE)")
+):
+    """
+    Returns instant institutional analysis (< 1ms from RAM cache if precomputed,
+    or on-demand dynamic calculation) for any watchlist stock.
+    """
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    pack = market_cache.get_stock(clean_sym)
+    if not pack:
+        from app.agent_runner import evaluate_single_symbol_full
+        pack = await evaluate_single_symbol_full(clean_sym)
+    return {
+        "symbol": clean_sym,
+        "price": pack.get("current_price"),
+        "confluence_score": pack.get("confluence_score"),
+        "action_bias": pack.get("action_bias"),
+        "tactical_levels": pack.get("tactical_levels"),
+        "technicals": pack.get("technicals"),
+        "flow_data": pack.get("flow_data"),
+        "forensics": pack.get("forensics"),
+        "analysis": pack.get("analysis")
+    }
 
 
 # Dynamic In-Memory Candle Cache (TTL: 180s for intraday, 14400s for daily/hourly)

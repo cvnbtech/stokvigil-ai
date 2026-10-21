@@ -531,6 +531,21 @@ def get_user_portfolio(
         if not proper_name or proper_name == sym:
             proper_name = q_name or clean_sym
 
+        h_pack = m_cache.get_stock(clean_sym) or m_cache.get_stock(sym)
+        h_signal = (quote_obj.get("signal") if quote_obj else None)
+        h_signal_type = (quote_obj.get("signal_type") if quote_obj else None)
+        h_target = (quote_obj.get("target") if quote_obj else None)
+        h_stop_loss = (quote_obj.get("stop_loss") if quote_obj else None)
+        if h_pack:
+            p_analysis = h_pack.get("analysis", {})
+            p_tactical = p_analysis.get("tactical_levels") or h_pack.get("tactical_levels", {})
+            p_bias = p_analysis.get("action_bias") or h_pack.get("action_bias")
+            if p_bias and not h_signal:
+                h_signal = p_bias.replace("_", " ")
+                h_signal_type = "bullish" if "BUY" in p_bias else ("bearish" if any(w in p_bias for w in ["SELL", "EXIT", "SHORT", "PRESERVATION"]) else "neutral")
+            h_target = h_target or p_tactical.get("target_1") or p_tactical.get("tactical_resistance_1")
+            h_stop_loss = h_stop_loss or p_tactical.get("protective_stop_loss")
+
         return {
             "symbol": clean_sym,
             "clean_symbol": clean_sym,
@@ -549,10 +564,10 @@ def get_user_portfolio(
             "day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
             "pe_ratio": pe_ratio,
             "debt_to_equity": debt_to_equity,
-            "signal": (quote_obj.get("signal") if quote_obj else None) if live_price > 0 else None,
-            "signal_type": (quote_obj.get("signal_type") if quote_obj else None) if live_price > 0 else None,
-            "target": (quote_obj.get("target") if quote_obj else None) if live_price > 0 else None,
-            "stop_loss": (quote_obj.get("stop_loss") if quote_obj else None) if live_price > 0 else None,
+            "signal": h_signal if live_price > 0 else None,
+            "signal_type": h_signal_type if live_price > 0 else None,
+            "target": h_target if live_price > 0 else None,
+            "stop_loss": h_stop_loss if live_price > 0 else None,
             "_curr_val": current_val,
             "_inv_val": investment_val,
             "_day_pnl": day_pnl if (quote_obj and live_price > 0) else None,
