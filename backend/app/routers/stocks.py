@@ -641,10 +641,15 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
                 if price is not None and price > 0:
                     exch = "NSE" if q_sym.endswith(".NS") else "BSE"
                     name = q.get("shortName") or q.get("longName") or f"{clean_sym} ({exch})"
+                    from app.engine.security_master import resolve_security
+                    sec_info = resolve_security(clean_sym, exchange=exch)
+                    isin_val = sec_info.get("isin")
+                    out_symbol = clean_sym if exch == "NSE" else (clean_sym if clean_sym.isdigit() else f"{clean_sym}.BO")
                     return {
                         "is_valid": True,
-                        "symbol": clean_sym,
+                        "symbol": out_symbol,
                         "clean_symbol": clean_sym,
+                        "isin": isin_val,
                         "name": name,
                         "exchange": exch,
                         "price": price,

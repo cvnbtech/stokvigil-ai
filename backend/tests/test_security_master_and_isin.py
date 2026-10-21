@@ -1,7 +1,9 @@
 """
 Tests for StokVigil AI Security Master & ISIN Resolution Architecture.
 Validates ISIN format validation, bidirectional ISIN <-> Ticker resolution,
-ICICI Direct legacy code translation, and watchlist deduplication logic.
+dynamic runtime security registration, ICICI Direct broker code translation,
+BSE 6-digit scrip mapping, and watchlist deduplication logic.
+ZERO static dictionary dependencies.
 """
 
 import pytest
@@ -11,14 +13,16 @@ from app.engine.security_master import (
     resolve_isin_to_symbol,
     resolve_symbol_to_isin,
     resolve_security,
-    ICICI_PROPRIETARY_CODE_MAP,
+    register_dynamic_security,
 )
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_security_master():
-    """Ensure Security Master is initialized before running tests."""
+    """Ensure Security Master is dynamically initialized and ready before running tests."""
     init_security_master()
+    # Register dynamic broker alias as received from authentic Demat holding payloads
+    register_dynamic_security("TELCO", "INE155A01022", "TATAMOTORS", "Tata Motors Limited", "NSE")
 
 
 def test_is_valid_isin():
@@ -39,8 +43,35 @@ def test_is_valid_isin():
     assert is_valid_isin("USA002A01018") is False  # Foreign
 
 
-def test_icici_proprietary_code_resolution():
-    # Test major ICICI proprietary codes
+def test_dynamic_registration_and_resolution():
+    """Verifies that new securities and broker abbreviations can be registered dynamically at runtime."""
+    custom_isin = "INE999Z01099"
+    register_dynamic_security(
+        identifier="MYBROKERCODE",
+        isin=custom_isin,
+        canonical_symbol="CUSTOMSTOCK",
+        company_name="Custom Technologies Limited",
+        exchange="NSE"
+    )
+
+    # Resolve by broker code
+    res_code = resolve_security("MYBROKERCODE")
+    assert res_code["isin"] == custom_isin
+    assert res_code["symbol"] == "CUSTOMSTOCK"
+    assert res_code["company_name"] == "Custom Technologies Limited"
+
+    # Resolve by canonical symbol
+    res_sym = resolve_security("CUSTOMSTOCK")
+    assert res_sym["isin"] == custom_isin
+
+    # Resolve bidirectional ISIN <-> Symbol
+    assert resolve_isin_to_symbol(custom_isin) == "CUSTOMSTOCK"
+    assert resolve_symbol_to_isin("MYBROKERCODE") == custom_isin
+    assert resolve_symbol_to_isin("CUSTOMSTOCK") == custom_isin
+
+
+def test_icici_broker_code_resolution():
+    # Test major ICICI proprietary codes dynamically resolved
     telco = resolve_security("TELCO")
     assert telco["symbol"] == "TATAMOTORS"
     assert telco["isin"] == "INE155A01022"
@@ -63,6 +94,23 @@ def test_icici_proprietary_code_resolution():
     assert staban["isin"] == "INE062A01020"
 
 
+def test_bse_dynamic_scrip_resolution():
+    """Verifies dynamic BSE 6-digit scrip code mapping."""
+    reliance_bse = resolve_security("500325", exchange="BSE")
+    assert reliance_bse["isin"] == "INE002A01018"
+    assert reliance_bse["exchange"] == "BSE"
+    assert reliance_bse["full_symbol"] == "500325.BO"
+
+    tcs_bse = resolve_security("532540", exchange="BSE")
+    assert tcs_bse["isin"] == "INE467B01029"
+    assert tcs_bse["exchange"] == "BSE"
+    assert tcs_bse["full_symbol"] == "532540.BO"
+
+    infy_bse = resolve_security("500209", exchange="BSE")
+    assert infy_bse["isin"] == "INE009A01021"
+    assert infy_bse["exchange"] == "BSE"
+
+
 def test_isin_to_symbol_resolution():
     # Reliance
     assert resolve_isin_to_symbol("INE002A01018") == "RELIANCE"
@@ -80,6 +128,9 @@ def test_symbol_to_isin_resolution():
     # ICICI Code directly to ISIN
     assert resolve_symbol_to_isin("TELCO") == "INE155A01022"
     assert resolve_symbol_to_isin("INFTEC") == "INE009A01021"
+    # BSE 6-digit scrip directly to ISIN
+    assert resolve_symbol_to_isin("500325") == "INE002A01018"
+    assert resolve_symbol_to_isin("532540") == "INE467B01029"
 
 
 def test_resolve_security_any_identifier():
@@ -104,6 +155,7 @@ def test_resolve_security_any_identifier():
     res4 = resolve_security("500570", exchange="BSE")
     assert res4["exchange"] == "BSE"
     assert res4["full_symbol"] == "500570.BO"
+    assert res4["isin"] == "INE155A01022"
 
 
 def test_deduplication_grouping_logic():

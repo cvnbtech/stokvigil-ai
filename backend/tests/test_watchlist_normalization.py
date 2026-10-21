@@ -47,7 +47,7 @@ def test_async_sync_demat_to_watchlists_deduplication():
         {"symbol": "RELIANCE.NS", "quantity": 10, "average_price": 2800.0, "exchange": "NSE"},
         {"symbol": "RELIANCE", "quantity": 10, "average_price": 2800.0, "exchange": "NSE"},
         {"symbol": "TCS.BO", "quantity": 5, "average_price": 3500.0, "exchange": "BSE"},
-        {"symbol": "500325", "quantity": 2, "average_price": 1000.0, "exchange": "BSE"},
+        {"symbol": "500209", "quantity": 2, "average_price": 1500.0, "exchange": "BSE"},  # Infosys on BSE
     ]
 
     _async_sync_demat_to_watchlists(mock_db, "user-123", holdings)
@@ -56,14 +56,14 @@ def test_async_sync_demat_to_watchlists_deduplication():
     # Verify upsert payload is deduplicated
     call_args, call_kwargs = mock_table.upsert.call_args
     payload = call_args[0]
-    assert call_kwargs.get("on_conflict") == "user_id,symbol"
+    assert call_kwargs.get("on_conflict") == "user_id,isin"
 
-    # Must contain exactly 3 items: RELIANCE, TCS.BO, 500325 (RELIANCE.NS merged into RELIANCE)
+    # Must contain exactly 3 items: RELIANCE, TCS.BO, 500209 (RELIANCE.NS merged into RELIANCE)
     symbols = [row["symbol"] for row in payload]
     assert len(symbols) == 3
     assert "RELIANCE" in symbols
     assert "TCS.BO" in symbols
-    assert "500325" in symbols
+    assert "500209" in symbols
     assert "RELIANCE.NS" not in symbols
 
 

@@ -6,7 +6,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Dict, Any, Optional
 
-from app.engine.security_master import resolve_security, is_valid_isin, resolve_symbol_to_isin
+from app.engine.security_master import resolve_security, is_valid_isin, resolve_symbol_to_isin, register_dynamic_security
 
 logger = logging.getLogger("stokvigil.engine.portfolio_sync")
 
@@ -160,6 +160,16 @@ def fetch_user_portfolio(app_key: str, secret_key: str, session_token: str) -> L
             company_name = sec_meta.get("company_name") or str(item.get('stock_name') or item.get('company_name') or '').strip()
             is_bse = sec_meta.get("exchange") == "BSE" or raw_exch == "BSE" or clean_symbol.endswith(".BO")
             bare_symbol = clean_symbol.replace(".BO", "").replace(".NS", "").strip().upper()
+
+            # Dynamically register the broker code into RAM at runtime
+            if resolved_isin and clean_symbol:
+                register_dynamic_security(
+                    identifier=raw_code,
+                    isin=resolved_isin,
+                    canonical_symbol=clean_symbol,
+                    company_name=company_name or bare_symbol,
+                    exchange="BSE" if is_bse else "NSE"
+                )
 
             try:
                 qty = float(item.get('quantity') or item.get('demat_total_bulk_quantity') or item.get('demat_avail_quantity') or 0)
