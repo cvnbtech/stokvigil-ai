@@ -121,9 +121,9 @@ flowchart TD
         B2["Supabase JWT Bearer Validation & IDOR Defense (auth.py)"]
         B3["Cron Secret HMAC Constant-Time Validator"]
         B4["Crypto Vault: Fernet AES-256 with PBKDF2HMAC (vault.py)"]
-        B4a["Order Execution Shield: 120s Idempotency, RMS 500->422, ₹0.05 Tick Snap, SL-M Ban"]
-        B5["In-Memory Multi-Tier Caches (Technicals, Macro, News, 4h Demat Holdings)"]
-        B6["Synchronous Scan Concurrency Mutex (_scan_in_progress)"]
+        B4a["Order Execution Shield: 120s Idempotency, RMS 500->422, Dynamic ₹0.01/₹0.05 Tick Snap, SL-M Ban"]
+        B5["In-Memory Multi-Tier Caches (Technicals, Macro, News, 4h Demat Holdings, 12h Bhavcopy)"]
+        B6["Distributed Concurrency Mutex: PostgreSQL Advisory Lock (987654321) + _scan_in_progress"]
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
@@ -210,7 +210,7 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
 2. **Sharp Price Surge / Breakdown**: Intraday move magnitude $|\Delta P| \ge 2.5\%$.
 3. **15-Minute Opening Range Breakout (ORB)**: `BULLISH_ORB_BREAKOUT` or `BEARISH_ORB_BREAKDOWN` with confirmed candle close (`candle_close_confirmed`).
 4. **Circuit Lock Freezes**: Upper or lower circuit freeze (`UPPER_CIRCUIT` or `LOWER_CIRCUIT`, $|H-L| < 10^{-4}$ and $|\Delta P| \ge 1.9\%$).
-5. **Institutional Volume Surge**: Intraday volume $\ge 1.5\times$ 20-period volume MA.
+5. **Time-of-Day RVOL Normalization**: Current 5m bar volume evaluated against historical time-of-day bucket median ($\text{RVOL} \ge 2.0\times$, elevated to $\ge 2.25\times$ during the 11:45–13:15 IST midday lull to eliminate false breakout traps). Strictly returns `None` when trade volume is 0 or unrecorded.
 6. **Momentum Extremes / Divergence**: $15\text{m RSI} \ge 68.0$ or $\le 32.0$, or active Bullish/Bearish Divergence.
 7. **MACD Trend Transition**: 15m MACD Bullish Crossover.
 8. **Institutional Flow & F&O Build-up**: Delivery $\ge 50\%$, or active F&O Open Interest buildup with PCR $\ge 1.3$ or $\le 0.7$, or extreme Option Chain PCR ($\ge 1.4$ or $\le 0.6$).
@@ -230,24 +230,25 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
 
 ---
 
-### 3.4 The 18 Critical Quantitative Upgrades & Execution Realities
+### 3.4 The 26 Critical Quantitative Upgrades & Execution Realities
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│               THE 18 INSTITUTIONAL QUANTITATIVE PILLARS                │
+│               THE 26 INSTITUTIONAL QUANTITATIVE PILLARS                │
 ├────────────────────────────────────────────────────────────────────────┤
-│ 1. Hard Risk Veto (Supply Shock)     10. 15m Candle Close & Wick Reject│
-│ 2. Demat Downside Capital Shield     11. Target 1 Trail-to-Cost Alert  │
-│ 3. Positive Momentum Surge Boost     12. SEBI Non-Advisory Footnotes   │
-│ 4. 15-Minute ORB Corridor            13. SL-L Routing & SL-M Ban       │
-│ 5. Date-Aware Camarilla (iloc[-2])   14. Dynamic Sector & BSE Resolver │
-│ 6. Circuit Lock Freeze Detection     15. 1% Capital Risk Sizer         │
-│ 7. Granular Near-Month Expiry Filter 16. Vectorized Backtester Engine  │
-│ 8. Universal Sensitivity Gate        17. 03:45 PM Closing Bell Digest  │
-│ 9. Two-Way 200 EMA & Supply Override 18. Macro Crash Hysteresis Shield │
-│ 10. Multi-Day Rolling Drawdown Veto  19. Wyckoff Block Dump Detector   │
-│ 11. 15m Close & Wick Rejection       20. RFC 8259 Safe JSON Serialization│
-│ 12. Target 1 Trail-to-Cost Alert     21. Public Audited Accuracy Ledger│
+│ 1. Hard Risk Veto (Supply Shock)     14. Dynamic 2024 Tick Sizing      │
+│ 2. Demat Downside Capital Shield     15. Dynamic Sector & BSE Resolver │
+│ 3. Positive Momentum Surge Boost     16. 1% Capital Risk Sizer         │
+│ 4. 15-Minute ORB Corridor            17. Vectorized Backtester Engine  │
+│ 5. Date-Aware Camarilla & Gap Veto   18. 03:45 PM Closing Bell Digest  │
+│ 6. Circuit Lock Freeze Detection     19. Macro Crash Hysteresis Shield │
+│ 7. Granular Near-Month Expiry Filter 20. Wyckoff Block Dump Detector   │
+│ 8. Universal Sensitivity Gate        21. RFC 8259 Safe JSON Ser.       │
+│ 9. Two-Way 200 EMA & Supply Override 22. Public Audited Accuracy Ledger│
+│ 10. Multi-Day Rolling Drawdown Veto  23. Lunch-Hour Trap Blocker       │
+│ 11. 15m Candle Close & Wick Reject   24. Dynamic Market Anchors        │
+│ 12. Target 1 Trail-to-Cost Alert     25. Daily NSE Delivery Bhavcopy   │
+│ 13. SEBI Non-Advisory Footnotes      26. Distributed Advisory Locking  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -261,11 +262,12 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
    - When $\Delta P \ge +5.0\%$ with a confirmed `BULLISH_ORB_BREAKOUT`, inject **+6 point momentum surge boost**, categorizing it as `PRICE_BREAKOUT`.
 4. **15-Minute Opening Range Breakout (ORB) Engine**:
    - Quantifies the opening 15-minute price corridor (09:15–09:30 IST) across the first three 5m candles into `orb_high_15m` and `orb_low_15m`. Evaluates `BULLISH_ORB_BREAKOUT`, `BEARISH_ORB_BREAKDOWN`, or `INSIDE_ORB_RANGE`.
-5. **Date-Aware Camarilla Pivot Indexation**:
+5. **Date-Aware Camarilla Pivot Indexation & Gap-Up Exhaustion Gate**:
    - Computes daily institutional order book levels:
      $$H_4 = C + 1.1 \times \frac{H - L}{2}, \quad H_3 = C + 1.1 \times \frac{H - L}{4}$$
      $$L_3 = C - 1.1 \times \frac{H - L}{4}, \quad L_4 = C - 1.1 \times \frac{H - L}{2}$$
    - *Indexation Rule*: When evaluating a live session where `daily_df.index[-1].date() == today`, strictly calculate from `daily_df.iloc[-2]` (prior completed trading day). Never use the forming intraday bar at `iloc[-1]`.
+   - *Camarilla Gap-Up Exhaustion Gate*: When a stock opens $\ge 1.0\%$ above yesterday's $H_4$ ceiling but fails to sustain breakout momentum and fades below $H_4$ or intraday VWAP, the engine vetoes `BUY_WATCH` setups to `HOLD_NEUTRAL` ("Camarilla Gap-Up Exhaustion Trap"), eliminating retail bull traps on volatile global gap days.
 6. **Upper & Lower Circuit Lock Freeze Detection**:
    - Identifies $H=L=C$ within $10^{-4}$ tolerance with $|\Delta P| \ge 1.9\%$, classifying stocks into `UPPER_CIRCUIT` (score $\ge 85$) or `LOWER_CIRCUIT` (score $\le 15$).
 7. **Granular Near-Month Options Expiry Filtering**:
@@ -287,10 +289,11 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
     - When an active position or watchlist ticker crosses Tactical Resistance 1 (1.5x ATR), trigger high-priority lifecycle notification: *"🎯 TARGET 1 REACHED: Lock 50% Gains & Trail Stop-Loss to Breakeven Cost"*.
 13. **SEBI Non-Advisory Mathematical Terminology**:
     - Never use "Target 1/2". Strictly label as "Tactical Resistance 1 (1.5x ATR Benchmark)" and "Expansion Resistance 2 (2.5x ATR Benchmark)".
-14. **Stop-Loss Limit (`SL-L`) Routing & SEBI/NSE `SL-M` Ban Enforcement**:
+14. **Dynamic 2024 Tick Sizing (`get_exchange_tick_size`) & SEBI/NSE `SL-M` Ban Enforcement**:
     - Full compliance with SEBI circulars banning Stop-Loss Market (`SL-M`) orders in equity derivatives.
     - If `order_type == "MARKET"` and `trigger_price > 0`, reject immediately with `HTTP 422 Unprocessable Entity`.
-    - Stop orders must route as `SL-L` with explicit `price` and `trigger_price`, both snapped to ₹0.05 exchange ticks.
+    - Stop orders must route as `SL-L` with explicit `price` and `trigger_price`.
+    - **Circular `NSE/CMTR/62326` Compliance**: Dynamically snaps prices to ₹0.01 for cash equities $< ₹250$ and ₹0.05 for equities $\ge ₹250$ and all F&O contracts via `snap_to_exchange_tick(price, dynamic=True)`.
 15. **Dynamic Sector Universe & Live Dual-Exchange Coverage**:
     - Dynamically queries official NSE sector constituent lists (Bank, IT, Auto, Pharma, Metal, Energy, FMCG) daily with a 24-hour RAM cache (250+ equities, 0 hardcoded stock lists).
     - Dynamically queries BSE India's official API (`resolve_bse_scrip_to_symbol`) on-the-fly to resolve any 6-digit numeric security code and `.BO` suffix to its true sector benchmark.
@@ -332,6 +335,14 @@ Before invoking Google Gemini AI, StokVigil evaluates 10 quantitative criteria i
     - **Zero-Hardcoding Invariant**: Dynamically retrieves the active NIFTY 50 constituent equities directly from the official live NSE archives feed (`https://nsearchives.nseindia.com/content/indices/ind_nifty50list.csv`, 24h RAM cache) with ZERO static ticker arrays.
     - If the live feed fails or is offline, strictly propagates an empty list (`[]`) with zero synthetic fallbacks, upholding the Zero-Default Policy.
     - Pre-seeds authentic liquid anchors into the 5-minute RAM market cache, ensuring broad market leadership and institutional dumps on market-moving bellwethers are tracked in real time.
+25. **Daily Official NSE Security-wise Delivery Bhavcopy Ingestion (`load_nse_security_delivery_bhavcopy` & `get_bhavcopy_delivery_pct`)**:
+    - Automatically downloads the official daily Security-wise Delivery Position Bhavcopy (`sec_bhavdata_full_{DDMMYYYY}.csv`) from official NSE archives, scanning backwards up to 4 trading days to handle weekends and market holidays with a 12-hour in-memory cache.
+    - Ingests genuine exchange delivery percentages for all cash equities (`SERIES == 'EQ'`), powering Wyckoff VSA `SMART_MONEY_ABSORPTION` without third-party paid API dependencies.
+    - **Strict Zero-Default Policy Compliance**: If delivery data is unavailable or offline, strictly returns `None` (displays clean `"--"` on client HUDs; never fabricates dummy 52.0% or 0.0%).
+26. **Distributed Multi-Container Concurrency via PostgreSQL Session Advisory Locks (`try_postgres_advisory_lock`)**:
+    - Uses cluster-wide PostgreSQL session advisory locks (`SELECT pg_try_advisory_lock(987654321)`) via `backend/app/db_pool.py` and `backend/app/routers/cron.py`.
+    - Guarantees single-runner execution across autoscaling Cloud Run container instances without external paid Redis.
+    - Subsequent container instances skip duplicate execution (`status: "skipped"`), conserving 100% Free-Tier CPU and preventing duplicate alert dispatches. Automatically releases on exit or container termination.
 
 ---
 
@@ -430,7 +441,7 @@ Every broker adapter inherits from `BaseBrokerAdapter` in `backend/app/brokers/b
 ### 5.2 Financial Trade Execution Safeguards & Idempotency Shield (`POST /api/v1/orders/place`)
 1. **Idempotency & Replay Shield (`_ORDER_IDEMPOTENCY_CACHE`)**: Accepts `X-Idempotency-Key` or computes in-flight SHA-256 fingerprint hash `(user_id, symbol, action, quantity, price)` with 120s TTL and 15s debounce. Concurrent duplicate calls receive `HTTP 409 Conflict` (`ORDER_IN_FLIGHT`).
 2. **Silent RMS Rejection Interception**: Breeze API returns HTTP 200 with `{"Status": 500, "Error": "RMS: Margin Shortage..."}`. The backend intercepts this and raises `HTTP 422 Unprocessable Entity` with the exact broker error.
-3. **Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**: Snaps limit and stop-loss prices to standard ₹0.05 tick intervals using financial half-up rounding (`round(price * 20) / 20`).
+3. **Dynamic 2024 Exchange Tick Snapping (`snap_to_exchange_tick` per `NSE/CMTR/62326`)**: Dynamically snaps limit and trigger prices to ₹0.01 for cash equities $< ₹250$ and ₹0.05 for equities $\ge ₹250$ and all F&O contracts using financial half-up rounding.
 4. **SEBI/NSE `SL-M` Ban Enforcement**: Stop-Loss Market orders are rejected with `HTTP 422`. Only Stop-Loss Limit (`SL-L`) orders with explicit `price` and `trigger_price` are permitted.
 5. **Dynamic Product Resolution & SEBI MIS Notice**: Sells of held Demat shares route as `cash` (CNC). Sells of unheld shares route as `margin` (MIS short) and inject mandatory SEBI intraday margin short warnings.
 6. **Market Session Awareness**: Orders placed outside 09:15–15:30 IST return `"session_warning": "Market is currently closed. Order will be processed as AMO or queued by broker."`.
@@ -644,7 +655,7 @@ StokVigil AI supports high-precision orchestration across **Google Cloud Schedul
 | :--- | :--- | :--- | :--- |
 | `stokvigil-token-reminder` | `50 8 * * 1-5` (08:50 AM) | `POST /api/cron/morning-token-reminder` | Audits ICICI Direct / broker session tokens; pushes FCM & Telegram re-login reminders 25 min prior to open. Pre-syncs active Demat holdings into 4-hour RAM cache (`_DEMAT_PORTFOLIO_CACHE`) and updates persistent `average_buy_price` in `user_watchlists`. |
 | `stokvigil-pre-market-war-room` | `0 9 * * 1-5` (09:00 AM) | `POST /api/cron/pre-market-briefing` | Dispatched 15 min before open. Aggregates GIFT Nifty, US/Asian indices, India VIX regime, FII/DII cash turnover, and sector momentum. Executes 30-day historical alert pruning via `app.maintenance.prune_historical_alerts`. |
-| `stokvigil-5min-surveillance` | `*/5 9-15 * * 1-5` (09:15–15:30) | `POST /api/cron/multi-user-scan` | Executes synchronously during HTTP request (`curl -m 480`) to guarantee 100% CPU on Cloud Run Free Tier. 3 bulk DB queries, vectorized batch 5m downloads, 2-Tier Gatekeeper, parallel symbol evaluation with `asyncio.gather`. Guarded by `_scan_in_progress` mutex. |
+| `stokvigil-5min-surveillance` | `*/5 9-15 * * 1-5` (09:15–15:30) | `POST /api/cron/multi-user-scan` | Executes synchronously during HTTP request (`curl -m 480`) to guarantee 100% CPU on Cloud Run Free Tier. 3 bulk DB queries, vectorized batch 5m downloads, 2-Tier Gatekeeper, parallel symbol evaluation with `asyncio.gather`. Guarded by PostgreSQL session advisory lock (`try_postgres_advisory_lock(987654321)`) and in-process `_scan_in_progress` mutex. |
 | `stokvigil-closing-bell` | `45 15 * * 1-5` (03:45 PM) | `POST /api/cron/post-market-summary` | Dispatched 15 min after close. Generates closing bell scorecard of NIFTY 50, SENSEX, India VIX, Market Breadth ADR, FII/DII net flows, sector rotation leaders/laggards, and day's algorithmic Target 1 hit rate. |
 
 ### 10.2 Secondary / Fallback Scheduler: GitHub Actions
@@ -674,8 +685,8 @@ StokVigil AI maintains an exhaustive automated test suite covering all security 
   backend\.venv\Scripts\python.exe -m pytest backend/tests -q
   ```
 - **Test Metrics & Verification Results**:
-  - **Total Tests Executed:** 210 tests across 24 test modules.
-  - **Pass Rate:** **100% (210/210 Passing, 0 Failures, 0 Errors)**.
+  - **Total Tests Executed:** 217 tests across 24 test modules.
+  - **Pass Rate:** **100% (217/217 Passing, 0 Failures, 0 Errors)**.
   - **Test Execution Duration:** ~40.0 seconds.
   - **Modules Verified:**
     1. `test_500_user_optimizations.py` (Multi-user bulk prefetch & PgBouncer throughput)

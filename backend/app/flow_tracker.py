@@ -27,6 +27,83 @@ _DYNAMIC_FO_LAST_FETCH: float = 0.0
 _DYNAMIC_FO_TTL: float = 86400.0  # 24 hours
 _PER_SYMBOL_FO_CACHE: Dict[str, bool] = {}
 
+# In-memory Security-wise Delivery Bhavcopy cache: (symbol -> delivery_percentage) with 12h TTL
+_BHAVCOPY_DELIVERY_CACHE: Dict[str, float] = {}
+_BHAVCOPY_LAST_FETCH: float = 0.0
+_BHAVCOPY_DATE: str = ""
+_BHAVCOPY_TTL: float = 43200.0  # 12 hours
+
+
+def load_nse_security_delivery_bhavcopy() -> Dict[str, float]:
+    """
+    Ingests official NSE Security-wise Delivery Position Bhavcopy from NSE Archives:
+    https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{DDMMYYYY}.csv
+    Refreshes once every 12 hours. Scans backwards up to 4 trading days to automatically
+    handle weekends and exchange market holidays.
+    Returns symbol -> delivery_percentage mapping.
+    """
+    global _BHAVCOPY_DELIVERY_CACHE, _BHAVCOPY_LAST_FETCH, _BHAVCOPY_DATE
+    now = time.time()
+    if _BHAVCOPY_DELIVERY_CACHE and (now - _BHAVCOPY_LAST_FETCH) < _BHAVCOPY_TTL:
+        return _BHAVCOPY_DELIVERY_CACHE
+
+    import datetime
+    today = datetime.date.today()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "text/csv, text/plain, */*",
+    }
+
+    # Attempt fetching starting from yesterday back up to 4 days
+    candidate_dates = []
+    for offset in range(0, 5):
+        d = today - datetime.timedelta(days=offset)
+        if d.weekday() < 5:  # Monday to Friday
+            candidate_dates.append(d)
+
+    for target_date in candidate_dates:
+        date_str = target_date.strftime("%d%m%Y")
+        url = f"https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date_str}.csv"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                if resp.status == 200:
+                    content = resp.read().decode("utf-8", errors="ignore")
+                    reader = csv.DictReader(io.StringIO(content))
+                    delivery_map: Dict[str, float] = {}
+                    for row in reader:
+                        series = str(row.get(" SERIES", row.get("SERIES", ""))).strip()
+                        if series == "EQ":
+                            sym = str(row.get("SYMBOL", row.get(" SYMBOL", ""))).strip().upper()
+                            deliv_val_str = str(row.get(" DELIV_PER", row.get("DELIV_PER", ""))).strip()
+                            if sym and deliv_val_str and deliv_val_str != "-":
+                                try:
+                                    val = round(float(deliv_val_str), 2)
+                                    delivery_map[sym] = val
+                                except ValueError:
+                                    pass
+                    if delivery_map:
+                        _BHAVCOPY_DELIVERY_CACHE = delivery_map
+                        _BHAVCOPY_LAST_FETCH = now
+                        _BHAVCOPY_DATE = date_str
+                        logger.info(f"Loaded {len(delivery_map)} security-wise delivery percentages from NSE Bhavcopy ({date_str}).")
+                        return _BHAVCOPY_DELIVERY_CACHE
+        except Exception as e:
+            logger.debug(f"NSE delivery bhavcopy fetch for {date_str} skipped: {e}")
+
+    return _BHAVCOPY_DELIVERY_CACHE
+
+
+def get_bhavcopy_delivery_pct(symbol: str) -> Optional[float]:
+    """
+    Returns authentic baseline delivery percentage from official NSE Security-wise Bhavcopy.
+    Strict Zero-Default Policy: Returns None if authentic data is unavailable (never fakes defaults).
+    """
+    clean_sym = str(symbol).replace(".NS", "").replace(".BO", "").strip().upper()
+    cache = load_nse_security_delivery_bhavcopy()
+    return cache.get(clean_sym)
+
+
 def get_dynamic_fo_universe() -> Set[str]:
     """
     Dynamically fetches and caches the official active NSE F&O underlying universe
@@ -416,7 +493,7 @@ def fetch_delivery_and_fo_flow(
         vsa_regime = "NORMAL_VOLUME_SPREAD"
         vsa_note = "Normal liquidity absorption"
         
-        real_delivery: Optional[float] = float(delivery_pct) if delivery_pct is not None else None
+        real_delivery: Optional[float] = float(delivery_pct) if delivery_pct is not None else get_bhavcopy_delivery_pct(clean_sym)
         is_high_del = (real_delivery >= 50.0) if real_delivery is not None else False
 
         if real_delivery is not None:

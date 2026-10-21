@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 import unittest
 import numpy as np
 import pandas as pd
@@ -17,6 +18,7 @@ from app.technical_engine import (
     calculate_ttm_squeeze,
     calculate_rsi,
     calculate_adx,
+    calculate_rvol_and_surge,
     fetch_multi_timeframe_technicals
 )
 from app.flow_tracker import (
@@ -342,6 +344,163 @@ class TestInstitutionalAccuracy(unittest.TestCase):
         news_bo = fetch_stock_news("TESTCO.BO")
         self.assertEqual(len(news_bo), 1)
         self.assertEqual(news_bo[0]["title"], "TestCo bags $50M AI contract")
+
+    def test_time_of_day_rvol_and_volume_surge(self):
+        """Phase 2: Time-of-Day RVOL normalization prevents midday false breakouts."""
+        # 1. Empty or insufficient bars returns None, False
+        df_empty = pd.DataFrame()
+        mult, surge = calculate_rvol_and_surge(df_empty)
+        self.assertIsNone(mult)
+        self.assertFalse(surge)
+
+        # 1b. Strict Zero-Default: Zero volume or missing realtime trades returns None, False (never fake 0.0)
+        df_zero = pd.DataFrame({"Volume": [0, 0, 0, 0, 0, 0]})
+        mult_zero, surge_zero = calculate_rvol_and_surge(df_zero)
+        self.assertIsNone(mult_zero)
+        self.assertFalse(surge_zero)
+
+        # 2. Construct 2 days of 5m bars simulating Indian market session
+        idx = pd.date_range("2026-10-20 09:15", periods=75, freq="5min", tz="Asia/Kolkata")
+        # Base volume at lunch (bar 40, ~12:35 PM) is 5,000
+        vols = [10000] * 75
+        vols[40] = 5000
+        df = pd.DataFrame({"Volume": vols}, index=idx)
+
+        # Normal volume during midday lull should NOT trigger surge
+        mult, surge = calculate_rvol_and_surge(df.iloc[:41])
+        self.assertFalse(surge)
+
+        # Authentic institutional volume surge (3x normal volume) must trigger surge
+        vols_surge = list(vols)
+        vols_surge[40] = 30000
+        df_surge = pd.DataFrame({"Volume": vols_surge}, index=idx)
+        mult, surge = calculate_rvol_and_surge(df_surge.iloc[:41])
+        self.assertTrue(surge)
+        self.assertGreaterEqual(mult, 2.25)
+
+    def test_camarilla_gap_up_exhaustion_trap_veto(self):
+        """Phase 2: Camarilla Gap-Up Exhaustion filter vetoes gap-fades to HOLD_NEUTRAL."""
+        base_tech = {
+            "current_price": 1010.0,
+            "change_pct": 2.5,
+            "gap_pct": 2.5,
+            "day_open": 1030.0,
+            "camarilla_pivots": {"h4": 1020.0, "h3": 1010.0, "l3": 990.0, "l4": 980.0},
+            "vwap": 1018.0,
+            "technical_score": 85,
+            "rsi_15m": 68.0,
+            "is_15m_candle_closed": True,
+            "orb_status": "INSIDE_ORB_RANGE",
+            "atr_14": 15.0
+        }
+        base_flow = {"flow_score": 75, "fo_oi_status": "LONG_BUILDUP", "flow_bias": "INSTITUTIONAL_ACCUMULATION"}
+        base_macro = {"india_vix": 13.5, "adr_ratio": 1.4, "breadth_regime": "EXPANSION"}
+        base_forensics = {"forensic_score": 80}
+        base_fin = {"pe_ratio": 20.0}
+
+        # Case A: Exhaustion Trap - Opened at 1030 (above H4 1020), but faded to 1010 (below H4 and below VWAP 1018)
+        trap_tech = dict(base_tech)
+        trap_tech["current_price"] = 1010.0
+        res_trap = compute_deterministic_confluence(
+            symbol="INFY",
+            technicals=trap_tech,
+            flow_data=base_flow,
+            macro_data=base_macro,
+            forensics=base_forensics,
+            financials=base_fin
+        )
+        self.assertEqual(res_trap["action_bias"], "HOLD_NEUTRAL")
+        self.assertTrue(any("Camarilla Gap-Up Exhaustion Trap" in d for d in res_trap["confluence_drivers"]))
+
+        # Case B: Authentic Breakout - Opened at 1030, holding strong at 1035 (above H4 1020 and above VWAP 1025)
+        breakout_tech = dict(base_tech)
+        breakout_tech["current_price"] = 1035.0
+        breakout_tech["vwap"] = 1025.0
+        breakout_tech["orb_status"] = "BULLISH_ORB_BREAKOUT"
+        res_breakout = compute_deterministic_confluence(
+            symbol="INFY",
+            technicals=breakout_tech,
+            flow_data=base_flow,
+            macro_data=base_macro,
+            forensics=base_forensics,
+            financials=base_fin
+        )
+        self.assertEqual(res_breakout["action_bias"], "BUY_WATCH")
+
+    def test_bhavcopy_delivery_ingestion_and_zero_default(self):
+        """Phase 3.2: NSE Security-wise delivery baseline ingestion & strict Zero-Default Policy."""
+        import app.flow_tracker as ft
+
+        # Manually populate bhavcopy delivery cache with authentic test delivery values
+        ft._BHAVCOPY_DELIVERY_CACHE = {
+            "RELIANCE": 62.45,
+            "TCS": 71.20,
+            "HDFCBANK": 54.80
+        }
+        ft._BHAVCOPY_LAST_FETCH = time.time()
+
+        # Known scrip: returns authentic exchange delivery %
+        self.assertEqual(ft.get_bhavcopy_delivery_pct("RELIANCE.NS"), 62.45)
+        self.assertEqual(ft.get_bhavcopy_delivery_pct("TCS"), 71.20)
+
+        # Unknown scrip: returns None (never dummy 52.0 or fake 0.0)
+        self.assertIsNone(ft.get_bhavcopy_delivery_pct("UNKNOWN_CORP.NS"))
+
+        # In fetch_delivery_and_fo_flow, auto-ingests bhavcopy when delivery_pct is unsupplied
+        with patch("app.flow_tracker.fetch_nse_option_chain", return_value=[]), \
+             patch("app.flow_tracker.is_fo_symbol", return_value=False):
+            flow_rel = ft.fetch_delivery_and_fo_flow("RELIANCE.NS", price_change_pct=1.2)
+            self.assertEqual(flow_rel["delivery_pct"], 62.45)
+            self.assertTrue(flow_rel["is_high_delivery"])
+            self.assertEqual(flow_rel["vsa_regime"], "SMART_MONEY_ABSORPTION")
+
+            flow_unknown = ft.fetch_delivery_and_fo_flow("UNKNOWN_CORP.NS", price_change_pct=0.5)
+            self.assertIsNone(flow_unknown["delivery_pct"])
+            self.assertFalse(flow_unknown["is_high_delivery"])
+
+    def test_postgres_advisory_lock_distributed_cron(self):
+        """Phase 3.1: PostgreSQL Advisory Lock for multi-container Cloud Run concurrency control."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        from app.db_pool import try_postgres_advisory_lock
+        import app.routers.cron as cron_router
+
+        async def _run_test():
+            # 1. When pool is None (local/dev/test fallback), lock succeeds cleanly
+            with patch("app.db_pool.get_db_pool", new_callable=AsyncMock, return_value=None):
+                async with try_postgres_advisory_lock(987654321) as acquired:
+                    self.assertTrue(acquired)
+
+            # 2. When simulated connection holds advisory lock, another container gets False
+            mock_conn = AsyncMock()
+            mock_conn.fetchval.side_effect = [True, True]  # acquire -> True, unlock -> True
+            mock_pool = AsyncMock()
+            mock_pool.acquire.return_value = mock_conn
+
+            with patch("app.db_pool.get_db_pool", new_callable=AsyncMock, return_value=mock_pool):
+                async with try_postgres_advisory_lock(987654321) as acquired:
+                    self.assertTrue(acquired)
+                # Verify unlock was called on release
+                mock_conn.fetchval.assert_any_call("SELECT pg_try_advisory_lock($1)", 987654321)
+                mock_conn.fetchval.assert_any_call("SELECT pg_advisory_unlock($1)", 987654321)
+
+            # 3. When another container instance holds the advisory lock (fetchval returns False)
+            mock_conn_busy = AsyncMock()
+            mock_conn_busy.fetchval.return_value = False
+            mock_pool_busy = AsyncMock()
+            mock_pool_busy.acquire.return_value = mock_conn_busy
+
+            with patch("app.db_pool.get_db_pool", new_callable=AsyncMock, return_value=mock_pool_busy):
+                async with try_postgres_advisory_lock(987654321) as acquired:
+                    self.assertFalse(acquired)
+
+                # execute_multi_user_market_scan returns skipped when lock not acquired
+                mock_client = MagicMock()
+                res = await cron_router.execute_multi_user_market_scan(mock_client)
+                self.assertEqual(res["status"], "skipped")
+                self.assertIn("another Cloud Run instance", res["message"])
+
+        asyncio.run(_run_test())
 
 
 if __name__ == "__main__":

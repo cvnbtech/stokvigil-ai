@@ -35,7 +35,7 @@ from app.notifications import (
 from app.fii_dii_tracker import fetch_daily_fii_dii_flows
 from app.vault import vault
 from app.brokers import get_broker
-from app.db_pool import fetch_all
+from app.db_pool import fetch_all, try_postgres_advisory_lock
 from app.routers.market import get_accuracy_ledger
 from app.routers.auth import _async_sync_demat_to_watchlists
 
@@ -43,26 +43,14 @@ logger = logging.getLogger("stokvigil.cron")
 
 router = APIRouter(tags=["Cron & Webhook Automation"])
 
+SCAN_ADVISORY_LOCK_ID = 987654321
 _scan_in_progress = False
 _DAILY_SCAN_CYCLES_COUNT: int = 0
 _DAILY_SCAN_CYCLES_DATE: str = ""
 
 
-async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
-    """
-    Executes full multi-user market intelligence scan.
-    Returns structured execution telemetry including scanned symbols, users, and dispatched alerts.
-    """
-    global _scan_in_progress, _DAILY_SCAN_CYCLES_COUNT, _DAILY_SCAN_CYCLES_DATE
-    if _scan_in_progress:
-        logger.info("⚡ Multi-user market scan is already running. Skipping duplicate task.")
-        return {
-            "status": "skipped",
-            "message": "Market scan already in progress.",
-            "timestamp": str(date.today())
-        }
-
-    _scan_in_progress = True
+async def _execute_market_scan_body(db: Client) -> Dict[str, Any]:
+    global _DAILY_SCAN_CYCLES_COUNT, _DAILY_SCAN_CYCLES_DATE
     today_str = str(date.today())
     if _DAILY_SCAN_CYCLES_DATE != today_str:
         _DAILY_SCAN_CYCLES_DATE = today_str
@@ -202,8 +190,38 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
             "error": "Market intelligence scan failed." if settings.ENVIRONMENT == "production" else str(e),
             "timestamp": today_str
         }
-    finally:
-        _scan_in_progress = False
+
+
+async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
+    """
+    Executes full multi-user market intelligence scan.
+    Guarantees distributed single-runner concurrency across multi-container Cloud Run deployments
+    via PostgreSQL session advisory locking (100% Free-Tier).
+    Returns structured execution telemetry including scanned symbols, users, and dispatched alerts.
+    """
+    global _scan_in_progress
+    if _scan_in_progress:
+        logger.info("⚡ Multi-user market scan is already running on this instance. Skipping duplicate task.")
+        return {
+            "status": "skipped",
+            "message": "Market scan already in progress.",
+            "timestamp": str(date.today())
+        }
+
+    async with try_postgres_advisory_lock(SCAN_ADVISORY_LOCK_ID) as lock_acquired:
+        if not lock_acquired:
+            logger.info("⚡ Multi-user market scan is already running on another Cloud Run instance. Skipping duplicate task.")
+            return {
+                "status": "skipped",
+                "message": "Market scan already running on another Cloud Run instance.",
+                "timestamp": str(date.today())
+            }
+
+        _scan_in_progress = True
+        try:
+            return await _execute_market_scan_body(db)
+        finally:
+            _scan_in_progress = False
 
 
 @router.post("/api/cron/multi-user-scan")

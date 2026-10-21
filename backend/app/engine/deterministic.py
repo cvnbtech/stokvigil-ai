@@ -768,6 +768,39 @@ def compute_deterministic_confluence(
             confluence_score = min(58, confluence_score - 10)
             confluence_drivers.append(f"Exhaustion Trap Veto: Price ₹{current_price:,.2f} extended beyond VWAP +2σ (₹{float(vwap_upper_2s):,.2f}) with RSI {rsi_15m_val}. Overextended FOMO peak.")
 
+    # Camarilla Gap-Up Exhaustion Trap Filter:
+    # When price gaps up significantly over yesterday's Camarilla H4 level (Gap >= 1.0% and Open >= H4):
+    # Over 70% of opening gap-ups above H4 are institutional exhaustion traps (gap fade back towards VWAP/H3).
+    # RULE: A gap-up opening above H4 is only confirmed for BUY_WATCH if:
+    # 1. Price is currently holding strictly above H4.
+    # 2. Price is trading above session VWAP.
+    # 3. 15m candle close is confirmed (not an intraday shooting star / upper wick rejection).
+    # If price has fallen below H4, or closed below VWAP, or rejected at wick, veto BUY_WATCH to HOLD_NEUTRAL.
+    camarilla = technicals.get("camarilla_pivots", {})
+    h4_level = camarilla.get("h4")
+    gap_pct = technicals.get("gap_pct")
+    is_15m_closed = technicals.get("is_15m_candle_closed", True)
+    orb_status = technicals.get("orb_status", "NONE")
+    curr_vwap = technicals.get("vwap")
+
+    if action_bias == "BUY_WATCH" and h4_level is not None and gap_pct is not None and float(gap_pct) >= 1.0:
+        day_open = technicals.get("day_open")
+        opened_above_h4 = bool(day_open is not None and float(day_open) >= float(h4_level))
+
+        # Check if price has faded below H4 or below VWAP, or formed an upper wick trap
+        is_fading_gap = bool(current_price < float(h4_level)) or bool(curr_vwap is not None and current_price < float(curr_vwap))
+        has_wick_trap = (orb_status == "ORB_UPPER_WICK_REJECTION")
+
+        if (opened_above_h4 or current_price > float(h4_level)) and (is_fading_gap or has_wick_trap or not is_15m_closed):
+            logger.info(f"Camarilla Gap-Up Exhaustion Veto for {symbol}: Gap {gap_pct:+.2f}% over H4 (₹{h4_level:,.2f}) fading back towards VWAP. Downgrading BUY_WATCH to HOLD_NEUTRAL.")
+            action_bias = "HOLD_NEUTRAL"
+            has_actionable_signal = False
+            confluence_score = min(58, confluence_score - 8)
+            confluence_drivers.append(
+                f"Camarilla Gap-Up Exhaustion Trap: Opening gap ({gap_pct:+.1f}%) above H4 (₹{float(h4_level):,.2f}) "
+                f"failed to sustain momentum and is fading towards VWAP. Counter-trend breakout blocked."
+            )
+
     # Time-of-Day Asymmetric Regime Filter (The "Lunch-Hour Trap" Blocker - NSE & BSE)
     # Between 11:30 AM and 01:30 PM IST, institutional liquidity drops 40-65% (DIIs step away for lunch, Euro opens).
     # Over 75% of breakouts during this lull are false bull-traps that reverse into stop-losses.

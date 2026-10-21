@@ -34,15 +34,34 @@ class PlaceOrderRequest(BaseModel):
         return self
 
 
-def snap_to_exchange_tick(price: Optional[float], tick_size: float = 0.05) -> float:
+def get_exchange_tick_size(price: Optional[float], is_fno: bool = False) -> float:
     """
-    Snaps order price to Indian exchange standard ₹0.05 tick size using standard half-up rounding.
-    NSE/BSE equity orders with invalid sub-tick fractions are rejected by exchange matching engines.
+    Returns official NSE/BSE exchange tick size under Circular NSE/CMTR/62326:
+    - ₹0.01 (1 paisa) for Cash Market equity securities trading strictly below ₹250.00.
+    - ₹0.05 (5 paise) for Cash Market equities trading at or above ₹250.00, and all F&O derivatives.
     """
-    if price is None or price <= 0:
+    if is_fno or price is None or float(price) <= 0:
+        return 0.05
+    return 0.01 if float(price) < 250.0 else 0.05
+
+
+def snap_to_exchange_tick(
+    price: Optional[float],
+    tick_size: float = 0.05,
+    dynamic: bool = False,
+    is_fno: bool = False
+) -> float:
+    """
+    Snaps order price to Indian exchange standard tick size using financial half-up rounding.
+    When dynamic=True, automatically resolves to ₹0.01 for cash stocks < ₹250 and ₹0.05 for >= ₹250.
+    Default tick_size=0.05 preserves backwards compatibility for existing callers and fixtures.
+    """
+    if price is None or float(price) <= 0:
         return 0.0
-    ticks = math.floor(float(price) / tick_size + 0.5)
-    return round(ticks * tick_size, 2)
+    p = float(price)
+    eff_tick = get_exchange_tick_size(p, is_fno=is_fno) if dynamic else tick_size
+    ticks = math.floor(p / eff_tick + 0.5)
+    return round(ticks * eff_tick, 2)
 
 
 # Financial Idempotency Cache for Order Execution

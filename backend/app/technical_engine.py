@@ -333,6 +333,62 @@ def calculate_adx(df: pd.DataFrame, period: int = 14) -> Dict[str, Any]:
         logger.warning(f"ADX calculation fallback: {e}")
         return default_adx
 
+def calculate_rvol_and_surge(df_5m: pd.DataFrame) -> Tuple[Optional[float], bool]:
+    """
+    Computes Time-of-Day Relative Volume (RVOL) and institutional volume surge.
+    Normalizes for the Indian equity intraday U-shaped volume curve (09:15-15:30 IST):
+    1. If multi-session history exists, compares current bar's volume against the historical
+       volume for the identical time-of-day bucket.
+    2. Incorporates Time-of-Day volume weighting to prevent false surges during the
+       11:45-13:15 IST midday lull and opening drive distortions.
+    Returns (volume_multiple, is_volume_surge).
+    """
+    if df_5m is None or 'Volume' not in df_5m.columns or len(df_5m) < 5:
+        return None, False
+
+    recent_vol = float(df_5m['Volume'].iloc[-1])
+    if recent_vol <= 0:
+        return None, False
+
+    last_idx = df_5m.index[-1]
+    has_time = hasattr(last_idx, 'time')
+
+    # Historical Time-of-Day Matching (if multi-session 5m bars exist)
+    tod_baseline = None
+    if has_time and len(df_5m) >= 30:
+        try:
+            curr_time = last_idx.time()
+            matching_bars = df_5m.iloc[:-1][df_5m.iloc[:-1].index.time == curr_time]['Volume']
+            if len(matching_bars) >= 1:
+                hist_median = float(matching_bars.median())
+                if hist_median > 0:
+                    tod_baseline = hist_median
+        except Exception:
+            tod_baseline = None
+
+    # Rolling 20-period baseline
+    vol_ma_20 = float(df_5m['Volume'].rolling(20, min_periods=5).mean().iloc[-1]) if len(df_5m) >= 5 else 0.0
+
+    if tod_baseline is not None and tod_baseline > 0:
+        effective_baseline = (0.60 * tod_baseline) + (0.40 * vol_ma_20) if vol_ma_20 > 0 else tod_baseline
+    elif vol_ma_20 > 0:
+        effective_baseline = vol_ma_20
+    else:
+        return None, False
+
+    # Midday lunch lull (11:45 - 13:15 IST) threshold hardening
+    threshold = 2.0
+    if has_time:
+        t_hour = last_idx.hour
+        t_min = last_idx.minute
+        if (t_hour == 11 and t_min >= 45) or (t_hour == 12) or (t_hour == 13 and t_min <= 15):
+            threshold = 2.25
+
+    volume_mult = round(recent_vol / effective_baseline, 2)
+    is_volume_surge = bool(volume_mult >= threshold)
+    return volume_mult, is_volume_surge
+
+
 def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[float]]:
     """
     Computes Camarilla Equation Institutional Pivots from the prior completed daily session.
@@ -426,6 +482,7 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "current_price": None,
         "change_pct": None,
         "gap_pct": None,
+        "day_open": None,
         "is_circuit_locked": False,
         "circuit_lock_type": None,
         "orb_high_15m": None,
@@ -654,6 +711,7 @@ def compute_technicals_from_frames(
         "current_price": None,
         "change_pct": None,
         "gap_pct": None,
+        "day_open": None,
         "is_circuit_locked": False,
         "circuit_lock_type": None,
         "orb_high_15m": None,
@@ -777,6 +835,7 @@ def compute_technicals_from_frames(
                     "current_price": current_price,
                     "change_pct": change_pct,
                     "gap_pct": None,
+        "day_open": None,
                     "is_circuit_locked": False,
                     "circuit_lock_type": None,
                     "orb_high_15m": None,
@@ -937,15 +996,8 @@ def compute_technicals_from_frames(
         atr_series = calculate_atr(df_5m, 14)
         atr_val = round(float(atr_series.iloc[-1]), 2) if not atr_series.empty and not pd.isna(atr_series.iloc[-1]) else None
             
-        # Volume Surge Check (vs 20-period Volume MA on 5m)
-        is_volume_surge = False
-        volume_mult = None
-        if 'Volume' in df_5m.columns and len(df_5m) >= 20:
-            vol_ma_20 = float(df_5m['Volume'].rolling(20).mean().iloc[-1])
-            recent_vol = float(df_5m['Volume'].iloc[-1])
-            if vol_ma_20 > 0:
-                volume_mult = round(recent_vol / vol_ma_20, 2)
-                is_volume_surge = (volume_mult >= 2.0)
+        # Volume Surge Check (Time-of-Day RVOL Normalization vs 20-period baseline)
+        volume_mult, is_volume_surge = calculate_rvol_and_surge(df_5m)
 
         # Wyckoff VSA Candle Range-Location (CLQ) & Intraday 5m Momentum
         close_location_pct = None
@@ -1113,6 +1165,7 @@ def compute_technicals_from_frames(
             "current_price": current_price,
             "change_pct": change_pct,
             "gap_pct": gap_pct,
+            "day_open": today_open,
             "is_circuit_locked": is_circuit_locked,
             "circuit_lock_type": circuit_lock_type,
             "orb_high_15m": orb_high_15m,
@@ -1201,11 +1254,16 @@ def batch_fetch_multi_timeframe_technicals(symbols: List[str]) -> Dict[str, Dict
     frames_5m: Dict[str, pd.DataFrame] = {}
     missing_for_bse: List[str] = []
 
+    # Optimization: Use 2d instead of 5d during market surveillance.
+    # 2 trading days (~150 5m bars) provides ample warm-up for 14-period RSI/ATR and 26-period MACD,
+    # while reducing HTTP network transfer and MultiIndex DataFrame parsing overhead by 60%.
+    fetch_5m_period = "2d"
+
     # 1. Batch download 5m intraday bars for all unique tickers
     try:
         batch_5m = yf.download(
             tickers=unique_tickers_list,
-            period="5d",
+            period=fetch_5m_period,
             interval="5m",
             group_by="ticker",
             threads=True,
@@ -1235,7 +1293,7 @@ def batch_fetch_multi_timeframe_technicals(symbols: List[str]) -> Dict[str, Dict
         try:
             bse_batch = yf.download(
                 tickers=missing_for_bse,
-                period="5d",
+                period=fetch_5m_period,
                 interval="5m",
                 group_by="ticker",
                 threads=True,

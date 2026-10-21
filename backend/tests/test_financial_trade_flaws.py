@@ -19,7 +19,7 @@ from fastapi import HTTPException
 
 from app.engine.deterministic import compute_tactical_levels
 from app.notifications import format_telegram_alert
-from app.schemas.orders import PlaceOrderRequest, snap_to_exchange_tick
+from app.schemas.orders import PlaceOrderRequest, snap_to_exchange_tick, get_exchange_tick_size
 from app.core.dependencies import is_indian_market_open, get_market_session_status
 from app.routers.orders import place_trade_order
 
@@ -172,6 +172,20 @@ class TestFinancialTradeFlaws(unittest.TestCase):
         self.assertEqual(snap_to_exchange_tick(100.04), 100.05)
         self.assertEqual(snap_to_exchange_tick(0.0), 0.0)
         self.assertEqual(snap_to_exchange_tick(None), 0.0)
+
+    def test_dynamic_exchange_tick_size_2024_rule(self):
+        """NSE Circular NSE/CMTR/62326: 1 paisa for sub-₹250 cash equities, 5 paise for >= ₹250 and F&O."""
+        self.assertEqual(get_exchange_tick_size(115.42), 0.01)
+        self.assertEqual(get_exchange_tick_size(249.99), 0.01)
+        self.assertEqual(get_exchange_tick_size(250.00), 0.05)
+        self.assertEqual(get_exchange_tick_size(1500.00), 0.05)
+        self.assertEqual(get_exchange_tick_size(100.00, is_fno=True), 0.05)
+
+        # Dynamic snapping on cash equities
+        self.assertEqual(snap_to_exchange_tick(115.424, dynamic=True), 115.42)
+        self.assertEqual(snap_to_exchange_tick(115.426, dynamic=True), 115.43)
+        self.assertEqual(snap_to_exchange_tick(1245.33, dynamic=True), 1245.35)
+        self.assertEqual(snap_to_exchange_tick(1245.31, dynamic=True), 1245.30)
 
     def test_is_indian_market_open_helper(self):
         """Flaw 5: Indian market session helper returns boolean and descriptive status."""

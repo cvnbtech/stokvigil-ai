@@ -531,7 +531,7 @@ def get_user_portfolio(
         if not proper_name or proper_name == sym:
             proper_name = q_name or clean_sym
 
-        h_pack = m_cache.get_stock(clean_sym) or m_cache.get_stock(sym)
+        h_pack = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
         h_signal = (quote_obj.get("signal") if quote_obj else None)
         h_signal_type = (quote_obj.get("signal_type") if quote_obj else None)
         h_target = (quote_obj.get("target") if quote_obj else None)

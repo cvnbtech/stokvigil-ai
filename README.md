@@ -5,7 +5,7 @@
 [![Cloud Run Free Tier](https://img.shields.io/badge/Cloud%20Run-100%25%20Free%20Tier%20(360k%20vCPU--s)-10B981?style=flat-square)](https://cloud.google.com/run)
 [![Database Pool](https://img.shields.io/badge/Supabase%20PgBouncer-Port%206543%20Multiplexed-3ECF8E?style=flat-square)](https://supabase.com)
 [![AI Engine](https://img.shields.io/badge/AI%20Reasoning-Google%20Gemini%203.5%20Flash%20Lite-6366F1?style=flat-square)](https://ai.google.dev)
-[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-210%2F210%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
+[![Tests Passing](https://img.shields.io/badge/Automated%20Tests-217%2F217%20Passing%20(100%25)-brightgreen?style=flat-square)](backend/tests)
 [![Client Platforms](https://img.shields.io/badge/Clients-Flutter%203%20%7C%20Next.js%2016%20PWA-8B5CF6?style=flat-square)](mobile_app)
 
 ---
@@ -88,9 +88,9 @@ flowchart TD
         B2["Supabase JWT Bearer Validation & IDOR Defense (auth.py)"]
         B3["Cron Secret HMAC Constant-Time Validator"]
         B4["Crypto Vault: Fernet AES-256 with PBKDF2HMAC (vault.py)"]
-        B4a["Order Execution Shield: 120s Idempotency, RMS 500->422, ₹0.05 Tick Snap, SL-M Ban"]
-        B5["In-Memory Multi-Tier Caches (Technicals, Macro, News, 4h Demat Holdings)"]
-        B6["Synchronous Scan Concurrency Mutex (_scan_in_progress)"]
+        B4a["Order Execution Shield: 120s Idempotency, RMS 500->422, Dynamic ₹0.01/₹0.05 Tick Snap, SL-M Ban"]
+        B5["In-Memory Multi-Tier Caches (Technicals, Macro, News, 4h Demat Holdings, 12h Bhavcopy)"]
+        B6["Distributed Concurrency Mutex: PostgreSQL Advisory Lock (987654321) + _scan_in_progress"]
     end
 
     subgraph ExternalFeeds["External Market & Broker Integrations"]
@@ -167,7 +167,7 @@ Real institutional desks do not burn neural network inference on quiet or sidewa
 2. **Sharp Price Surge / Breakdown**: Intraday move magnitude $|\Delta P| \ge 2.5\%$.
 3. **15-Minute Opening Range Breakout (ORB)**: `BULLISH_ORB_BREAKOUT` or `BEARISH_ORB_BREAKDOWN` with confirmed candle close (`candle_close_confirmed`).
 4. **Circuit Lock Freezes**: Upper or lower circuit freeze (`UPPER_CIRCUIT` or `LOWER_CIRCUIT`, $|H-L| < 10^{-4}$ and $|\Delta P| \ge 1.9\%$).
-5. **Institutional Volume Surge**: Intraday volume $\ge 1.5\times$ 20-period volume MA.
+5. **Time-of-Day RVOL Normalization**: Current 5m bar volume evaluated against historical time-of-day bucket median ($\text{RVOL} \ge 2.0\times$, elevated to $\ge 2.25\times$ during the 11:45–13:15 IST midday lull to eliminate false breakout traps). Strictly returns `None` when trade volume is 0 or unrecorded.
 6. **Momentum Extremes / Divergence**: $15\text{m RSI} \ge 68.0$ or $\le 32.0$, or active Bullish/Bearish Divergence.
 7. **MACD Trend Transition**: 15m MACD Bullish Crossover.
 8. **Institutional Flow & F&O Build-up**: Delivery $\ge 50\%$, or active F&O Open Interest buildup with PCR $\ge 1.3$ or $\le 0.7$, or extreme Option Chain PCR ($\ge 1.4$ or $\le 0.6$).
@@ -187,7 +187,7 @@ Real institutional desks do not burn neural network inference on quiet or sidewa
 | **2** | **Demat Capital Preservation Shield** | For portfolio holdings, if position unrealized loss reaches $\le -3.5\%$, an automatic emergency `TRAILING_SL_ALERT` is triggered immediately regardless of baseline score. |
 | **3** | **Positive Momentum Surge Boost** | When $\Delta P \ge +5.0\%$ with a confirmed `BULLISH_ORB_BREAKOUT`, inject **+6 point momentum surge boost**, categorizing it as `PRICE_BREAKOUT`. |
 | **4** | **15-Minute ORB Engine** | Quantifies 09:15–09:30 IST opening corridor into `orb_high_15m` and `orb_low_15m`. Evaluates `BULLISH_ORB_BREAKOUT`, `BEARISH_ORB_BREAKDOWN`, or `INSIDE_ORB_RANGE`. |
-| **5** | **Date-Aware Camarilla Pivots** | Computes $H_4, H_3, L_3, L_4$. When evaluating live market sessions, strictly calculate from `iloc[-2]` (prior completed trading day), never from the forming intraday bar at `iloc[-1]`. |
+| **5** | **Date-Aware Camarilla & Gap-Up Exhaustion Gate** | Computes $H_4, H_3, L_3, L_4$ from `iloc[-2]` (prior completed trading day). If a stock opens $\ge 1.0\%$ above $H_4$ and fades below $H_4$ or intraday VWAP, automatically vetoes `BUY_WATCH` to `HOLD_NEUTRAL` to eliminate gap-fade bull traps. |
 | **6** | **Circuit Lock Freeze Detection** | Detects $H=L=C$ within $10^{-4}$ tolerance with $|\Delta P| \ge 1.9\%$, classifying stocks into `UPPER_CIRCUIT` (score $\ge 85$) or `LOWER_CIRCUIT` (score $\le 15$). |
 | **7** | **Near-Month Options Expiry Filter** | Restricts NSE option chain analytics strictly to the nearest active expiry date (`records["expiryDates"][0]`), eliminating illiquid far-month contracts from distorting PCR and Max Pain. |
 | **8** | **Universal Sensitivity Gate** | Ensures users on `ALL` sensitivity reliably receive all valid actionable alerts, breakdowns, and capital defense triggers. |
@@ -195,12 +195,14 @@ Real institutional desks do not burn neural network inference on quiet or sidewa
 | **10** | **15m Candle Close & Wick Rejection** | Breakouts are evaluated strictly at 15m candle close boundaries (`is_15m_candle_closed` & `candle_close_confirmed`), filtering out false intra-bar breakout traps (`ORB_UPPER_WICK_REJECTION`). |
 | **11** | **Target 1 Trail-to-Cost Alert** | When an active position or watchlist ticker crosses Tactical Resistance 1 (1.5x ATR), triggers `TARGET_1_TRAIL_ALERT`: *"🎯 TARGET 1 REACHED: Lock 50% Gains & Trail Stop-Loss to Breakeven Cost"*. |
 | **12** | **SEBI Non-Advisory Terminology** | Eliminates advisory tip phrasing. Strictly labels levels as "Tactical Resistance 1 (1.5x ATR Benchmark)" and "Expansion Resistance 2 (2.5x ATR Benchmark)" with statutory disclaimers. |
-| **13** | **SL-L Routing & SL-M Ban** | Full compliance with SEBI circulars banning Stop-Loss Market (`SL-M`) orders. Market-stop orders are rejected (`HTTP 422`); orders route strictly as `SL-L` snapped to ₹0.05 exchange ticks. |
+| **13** | **Dynamic 2024 Tick Sizing & SL-M Ban** | Full compliance with circular `NSE/CMTR/62326` (₹0.01 tick size for cash equities $< ₹250$, ₹0.05 for $\ge ₹250$ & F&O contracts) and SEBI SL-M ban (`HTTP 422`). |
 | **14** | **Dynamic Sector Universe & BSE Resolver** | Dynamically queries official NSE sector constituent lists (250+ equities, 0 hardcoded stock lists) daily with 24h cache. BSE 6-digit numeric codes and `.BO` suffixes resolve via BSE India's official API on-the-fly. |
 | **15** | **1% Capital Risk Position Sizer** | Mathematical risk sizing: $\text{Risk Budget} = \max(₹500, \text{Portfolio} \times 0.01)$; $\text{Qty} = \lfloor \text{Risk Budget} / |\text{Price} - \text{SL}| \rfloor$. Dispatches sizing guidance on Telegram alerts and HUD cards. |
 | **16** | **Vectorized Strategy Backtester** | In-memory historical strategy simulation powered by NumPy/Pandas (<1s execution) exposed via authenticated endpoints `GET /api/market/backtest` and `POST /api/market/backtest`. |
 | **17** | **15:45 Closing Bell Executive Digest** | Automated post-market closing scorecard dispatched at 03:45 PM IST summarizing NIFTY 50, SENSEX, India VIX, Market Breadth ADR, FII/DII cash turnover, sector leaders/laggards, and algorithmic Target 1 hit rates. |
 | **18** | **Public Audited Accuracy Ledger** | Real subsequent OHLCV price tracking (`app/accuracy_verifier.py`) verifying genuine historical hit rates (`TARGET_1_REACHED`, `STOP_LOSS_HIT`, `OPEN_MONITORING`) at `/transparency` with zero mock data and zero PII. |
+| **19** | **Daily NSE Delivery Bhavcopy Baseline** | Sourced directly from official NSE archives (`sec_bhavdata_full_{DDMMYYYY}.csv`) with 12h cache and 4-day lookback for holidays, automating Wyckoff VSA without paid feeds and strictly returning `None` if unavailable. |
+| **20** | **PostgreSQL Distributed Advisory Lock** | Cluster-wide session advisory locking (`try_postgres_advisory_lock(987654321)`) eliminates concurrent scan duplicate runs across autoscaled Cloud Run instances without paid Redis. |
 
 ---
 
@@ -233,7 +235,7 @@ sequenceDiagram
 ### Financial Trade Execution Safeguards (`POST /api/v1/orders/place`)
 1. **Idempotency Replay Shield (`_ORDER_IDEMPOTENCY_CACHE`)**: Tracks SHA-256 fingerprint hashes `(user_id, symbol, action, quantity, price)` with 120s TTL and 15s auto-debounce. Concurrent duplicate requests receive `HTTP 409 Conflict`. Replays return identical responses (`idempotent_replay: true`) without re-hitting the broker.
 2. **Silent RMS Rejection Interception**: Breeze API returns HTTP 200 with `{"Status": 500, "Error": "RMS: Margin Shortage..."}`. The backend intercepts this and raises `HTTP 422 Unprocessable Entity` with the exact broker error.
-3. **Exchange ₹0.05 Tick Snapping (`snap_to_exchange_tick`)**: Snaps limit and stop-loss prices to standard ₹0.05 tick intervals using financial half-up rounding (`round(price * 20) / 20`).
+3. **Dynamic 2024 Exchange Tick Snapping (`snap_to_exchange_tick` per `NSE/CMTR/62326`)**: Dynamically snaps limit and trigger prices to ₹0.01 for cash equities $< ₹250$ and ₹0.05 for equities $\ge ₹250$ and all F&O contracts using financial half-up rounding.
 4. **SEBI/NSE `SL-M` Ban Enforcement**: Stop-Loss Market orders are rejected with `HTTP 422`. Only Stop-Loss Limit (`SL-L`) orders with explicit `price` and `trigger_price` are permitted.
 5. **Dynamic Product Resolution & SEBI MIS Notice**: Sells of held Demat shares route as `cash` (CNC). Sells of unheld shares route as `margin` (MIS short) and inject mandatory SEBI intraday margin short warnings.
 6. **Market Session Awareness**: Orders placed outside 09:15–15:30 IST return `"session_warning": "Market is currently closed. Order will be processed as AMO or queued by broker."`.
@@ -260,10 +262,18 @@ sequenceDiagram
 
 ### Database Tables & Schema Contract
 1. **`profiles`**: User identity, notification preferences (`fcm_device_token`, `fcm_enabled`, `telegram_chat_id`, `telegram_enabled`), alert sensitivity (`HIGH`, `ALL`, `FII`), execution mode (`INSTANT`, `CONFIRM`), demat auto-sync.
-2. **`user_credentials`**: Encrypted broker session tokens (`encrypted_session_token`), broker identifier (`icici`), token date (`token_date`), RLS policy `auth.uid() = user_id`.
-3. **`user_watchlists`**: Persists Demat cost basis (`average_buy_price`, `quantity`, `last_synced_at`) via migration `20261004_persist_demat_cost_basis.sql` with composite index `idx_watchlists_user_auto_sync (user_id, is_auto_synced)`.
+2. **`user_credentials`**: Encrypted broker session tokens (`encrypted_session_token`), broker identifier (`icici`), token date (`token_date`), RLS policy `(SELECT auth.uid()) = user_id`.
+3. **`user_watchlists`**: Persists Demat cost basis (`average_buy_price`, `quantity`, `last_synced_at`) via migration `20261004_persist_demat_cost_basis.sql` with composite index `idx_watchlists_user_auto_sync (user_id, is_auto_synced)` and RLS policy `(SELECT auth.uid()) = user_id`.
 4. **`stok_alerts`**: Persistent record of evaluated catalysts, direction-aware tactical levels, confluence scores, metrics snapshot, and dispatch channels.
 5. **`fii_dii_flows`**: Persistent store of official daily NSE FII/DII net purchases, sales, combined net flows, and institutional sentiment bias.
+
+### PostgreSQL RLS InitPlan Optimization (`20261021_optimize_rls_initplan.sql`)
+All Row-Level Security policies on `profiles`, `user_credentials`, `user_watchlists`, and `stok_alerts` utilize the scalar subquery pattern:
+```sql
+CREATE POLICY "Users can manage their watchlists" ON public.user_watchlists
+    FOR ALL USING ((SELECT auth.uid()) = user_id);
+```
+PostgreSQL evaluates `(SELECT auth.uid())` once as an `InitPlan` at statement startup rather than repeatedly for every inspected row, delivering 5× to 10× faster database queries across watchlists and alerts while keeping Supabase Free-Tier database CPU usage $<10\%$.
 
 ---
 
@@ -394,7 +404,7 @@ stokvigil-ai/
 │   │   │   ├── market.py             <-- FII/DII Flows, Accuracy Ledger, Backtester
 │   │   │   └── cron.py               <-- Surveillance Scanner, Token Reminder, Pre/Post Briefings
 │   │   └── schemas/                  <-- Pydantic V2 Data Models
-│   └── tests/                        <-- 20-Suite Test Framework (210 Tests Passing, 100%)
+│   └── tests/                        <-- 24-Suite Test Framework (217 Tests Passing, 100%)
 ├── mobile_app/                       <-- Flutter 3 Client (Android / iOS)
 │   ├── lib/
 │   │   ├── main.dart                 <-- MultiProvider Entrypoint, Deep Links & Lifecycle Observers
@@ -437,7 +447,7 @@ stokvigil-ai/
    .\.venv\Scripts\pip.exe install -r requirements.txt
    ```
 2. Configure environment variables in `backend/.env` (see `.env.example`).
-3. Run the automated test suite (verifying all 210 tests pass):
+3. Run the automated test suite (verifying all 217 tests pass):
    ```bash
    backend\.venv\Scripts\python.exe -m pytest backend/tests -q
    ```

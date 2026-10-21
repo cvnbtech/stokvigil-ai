@@ -102,15 +102,15 @@ def place_trade_order(
             ot_upper = req.order_type.upper()
             if ot_upper in ["STOPLOSS_LIMIT", "STOPLOSS", "SL", "SL-L"]:
                 order_type = "stoploss"
-                snapped_price = snap_to_exchange_tick(req.price)
-                snapped_stoploss = snap_to_exchange_tick(req.trigger_price)
+                snapped_price = snap_to_exchange_tick(req.price, dynamic=True)
+                snapped_stoploss = snap_to_exchange_tick(req.trigger_price, dynamic=True)
             elif ot_upper == "MARKET":
                 order_type = "market"
                 snapped_price = 0.0
                 snapped_stoploss = 0.0
             else:
                 order_type = "limit"
-                snapped_price = snap_to_exchange_tick(req.price)
+                snapped_price = snap_to_exchange_tick(req.price, dynamic=True)
                 snapped_stoploss = 0.0
 
             # Market Session Awareness

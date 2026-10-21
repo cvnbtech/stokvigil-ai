@@ -53,18 +53,18 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
 CREATE POLICY "Users can view their own profile"
     ON public.profiles FOR SELECT
-    USING (auth.uid() = id);
+    USING ((SELECT auth.uid()) = id);
 
 DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
 CREATE POLICY "Users can insert their own profile"
     ON public.profiles FOR INSERT
-    WITH CHECK (auth.uid() = id);
+    WITH CHECK ((SELECT auth.uid()) = id);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile"
     ON public.profiles FOR UPDATE
-    USING (auth.uid() = id)
-    WITH CHECK (auth.uid() = id);
+    USING ((SELECT auth.uid()) = id)
+    WITH CHECK ((SELECT auth.uid()) = id);
 
 DROP POLICY IF EXISTS "Service role full access on profiles" ON public.profiles;
 CREATE POLICY "Service role full access on profiles"
@@ -107,17 +107,17 @@ ALTER TABLE public.user_credentials ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their own credentials" ON public.user_credentials;
 CREATE POLICY "Users can view their own credentials"
     ON public.user_credentials FOR SELECT
-    USING (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Users can insert/update their own credentials" ON public.user_credentials;
 CREATE POLICY "Users can insert/update their own credentials"
     ON public.user_credentials FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+    WITH CHECK ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Users can update existing credentials" ON public.user_credentials;
 CREATE POLICY "Users can update existing credentials"
     ON public.user_credentials FOR UPDATE
-    USING (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Service role full access on user_credentials" ON public.user_credentials;
 CREATE POLICY "Service role full access on user_credentials"
@@ -148,7 +148,7 @@ ALTER TABLE public.user_watchlists ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage their watchlists" ON public.user_watchlists;
 CREATE POLICY "Users can manage their watchlists"
     ON public.user_watchlists FOR ALL
-    USING (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Service role full access on user_watchlists" ON public.user_watchlists;
 CREATE POLICY "Service role full access on user_watchlists"
@@ -177,7 +177,7 @@ ALTER TABLE public.stok_alerts ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view their own alerts" ON public.stok_alerts;
 CREATE POLICY "Users can view their own alerts"
     ON public.stok_alerts FOR SELECT
-    USING (auth.uid() = user_id);
+    USING ((SELECT auth.uid()) = user_id);
 
 DROP POLICY IF EXISTS "Service role full access on stok_alerts" ON public.stok_alerts;
 CREATE POLICY "Service role full access on stok_alerts"

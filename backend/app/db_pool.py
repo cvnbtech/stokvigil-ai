@@ -243,3 +243,43 @@ async def fetch_one(query: str, *args) -> Optional[dict]:
         logger.warning(f"PgBouncer fetch_one query failed ({e}). Falling back to REST.")
         return None
 
+
+@asynccontextmanager
+async def try_postgres_advisory_lock(lock_id: int = 987654321) -> AsyncGenerator[bool, None]:
+    """
+    Attempts to acquire a cluster-wide PostgreSQL session advisory lock.
+    Enables distributed single-runner concurrency control across multiple Cloud Run container instances
+    without external Redis or stateful infrastructure (100% Free-Tier).
+    
+    If the connection pool is unconfigured (local dev / test), yields True (fallback to local in-memory lock).
+    Yields True if lock acquired, False if another instance holds the lock.
+    Guarantees automatic release on exit or connection termination.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        yield True
+        return
+
+    conn = None
+    lock_acquired = False
+    try:
+        conn = await pool.acquire(timeout=5.0)
+        result = await conn.fetchval("SELECT pg_try_advisory_lock($1)", lock_id)
+        lock_acquired = bool(result)
+        yield lock_acquired
+    except Exception as e:
+        logger.warning(f"Error acquiring PostgreSQL advisory lock {lock_id}: {e}")
+        yield True
+    finally:
+        if conn is not None:
+            if lock_acquired:
+                try:
+                    await conn.fetchval("SELECT pg_advisory_unlock($1)", lock_id)
+                except Exception as e:
+                    logger.debug(f"Error releasing PostgreSQL advisory lock {lock_id}: {e}")
+            try:
+                await pool.release(conn)
+            except Exception:
+                pass
+
+
