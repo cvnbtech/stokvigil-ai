@@ -182,9 +182,9 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
         for u in all_profiles:
             uid = str(u.get("id"))
             token = u.get("fcm_device_token")
-            fcm_on = u.get("fcm_enabled", True)
+            fcm_on = bool(u.get("fcm_enabled"))
             tg_id = u.get("telegram_chat_id")
-            tg_on = u.get("telegram_enabled", False)
+            tg_on = bool(u.get("telegram_enabled"))
 
             fcm_sent = False
             if token and fcm_on:

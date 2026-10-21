@@ -189,7 +189,7 @@ class TestAlgorithmicBiasAndDrawdown(unittest.IsolatedAsyncioTestCase):
 
         mock_supabase = MagicMock()
         mock_supabase.table().select().execute.return_value.data = [
-            {"id": "usr-1", "fcm_device_token": "token-1", "telegram_chat_id": "12345", "telegram_enabled": True}
+            {"id": "usr-1", "fcm_device_token": "token-1", "fcm_enabled": True, "telegram_chat_id": "12345", "telegram_enabled": True}
         ]
 
         macro_data = {
@@ -284,7 +284,7 @@ class TestAlgorithmicBiasAndDrawdown(unittest.IsolatedAsyncioTestCase):
 
         mock_supabase = MagicMock()
         mock_supabase.table().select().execute.return_value.data = [
-            {"id": "usr-1", "fcm_device_token": "token-1", "telegram_chat_id": "12345", "telegram_enabled": True}
+            {"id": "usr-1", "fcm_device_token": "token-1", "fcm_enabled": True, "telegram_chat_id": "12345", "telegram_enabled": True}
         ]
         mock_supabase.table().insert().execute.return_value.data = [{"id": "alert-101", "symbol": "NIFTY50"}]
 
