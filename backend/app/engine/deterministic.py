@@ -569,10 +569,30 @@ def compute_deterministic_confluence(
                         f"Institutional Block Dump: {vol_mult:.1f}x volume surge closing at session low ({p_vs_vwap:+.2f}% vs VWAP)"
                     )
 
-    # 2. Standard Intraday Breakdown Benchmarks
-    if day_change is not None and day_change <= -3.5:
+    # Authentic Volatility-Adjusted Thresholds:
+    # Grounded dynamically in the stock's authentic multi-tier ATR and Market Breadth
+    atr_pct = (float(atr_val) / current_price * 100.0) if (atr_val and current_price > 0) else None
+
+    # Regime-Aware Multi-Week Sensitivity (Stricter during broad market distribution)
+    adr_val = macro_data.get("adr_ratio") if macro_data else None
+    vix_val = macro_data.get("india_vix") if macro_data else None
+    is_macro_dist = bool((adr_val is not None and float(adr_val) < 0.65) or (vix_val is not None and float(vix_val) >= 14.5))
+
+    # Dynamic Regime Multiplier: scales down threshold during market distribution
+    # Real ADR (e.g. 0.22) dynamically tightens tolerance compared to ADR 1.2
+    regime_compression = 0.80 if is_macro_dist else 1.0
+    if adr_val is not None and float(adr_val) > 0:
+        regime_compression = min(1.05, max(0.65, float(adr_val)))
+
+    # 2. Dynamic Intraday Breakdown Benchmark
+    if atr_pct is not None and atr_pct > 0:
+        dyn_day_drop_th = -min(4.0, max(2.5, round(2.0 * atr_pct * regime_compression, 2)))
+    else:
+        dyn_day_drop_th = -3.0 if is_macro_dist else -3.5
+
+    if day_change is not None and day_change <= dyn_day_drop_th:
         is_severe_breakdown = True
-        breakdown_reasons.append(f"Severe intraday price drop ({day_change:+.2f}%)")
+        breakdown_reasons.append(f"Intraday price drop of {day_change:+.2f}% breached dynamic volatility threshold ({dyn_day_drop_th:.1f}%)")
     if p_vs_vwap is not None and p_vs_vwap <= -2.0 and technicals.get("is_volume_surge"):
         is_severe_breakdown = True
         breakdown_reasons.append(f"VWAP Breakdown with Volume Surge ({p_vs_vwap:+.2f}% below VWAP)")
@@ -580,33 +600,74 @@ def compute_deterministic_confluence(
         is_severe_breakdown = True
         breakdown_reasons.append(f"Camarilla L4 institutional floor breached (₹{l4_level:,.2f})")
 
-    # Multi-Day Rolling Drawdown Detection (Catches multi-session market liquidations)
+    # Multi-Day & Multi-Week Rolling Drawdown Detection (Catches multi-session/multi-week liquidations)
     r_3d = technicals.get("rolling_3d_change_pct")
     r_5d = technicals.get("rolling_5d_change_pct")
+    r_10d = technicals.get("rolling_10d_change_pct")
+    r_20d = technicals.get("rolling_20d_change_pct")
     below_ema20_3d = technicals.get("consecutive_below_ema20", False)
+    below_ema50 = technicals.get("below_ema50", False)
+    dd_20d = technicals.get("drawdown_from_20d_high")
 
     is_multiday_breakdown = False
     multiday_reasons = []
+
+    # Dynamic Multi-Week Volatility Floors:
+    # Tailored specifically to the asset's historical daily volatility and real-time market breadth
+    if atr_pct is not None and atr_pct > 0:
+        dyn_th_5d = -round(max(2.8, 1.8 * atr_pct) * regime_compression, 1)
+        dyn_th_10d = -round(max(4.0, 2.6 * atr_pct) * regime_compression, 1)
+        dyn_th_20d = -round(max(6.0, 3.8 * atr_pct) * regime_compression, 1)
+        dyn_th_dd20 = round(max(7.0, 4.0 * atr_pct) * regime_compression, 1)
+    else:
+        dyn_th_5d = -3.8 if is_macro_dist else -4.5
+        dyn_th_10d = -5.0 if is_macro_dist else -6.5
+        dyn_th_20d = -8.0 if is_macro_dist else -10.0
+        dyn_th_dd20 = 8.5 if is_macro_dist else 11.0
+
     if r_3d is not None and r_3d <= -3.0 and below_ema20_3d:
         is_multiday_breakdown = True
         multiday_reasons.append(f"3-Day Cumulative Loss of {r_3d:+.1f}% across consecutive sessions below 20 EMA")
-    elif r_5d is not None and r_5d <= -4.5:
+    if r_5d is not None and r_5d <= dyn_th_5d:
         is_multiday_breakdown = True
-        multiday_reasons.append(f"5-Day Cumulative Drop of {r_5d:+.1f}%")
+        multiday_reasons.append(f"5-Day Cumulative Drop of {r_5d:+.1f}% (Dynamic Volatility Floor: {dyn_th_5d:+.1f}%)")
+    if r_10d is not None and r_10d <= dyn_th_10d:
+        is_multiday_breakdown = True
+        multiday_reasons.append(f"10-Day Multi-Week Drawdown of {r_10d:+.1f}% (~2 Weeks, Volatility Floor: {dyn_th_10d:+.1f}%)")
+    if r_20d is not None and r_20d <= dyn_th_20d:
+        is_multiday_breakdown = True
+        multiday_reasons.append(f"20-Day Sustained Downtrend of {r_20d:+.1f}% (~3-4 Weeks, Volatility Floor: {dyn_th_20d:+.1f}%)")
+    if dd_20d is not None and dd_20d >= dyn_th_dd20 and (below_ema20_3d or below_ema50):
+        is_multiday_breakdown = True
+        multiday_reasons.append(f"Peak Drawdown of {dd_20d:.1f}% from 20-Day High with trend below Moving Averages")
 
     if is_severe_breakdown or is_multiday_breakdown:
         confluence_score = min(20 if is_block_dump else (25 if is_multiday_breakdown else 28), confluence_score)
-        chg_fmt = (
-            f"{vol_mult:.1f}x Vol Dump" if is_block_dump and vol_mult is not None else
-            (f"{r_3d:+.1f}% (3D)" if is_multiday_breakdown and r_3d is not None else
-            (f"{r_5d:+.1f}% (5D)" if is_multiday_breakdown and r_5d is not None else
-            (f"{day_change:+.1f}%" if day_change is not None else "-3.5%")))
-        )
+        if is_block_dump and vol_mult is not None:
+            chg_fmt = f"{vol_mult:.1f}x Vol Dump"
+        elif is_multiday_breakdown and r_20d is not None and r_20d <= dyn_th_20d:
+            chg_fmt = f"{r_20d:+.1f}% (20D)"
+        elif is_multiday_breakdown and r_10d is not None and r_10d <= dyn_th_10d:
+            chg_fmt = f"{r_10d:+.1f}% (10D)"
+        elif is_multiday_breakdown and dd_20d is not None and dd_20d >= dyn_th_dd20:
+            chg_fmt = f"{dd_20d:.1f}% Peak DD"
+        elif is_multiday_breakdown and r_5d is not None and r_5d <= dyn_th_5d:
+            chg_fmt = f"{r_5d:+.1f}% (5D)"
+        elif is_multiday_breakdown and r_3d is not None:
+            chg_fmt = f"{r_3d:+.1f}% (3D)"
+        elif day_change is not None:
+            chg_fmt = f"{day_change:+.1f}%"
+        else:
+            chg_fmt = f"₹{current_price:,.2f}" if current_price > 0 else "Breakdown"
         if demat_context["is_in_portfolio"]:
             action_bias = "CAPITAL_PRESERVATION_EXIT"
             has_actionable_signal = True
             catalyst_category = "BLOCK_DEAL" if is_block_dump else "TRAILING_STOP_TRIGGER"
-            alert_title = f"🚨 {symbol}: Institutional Block Dump / Exit Defense ({chg_fmt})" if is_block_dump else f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})"
+            alert_title = (
+                f"🚨 {symbol}: Institutional Block Dump / Exit Defense ({chg_fmt})" if is_block_dump else
+                (f"{symbol}: Multi-Week Downtrend Capital Defense ({chg_fmt})" if is_multiday_breakdown and (r_10d is not None and r_10d <= dyn_th_10d or r_20d is not None and r_20d <= dyn_th_20d or dd_20d is not None and dd_20d >= dyn_th_dd20) else
+                f"{symbol}: Emergency Portfolio Defense Exit ({chg_fmt})")
+            )
             confluence_drivers.insert(0, f"Portfolio Defense Override: Cumulative breakdown ({chg_fmt}) detected. Exit CNC position to protect capital.")
         else:
             if is_bse:
@@ -619,7 +680,12 @@ def compute_deterministic_confluence(
                 action_bias = "SELL_WATCH" if is_multiday_breakdown else "INTRADAY_MIS_SHORT"
                 has_actionable_signal = True
                 catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
-                alert_title = f"🚨 {symbol}: Institutional Block Breakdown ({chg_fmt})" if is_block_dump else (f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})")
+                alert_title = (
+                    f"🚨 {symbol}: Institutional Block Breakdown ({chg_fmt})" if is_block_dump else
+                    (f"{symbol}: Multi-Week Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown and (r_10d is not None and r_10d <= dyn_th_10d or r_20d is not None and r_20d <= dyn_th_20d or dd_20d is not None and dd_20d >= dyn_th_dd20) else
+                    (f"{symbol}: Multi-Day Downtrend Breakdown ({chg_fmt})" if is_multiday_breakdown else
+                    f"{symbol}: Intraday MIS Short Breakdown ({chg_fmt})"))
+                )
                 confluence_drivers.insert(0, f"Supply Shock Breakdown: Cumulative liquidation ({chg_fmt}) detected.")
         for r in reversed(breakdown_reasons + multiday_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")

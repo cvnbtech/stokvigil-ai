@@ -239,6 +239,71 @@ class TestAlgorithmicBiasAndDrawdown(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(r_5d)
         self.assertFalse(below_ema)
 
+    def test_multi_week_drawdown_detection_10d_20d_sustained_decline(self):
+        """
+        Verify that a stock declining steadily over 2 to 3 weeks (-11.5% over 20 sessions)
+        triggers a breakdown alert even if today's change is only -0.4% and 3-day change is -1.8%.
+        """
+        technicals = {
+            "current_price": 780.0,
+            "change_pct": -0.4,  # Minor daily drop - fails single-day shock
+            "rolling_3d_change_pct": -1.8,  # Minor 3-day drop - fails 3-day -3.0% threshold
+            "rolling_5d_change_pct": -3.2,  # Minor 5-day drop - fails standard 5-day -4.5% threshold
+            "rolling_10d_change_pct": -7.2,  # 2-week drawdown
+            "rolling_20d_change_pct": -11.5,  # 3-4 week sustained downtrend
+            "drawdown_from_20d_high": 12.8,
+            "consecutive_below_ema20": True,
+            "below_ema50": True,
+            "technical_score": 38,
+            "camarilla_pivots": {"l4": 770.0, "h4": 800.0},
+        }
+        res = compute_deterministic_confluence(
+            symbol="TATAMOTORS",
+            technicals=technicals,
+            flow_data={"flow_score": 42},
+            macro_data={"india_vix": 16.5, "adr_ratio": 0.52},
+            forensics={"forensic_score": 82},
+            financials={"price": 780.0},
+        )
+
+        self.assertEqual(res["action_bias"], "SELL_WATCH")
+        self.assertTrue(res["has_actionable_signal"])
+        self.assertLessEqual(res["confluence_score"], 25)
+        self.assertIn("Multi-Week Downtrend Breakdown", res["alert_title"])
+        self.assertTrue(any("20-Day Sustained Downtrend" in d or "10-Day Multi-Week Drawdown" in d for d in res["confluence_drivers"]))
+
+    @patch("app.agent_runner.send_fcm_notification")
+    @patch("app.agent_runner.send_telegram_notification")
+    async def test_macro_risk_alert_persists_to_stok_alerts_table(self, mock_tg, mock_fcm):
+        """
+        Verify that evaluate_and_dispatch_macro_risk_alert inserts rows into stok_alerts
+        so the alert appears in the Web Portal and Mobile App feeds.
+        """
+        mock_fcm.return_value = True
+        mock_tg.return_value = True
+
+        mock_supabase = MagicMock()
+        mock_supabase.table().select().execute.return_value.data = [
+            {"id": "usr-1", "fcm_device_token": "token-1", "telegram_chat_id": "12345", "telegram_enabled": True}
+        ]
+        mock_supabase.table().insert().execute.return_value.data = [{"id": "alert-101", "symbol": "NIFTY50"}]
+
+        macro_data = {
+            "nifty_change_pct": -0.85,
+            "india_vix": 16.8,
+            "adr_ratio": 0.35,
+            "advances": 320,
+            "declines": 1800,
+        }
+
+        with patch("app.db_pool.fetch_all", return_value=None):
+            alerts = await evaluate_and_dispatch_macro_risk_alert(macro_data, mock_supabase)
+
+        self.assertTrue(alerts)
+        # Verify database insert occurred
+        mock_supabase.table.assert_any_call("stok_alerts")
+        mock_supabase.table().insert.assert_called()
+
 
 if __name__ == "__main__":
     unittest.main()

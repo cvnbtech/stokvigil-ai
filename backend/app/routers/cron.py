@@ -17,6 +17,7 @@ from app.agent_runner import (
     sync_market_cache_for_all_active_symbols,
     reset_ai_scan_counter,
     update_demat_portfolio_cache,
+    get_and_clear_macro_alerts,
 )
 from app.macro_filter import (
     fetch_pre_market_war_room_data,
@@ -69,11 +70,16 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
     _DAILY_SCAN_CYCLES_COUNT += 1
     
     reset_ai_scan_counter()
+    all_generated_alerts = []
 
     try:
         logger.info("🚀 Multi-user market intelligence scan started...")
         synced_symbols_count = await sync_market_cache_for_all_active_symbols(db)
         logger.info(f"⚡ In-Memory Market Cache refreshed: {synced_symbols_count} unique symbols pre-computed.")
+
+        macro_alerts = get_and_clear_macro_alerts()
+        if macro_alerts:
+            all_generated_alerts.extend(macro_alerts)
 
         macro_snapshot = await asyncio.to_thread(fetch_macro_market_regime)
 
@@ -157,7 +163,6 @@ async def execute_multi_user_market_scan(db: Client) -> Dict[str, Any]:
 
         users = profiles_data
         scanned_users = 0
-        all_generated_alerts = []
         user_sem = asyncio.Semaphore(10)
 
         async def _evaluate_user_worker(u):

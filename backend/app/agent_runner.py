@@ -69,16 +69,26 @@ _MAX_AI_CALLS_PER_SCAN: int = getattr(settings, "MAX_AI_CALLS_PER_SCAN", 15)
 _MACRO_CRASH_DISPATCHED_DATE: Optional[str] = None
 _MACRO_LAST_DISPATCHED_VIX: float = 0.0
 _MACRO_LAST_DISPATCHED_NIFTY: float = 0.0
+_PENDING_MACRO_ALERTS: List[dict] = []
+
+def get_and_clear_macro_alerts() -> List[dict]:
+    """Retrieves and clears pending macro alerts for the current cron cycle."""
+    global _PENDING_MACRO_ALERTS
+    alerts = list(_PENDING_MACRO_ALERTS)
+    _PENDING_MACRO_ALERTS = []
+    return alerts
 
 
-async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], supabase_client) -> bool:
+async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], supabase_client) -> Any:
     """
     Evaluates macro market conditions for systemic distribution/crash regimes.
     Dispatches high-priority CAPITAL_DEFENSE_MODE broadcast with asymmetric state latch & VIX hysteresis
     to prevent threshold whiplash and alert spamming.
+    PERSISTS ALERTS TO `stok_alerts` FOR IN-APP WEB & MOBILE DASHBOARD VISIBILITY.
     ZERO-DEFAULT POLICY: Grounded strictly in authentic real-time exchange data with zero synthetic fallbacks.
+    Returns list of dispatched alert objects (truthy) if dispatched, or False/empty list if skipped.
     """
-    global _MACRO_CRASH_DISPATCHED_DATE, _MACRO_LAST_DISPATCHED_VIX, _MACRO_LAST_DISPATCHED_NIFTY
+    global _MACRO_CRASH_DISPATCHED_DATE, _MACRO_LAST_DISPATCHED_VIX, _MACRO_LAST_DISPATCHED_NIFTY, _PENDING_MACRO_ALERTS
     if not macro_data:
         return False
 
@@ -150,27 +160,45 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
 
     logger.warning(f"🚨 CAPITAL DEFENSE BROADCAST: Nifty {nifty_val:+.2f}%, ADR {adr_str}, VIX {vix_val:.1f}")
 
+    # Dynamic Macro Impact Score: dynamically computed from authentic exchange metrics
+    # Lower breadth (lower ADR) + higher VIX + deeper Nifty plunge = higher impact
+    base_macro_score = 80
+    if adr_val is not None and float(adr_val) > 0:
+        base_macro_score += min(14, max(0, int((0.75 - float(adr_val)) * 26)))
+    if vix_val > 14.5:
+        base_macro_score += min(8, max(0, int((vix_val - 14.5) * 1.5)))
+    if nifty_val < 0:
+        base_macro_score += min(5, max(0, int(abs(nifty_val) * 2.5)))
+    macro_impact_score = min(99, max(80, base_macro_score))
+
+    dispatched_alerts = []
     try:
         from app.db_pool import fetch_all
-        users = await fetch_all("SELECT id, fcm_device_token, telegram_chat_id, telegram_enabled FROM profiles WHERE fcm_device_token IS NOT NULL OR (telegram_enabled = true AND telegram_chat_id IS NOT NULL)")
-        if users is None:
-            u_res = supabase_client.table("profiles").select("id, fcm_device_token, telegram_chat_id, telegram_enabled").execute()
-            users = u_res.data or []
+        all_profiles = await fetch_all("SELECT id, fcm_device_token, fcm_enabled, telegram_chat_id, telegram_enabled FROM profiles")
+        if all_profiles is None:
+            u_res = supabase_client.table("profiles").select("id, fcm_device_token, fcm_enabled, telegram_chat_id, telegram_enabled").execute()
+            all_profiles = u_res.data or []
 
-        for u in users:
+        for u in all_profiles:
+            uid = str(u.get("id"))
             token = u.get("fcm_device_token")
+            fcm_on = u.get("fcm_enabled", True)
             tg_id = u.get("telegram_chat_id")
-            tg_on = u.get("telegram_enabled")
-            if token:
+            tg_on = u.get("telegram_enabled", False)
+
+            fcm_sent = False
+            if token and fcm_on:
                 try:
-                    await send_fcm_notification(
+                    fcm_sent = await send_fcm_notification(
                         token,
                         alert_title,
                         body,
                         {"type": "CAPITAL_DEFENSE_MODE", "nifty_change": str(nifty_val), "india_vix": str(vix_val), "adr_ratio": adr_str}
                     )
                 except Exception as fcm_err:
-                    logger.debug(f"Macro broadcast FCM note for user {mask_id(u.get('id', ''))}: {fcm_err}")
+                    logger.debug(f"Macro broadcast FCM note for user {mask_id(uid)}: {fcm_err}")
+
+            telegram_sent = False
             if tg_on and tg_id:
                 try:
                     tg_msg = (
@@ -179,10 +207,46 @@ async def evaluate_and_dispatch_macro_risk_alert(macro_data: Dict[str, Any], sup
                         f"📊 <b>Regime Metrics</b>: Nifty: <code>{nifty_val:+.2f}%</code> | ADR: <code>{adr_str}</code> | India VIX: <code>{vix_val:.1f}</code>\n"
                         "🛡️ <i>StokVigil Capital Preservation Protocol Active.</i>"
                     )
-                    await send_telegram_notification(tg_id, tg_msg)
+                    telegram_sent = await send_telegram_notification(tg_id, tg_msg)
                 except Exception as tg_err:
                     logger.debug(f"Macro broadcast Telegram note: {tg_err}")
-        return True
+
+            alert_record = {
+                "user_id": uid,
+                "symbol": "NIFTY50",
+                "alert_title": alert_title,
+                "catalyst_type": "TRAILING_STOP_TRIGGER",
+                "impact_score": macro_impact_score,
+                "factual_reasons": [
+                    f"Systemic Market Distribution: Advance-Decline Ratio collapsed to {adr_str} ({breadth_desc}).",
+                    f"India VIX elevated at {vix_val:.1f} confirming heightened institutional risk.",
+                    f"NIFTY 50 session change: {nifty_val:+.2f}%.",
+                    "Capital Defense Protocol: Fresh buy setups paused. Defensive cash posture recommended."
+                ],
+                "metrics_snapshot": {
+                    "clean_symbol": "NIFTY50",
+                    "full_symbol": "^NSEI",
+                    "company_name": "NIFTY 50 Macro Regime",
+                    "exchange": "NSE",
+                    "action_bias": "CAPITAL_PRESERVATION_EXIT",
+                    "macro_data": macro_data,
+                    "india_vix": vix_val,
+                    "adr_ratio": adr_str,
+                    "nifty_change_pct": nifty_val
+                },
+                "sent_via_fcm": fcm_sent,
+                "sent_via_telegram": telegram_sent,
+            }
+            try:
+                db_res = supabase_client.table("stok_alerts").insert(alert_record).execute()
+                saved_alert = db_res.data[0] if (db_res and db_res.data) else alert_record
+                dispatched_alerts.append(saved_alert)
+            except Exception as ins_err:
+                logger.error(f"Failed to persist macro defense alert for user {mask_id(uid)}: {ins_err}")
+                dispatched_alerts.append(alert_record)
+
+        _PENDING_MACRO_ALERTS.extend(dispatched_alerts)
+        return dispatched_alerts or True
     except Exception as b_err:
         logger.error(f"Error in macro risk broadcast: {b_err}")
         return False
@@ -439,7 +503,7 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
     # If the exchange feed is unreachable, gracefully falls back to empty list with zero synthetic ticker injection.
     dynamic_anchors = await asyncio.to_thread(get_dynamic_realtime_market_anchors)
     if dynamic_anchors:
-        symbols = list(set(symbols + dynamic_anchors[:15]))
+        symbols = list(set(symbols + dynamic_anchors))
 
     if not symbols:
         logger.info("No active symbols found across user watchlists to pre-compute.")
@@ -613,6 +677,17 @@ async def evaluate_user_portfolio_and_watchlists(
                 if clean_s:
                     symbols.add(clean_s)
                     holdings_map[clean_s] = h_obj
+
+    if not symbols:
+        # Out-of-the-box market surveillance fallback: if user has no custom watchlist or demat holdings,
+        # monitor the top dynamic high-liquidity market anchors so the scan provides immediate surveillance.
+        try:
+            dynamic_anchors = await asyncio.to_thread(get_dynamic_realtime_market_anchors)
+            if dynamic_anchors:
+                symbols = set(dynamic_anchors)
+                logger.info(f"User {mask_id(user_id)} has no custom watchlists. Dynamically monitoring all {len(symbols)} active market anchors.")
+        except Exception as anchor_err:
+            logger.debug(f"Anchor fallback note for user {mask_id(user_id)}: {anchor_err}")
 
     if macro_data is None:
         macro_data = await asyncio.to_thread(fetch_macro_market_regime)

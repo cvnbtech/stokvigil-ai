@@ -460,7 +460,11 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "rs_regime": "DATA_INSUFFICIENT",
         "rolling_3d_change_pct": None,
         "rolling_5d_change_pct": None,
+        "rolling_10d_change_pct": None,
+        "rolling_20d_change_pct": None,
         "consecutive_below_ema20": False,
+        "below_ema50": False,
+        "drawdown_from_20d_high": None,
         "ttm_squeeze": {
             "squeeze_on": False,
             "squeeze_release": False,
@@ -521,21 +525,36 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         return default_res
 
 
-def _calculate_rolling_multiday_stats(
+def _calculate_multiday_trend_stats(
     df_daily: pd.DataFrame, 
     current_price: Optional[float]
-) -> Tuple[Optional[float], Optional[float], bool]:
+) -> Dict[str, Any]:
     """
-    Computes rolling 3-day return (R_3D), rolling 5-day return (R_5D),
-    and whether the last 3 consecutive sessions closed below the 20-day EMA.
-    Strict Zero-Default Policy: Returns (None, None, False) if authentic daily data is insufficient.
+    Computes comprehensive multi-day and multi-week trend and drawdown metrics:
+    - R_3D: Rolling 3-day return
+    - R_5D: Rolling 5-day return (~1 week)
+    - R_10D: Rolling 10-day return (~2 weeks)
+    - R_20D: Rolling 20-day return (~3-4 weeks / 1 month)
+    - consecutive_below_ema20: Last 3 consecutive sessions closed below 20 EMA
+    - below_ema50: Current price is trading below 50 EMA
+    - drawdown_from_20d_high: Peak drawdown percentage from the 20-session highest high
+    Strict Zero-Default Policy: Returns None / False for metrics without authentic daily data.
     """
+    res = {
+        "r_3d": None,
+        "r_5d": None,
+        "r_10d": None,
+        "r_20d": None,
+        "below_ema20_3d": False,
+        "below_ema50": False,
+        "drawdown_from_20d_high": None,
+    }
     if df_daily.empty or 'Close' not in df_daily.columns:
-        return None, None, False
+        return res
         
     valid_closes = df_daily['Close'].dropna()
     if valid_closes.empty:
-        return None, None, False
+        return res
 
     p_now = float(current_price) if current_price is not None and float(current_price) > 0 else float(valid_closes.iloc[-1])
     
@@ -544,44 +563,80 @@ def _calculate_rolling_multiday_stats(
     last_date = last_dt.date() if hasattr(last_dt, 'date') else pd.to_datetime(last_dt).date()
     is_today_in_daily = (last_date >= today_date)
 
-    r_3d = None
-    r_5d = None
-    below_ema20_3d = False
-
     if is_today_in_daily:
-        # iloc[-1] is today's session, so 3 sessions prior is iloc[-4]
         if len(valid_closes) >= 4:
             p_ref_3d = float(valid_closes.iloc[-4])
             if p_ref_3d > 0:
-                r_3d = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
+                res["r_3d"] = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
         if len(valid_closes) >= 6:
             p_ref_5d = float(valid_closes.iloc[-6])
             if p_ref_5d > 0:
-                r_5d = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+                res["r_5d"] = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+        if len(valid_closes) >= 11:
+            p_ref_10d = float(valid_closes.iloc[-11])
+            if p_ref_10d > 0:
+                res["r_10d"] = round(((p_now - p_ref_10d) / p_ref_10d) * 100.0, 2)
+        if len(valid_closes) >= 21:
+            p_ref_20d = float(valid_closes.iloc[-21])
+            if p_ref_20d > 0:
+                res["r_20d"] = round(((p_now - p_ref_20d) / p_ref_20d) * 100.0, 2)
         if len(valid_closes) >= 22:
             ema20 = valid_closes.ewm(span=20, adjust=False).mean()
             c1 = p_now < float(ema20.iloc[-1])
             c2 = float(valid_closes.iloc[-2]) < float(ema20.iloc[-2])
             c3 = float(valid_closes.iloc[-3]) < float(ema20.iloc[-3])
-            below_ema20_3d = bool(c1 and c2 and c3)
+            res["below_ema20_3d"] = bool(c1 and c2 and c3)
+        if len(valid_closes) >= 55:
+            ema50 = valid_closes.ewm(span=50, adjust=False).mean()
+            res["below_ema50"] = bool(p_now < float(ema50.iloc[-1]))
+        if 'High' in df_daily.columns and len(df_daily) >= 21:
+            high_20d = float(df_daily['High'].iloc[-21:].max())
+            if high_20d > 0 and high_20d >= p_now:
+                res["drawdown_from_20d_high"] = round(((high_20d - p_now) / high_20d) * 100.0, 2)
     else:
-        # df_daily ends yesterday (T-1), so 3 sessions prior to today is iloc[-3]
         if len(valid_closes) >= 3:
             p_ref_3d = float(valid_closes.iloc[-3])
             if p_ref_3d > 0:
-                r_3d = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
+                res["r_3d"] = round(((p_now - p_ref_3d) / p_ref_3d) * 100.0, 2)
         if len(valid_closes) >= 5:
             p_ref_5d = float(valid_closes.iloc[-5])
             if p_ref_5d > 0:
-                r_5d = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+                res["r_5d"] = round(((p_now - p_ref_5d) / p_ref_5d) * 100.0, 2)
+        if len(valid_closes) >= 10:
+            p_ref_10d = float(valid_closes.iloc[-10])
+            if p_ref_10d > 0:
+                res["r_10d"] = round(((p_now - p_ref_10d) / p_ref_10d) * 100.0, 2)
+        if len(valid_closes) >= 20:
+            p_ref_20d = float(valid_closes.iloc[-20])
+            if p_ref_20d > 0:
+                res["r_20d"] = round(((p_now - p_ref_20d) / p_ref_20d) * 100.0, 2)
         if len(valid_closes) >= 21:
             ema20 = valid_closes.ewm(span=20, adjust=False).mean()
             c1 = p_now < float(ema20.iloc[-1])
             c2 = float(valid_closes.iloc[-1]) < float(ema20.iloc[-1])
             c3 = float(valid_closes.iloc[-2]) < float(ema20.iloc[-2])
-            below_ema20_3d = bool(c1 and c2 and c3)
+            res["below_ema20_3d"] = bool(c1 and c2 and c3)
+        if len(valid_closes) >= 50:
+            ema50 = valid_closes.ewm(span=50, adjust=False).mean()
+            res["below_ema50"] = bool(p_now < float(ema50.iloc[-1]))
+        if 'High' in df_daily.columns and len(df_daily) >= 20:
+            high_20d = float(df_daily['High'].iloc[-20:].max())
+            if high_20d > 0 and high_20d >= p_now:
+                res["drawdown_from_20d_high"] = round(((high_20d - p_now) / high_20d) * 100.0, 2)
 
-    return r_3d, r_5d, below_ema20_3d
+    return res
+
+
+def _calculate_rolling_multiday_stats(
+    df_daily: pd.DataFrame, 
+    current_price: Optional[float]
+) -> Tuple[Optional[float], Optional[float], bool]:
+    """
+    Backward-compatible wrapper returning (r_3d, r_5d, below_ema20_3d).
+    Strict Zero-Default Policy: Returns (None, None, False) if authentic daily data is insufficient.
+    """
+    stats = _calculate_multiday_trend_stats(df_daily, current_price)
+    return stats["r_3d"], stats["r_5d"], stats["below_ema20_3d"]
 
 
 def compute_technicals_from_frames(
@@ -633,7 +688,11 @@ def compute_technicals_from_frames(
         "rs_regime": "DATA_INSUFFICIENT",
         "rolling_3d_change_pct": None,
         "rolling_5d_change_pct": None,
+        "rolling_10d_change_pct": None,
+        "rolling_20d_change_pct": None,
         "consecutive_below_ema20": False,
+        "below_ema50": False,
+        "drawdown_from_20d_high": None,
         "ttm_squeeze": {
             "squeeze_on": False,
             "squeeze_release": False,
@@ -690,7 +749,14 @@ def compute_technicals_from_frames(
                 rs_dict = calculate_relative_strength(df_daily)
                 adx_dict = calculate_adx(df_daily, 14)
                 ttm_squeeze = calculate_ttm_squeeze(df_daily)
-                r_3d, r_5d, below_ema20_3d = _calculate_rolling_multiday_stats(df_daily, current_price)
+                trend_stats = _calculate_multiday_trend_stats(df_daily, current_price)
+                r_3d = trend_stats["r_3d"]
+                r_5d = trend_stats["r_5d"]
+                r_10d = trend_stats["r_10d"]
+                r_20d = trend_stats["r_20d"]
+                below_ema20_3d = trend_stats["below_ema20_3d"]
+                below_ema50 = trend_stats["below_ema50"]
+                dd_20d = trend_stats["drawdown_from_20d_high"]
                 
                 tech_score = 50
                 if ema_50:
@@ -742,7 +808,11 @@ def compute_technicals_from_frames(
                     "rs_regime": rs_dict.get("rs_regime", "DATA_INSUFFICIENT"),
                     "rolling_3d_change_pct": r_3d,
                     "rolling_5d_change_pct": r_5d,
+                    "rolling_10d_change_pct": r_10d,
+                    "rolling_20d_change_pct": r_20d,
                     "consecutive_below_ema20": below_ema20_3d,
+                    "below_ema50": below_ema50,
+                    "drawdown_from_20d_high": dd_20d,
                     "ttm_squeeze": ttm_squeeze,
                     "volume_multiple": None,
                     "is_volume_surge": False,
@@ -967,7 +1037,14 @@ def compute_technicals_from_frames(
         rs_dict = calculate_relative_strength(df_daily)
         rs_rating = rs_dict["rs_rating"]
         rs_regime = rs_dict["rs_regime"]
-        r_3d, r_5d, below_ema20_3d = _calculate_rolling_multiday_stats(df_daily, current_price)
+        trend_stats = _calculate_multiday_trend_stats(df_daily, current_price)
+        r_3d = trend_stats["r_3d"]
+        r_5d = trend_stats["r_5d"]
+        r_10d = trend_stats["r_10d"]
+        r_20d = trend_stats["r_20d"]
+        below_ema20_3d = trend_stats["below_ema20_3d"]
+        below_ema50 = trend_stats["below_ema50"]
+        dd_20d = trend_stats["drawdown_from_20d_high"]
 
         # Calculate Quantitative Technical Score (0 - 100)
         tech_score = 50
@@ -1070,7 +1147,11 @@ def compute_technicals_from_frames(
             "rs_regime": rs_regime,
             "rolling_3d_change_pct": r_3d,
             "rolling_5d_change_pct": r_5d,
+            "rolling_10d_change_pct": r_10d,
+            "rolling_20d_change_pct": r_20d,
             "consecutive_below_ema20": below_ema20_3d,
+            "below_ema50": below_ema50,
+            "drawdown_from_20d_high": dd_20d,
             "ttm_squeeze": ttm_squeeze,
             "volume_multiple": volume_mult,
             "is_volume_surge": is_volume_surge,
