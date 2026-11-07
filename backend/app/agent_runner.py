@@ -450,6 +450,18 @@ def precompute_symbol_market_state(
             analysis["tactical_levels"] = tactical
 
     stock_name = financials.get("name") or clean_sym
+
+    # Determine real-time broker feed vs delayed historical scrape
+    existing_entry = market_cache.get_stock(clean_sym) or market_cache.get_stock(symbol)
+    is_live = False
+    if existing_entry:
+        if existing_entry.get("data_source_mode") == "REALTIME_BROKER_FEED":
+            is_live = True
+        elif (time.time() - float(existing_entry.get("last_tick_time", 0) or 0)) < 120.0:
+            is_live = True
+
+    data_source_mode = "REALTIME_BROKER_FEED" if is_live else "DELAYED_EOD_SCRAPE"
+
     pack = {
         "symbol": symbol,
         "clean_symbol": clean_sym,
@@ -463,7 +475,9 @@ def precompute_symbol_market_state(
         "current_price": current_price,
         "confluence_score": analysis.get("confluence_score", 50) if current_price > 0 else 0,
         "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL") if current_price > 0 else "DATA_UNAVAILABLE",
-        "tactical_levels": analysis.get("tactical_levels", {}) if current_price > 0 else {}
+        "tactical_levels": analysis.get("tactical_levels", {}) if current_price > 0 else {},
+        "data_source_mode": data_source_mode,
+        "is_realtime": is_live
     }
 
     market_cache.set_stock(symbol, pack, ttl_seconds=900)
@@ -509,6 +523,13 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
         logger.info("No active symbols found across user watchlists to pre-compute.")
         return 0
 
+    # Cold-start container hydration from Supabase UNLOGGED table (Tier-2 -> Tier-1 in < 15ms)
+    if not market_cache.get_all_cached_symbols():
+        try:
+            await market_cache.async_hydrate_all_from_db(max_age_seconds=240)
+        except Exception as hyd_err:
+            logger.debug(f"Cold-start hydration note: {hyd_err}")
+
     symbols_to_sync = [s for s in symbols if not market_cache.is_fresh(s, max_age_seconds=240)]
     synced_count = len(symbols) - len(symbols_to_sync)
 
@@ -530,6 +551,12 @@ async def sync_market_cache_for_all_active_symbols(supabase_client) -> int:
                     logger.error(f"Error pre-computing market cache for {sym}: {e}")
 
         await asyncio.gather(*(_worker(s) for s in symbols_to_sync))
+        try:
+            flushed = await market_cache.async_flush_ram_to_db()
+            if flushed > 0:
+                logger.info(f"💾 Flushed {flushed} stocks to Supabase unlogged cache table for multi-container sync.")
+        except Exception as flush_err:
+            logger.debug(f"Note on flushing market cache to unlogged table: {flush_err}")
 
     logger.info(f"✅ Market Cache Sync Complete: {synced_count}/{len(symbols)} unique symbols cached in RAM.")
     return synced_count
@@ -587,33 +614,40 @@ async def evaluate_user_portfolio_and_watchlists(
             pooled_watchlists = await fetch_all("SELECT symbol, average_buy_price, quantity, is_auto_synced FROM user_watchlists WHERE user_id = $1", user_id)
             if pooled_watchlists is not None:
                 symbols = set(item['symbol'] for item in pooled_watchlists if item.get('symbol'))
-                cached_demat_rows = [item for item in pooled_watchlists if item.get('is_auto_synced') and item.get('average_buy_price')]
+                # Load all positions with cost basis (both auto-synced broker holdings and manual Zerodha/Groww entries)
+                cached_demat_rows = [item for item in pooled_watchlists if item.get('average_buy_price') and float(item.get('average_buy_price') or 0.0) > 0]
         except Exception as pool_err:
             logger.debug(f"Pooled watchlist query note for user {mask_id(user_id)}: {pool_err}")
 
         if not symbols:
             watchlist_res = supabase_client.table("user_watchlists").select("symbol, average_buy_price, quantity, is_auto_synced").eq("user_id", user_id).execute()
             symbols = set(item['symbol'] for item in (watchlist_res.data or []) if item.get('symbol'))
-            cached_demat_rows = [item for item in (watchlist_res.data or []) if item.get('is_auto_synced') and item.get('average_buy_price')]
+            cached_demat_rows = [item for item in (watchlist_res.data or []) if item.get('average_buy_price') and float(item.get('average_buy_price') or 0.0) > 0]
 
     # 3. Check credentials and Demat holdings
     holdings_map = {}
     cred = None
+    cred_checked = False
     if preloaded_user_ctx and "cred" in preloaded_user_ctx:
         cred = preloaded_user_ctx["cred"]
+        cred_checked = True
     else:
         try:
             from app.db_pool import fetch_one
             pooled_cred = await fetch_one("SELECT * FROM user_credentials WHERE user_id = $1", user_id)
-            if pooled_cred:
-                cred = pooled_cred
+            if pooled_cred is not None:
+                cred = pooled_cred or None
+                cred_checked = True
         except Exception as pool_err:
             logger.debug(f"Pooled cred query note for user {mask_id(user_id)}: {pool_err}")
 
-        if cred is None:
-            cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
-            if cred_res.data:
-                cred = cred_res.data[0]
+        if not cred_checked and cred is None and supabase_client is not None:
+            try:
+                cred_res = supabase_client.table("user_credentials").select("*").eq("user_id", user_id).execute()
+                if cred_res and cred_res.data:
+                    cred = cred_res.data[0]
+            except Exception as cred_err:
+                logger.debug(f"REST cred lookup note: {cred_err}")
 
     if cred:
         today_str = str(date.today())
@@ -700,12 +734,14 @@ async def evaluate_user_portfolio_and_watchlists(
             try:
                 cached_pack = market_cache.get_stock(symbol)
                 holding_info = holdings_map.get(symbol)
+                forensics = {}
 
                 if cached_pack:
                     technicals = cached_pack.get("technicals", {})
                     financials = cached_pack.get("financials", {})
                     flow_data = cached_pack.get("flow_data", {})
                     analysis = dict(cached_pack.get("analysis", {}))
+                    forensics = cached_pack.get("forensics", {})
 
                     if holding_info:
                         curr_p = float(
@@ -751,6 +787,7 @@ async def evaluate_user_portfolio_and_watchlists(
                     financials = fresh_pack.get("financials", {})
                     flow_data = fresh_pack.get("flow_data", {})
                     analysis = fresh_pack.get("analysis", {})
+                    forensics = fresh_pack.get("forensics", {})
                 
                 raw_score = analysis.get("confluence_score")
                 try:
@@ -853,8 +890,7 @@ async def evaluate_user_portfolio_and_watchlists(
                 if settings.GEMINI_API_KEY and get_ai_scan_calls_count() < _MAX_AI_CALLS_PER_SCAN:
                     increment_ai_scan_calls_count()
                     try:
-                        ai_evaluator = _get_active_ai_evaluator()
-                        ai_res = await ai_evaluator(
+                        ai_res = await evaluate_stock_with_ai(
                             symbol=symbol,
                             technicals=technicals,
                             flow_data=flow_data,
@@ -993,16 +1029,16 @@ async def evaluate_user_portfolio_and_watchlists(
                     "sent_via_telegram": telegram_sent,
                 }
                 res = supabase_client.table("stok_alerts").insert(alert_record).execute()
-                return res.data[0] if res.data else None
+                return res.data[0] if (res and getattr(res, "data", None)) else alert_record
 
             except Exception as stock_err:
                 logger.error(f"Error evaluating symbol {symbol} for user {mask_id(user_id)}: {stock_err}")
                 return None
 
-        if symbols:
-            eval_results = await asyncio.gather(*(_eval_symbol_worker(s) for s in symbols), return_exceptions=False)
-            for r in eval_results:
-                if r:
-                    generated_alerts.append(r)
+    if symbols:
+        eval_results = await asyncio.gather(*(_eval_symbol_worker(s) for s in symbols), return_exceptions=False)
+        for r in eval_results:
+            if r:
+                generated_alerts.append(r)
 
-        return generated_alerts
+    return generated_alerts

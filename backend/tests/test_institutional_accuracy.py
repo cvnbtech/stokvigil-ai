@@ -438,6 +438,7 @@ class TestInstitutionalAccuracy(unittest.TestCase):
             "HDFCBANK": 54.80
         }
         ft._BHAVCOPY_LAST_FETCH = time.time()
+        ft._FO_FLOW_CACHE.clear()
 
         # Known scrip: returns authentic exchange delivery %
         self.assertEqual(ft.get_bhavcopy_delivery_pct("RELIANCE.NS"), 62.45)

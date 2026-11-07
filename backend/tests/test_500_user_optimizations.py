@@ -142,6 +142,13 @@ class TestMultiUserEvaluationOptimization:
         }
 
         mock_supabase = MagicMock()
+        table_mocks = {
+            "profiles": MagicMock(),
+            "user_watchlists": MagicMock(),
+            "stok_alerts": MagicMock(),
+            "user_credentials": MagicMock(),
+        }
+        mock_supabase.table.side_effect = lambda name: table_mocks.get(name, MagicMock())
 
         with patch("app.brokers.get_broker") as mock_get_broker:
             mock_adapter = MagicMock()
@@ -158,8 +165,8 @@ class TestMultiUserEvaluationOptimization:
             # Broker fetch_holdings should NOT have been called during batch scan
             mock_adapter.fetch_holdings.assert_not_called()
             # supabase profile and watchlist queries should NOT have been called
-            assert mock_supabase.table("profiles").select.call_count == 0
-            assert mock_supabase.table("user_watchlists").select.call_count == 0
+            assert table_mocks["profiles"].select.call_count == 0
+            assert table_mocks["user_watchlists"].select.call_count == 0
 
     @pytest.mark.asyncio
     async def test_evaluate_with_cached_holdings_uses_cache(self):

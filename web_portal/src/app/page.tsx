@@ -310,12 +310,15 @@ export default function App() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={portfolio.openKeyModal} style={{
-              background: "rgba(6,182,212,0.12)", border: `1px solid ${C.borderCyan}`,
-              borderRadius: 10, padding: "6px 10px", color: C.cyan, fontSize: 11, fontWeight: 800, cursor: "pointer",
+            <button onClick={portfolio.openKeyModal} title={portfolio.hasCredentials ? "Real-time broker feed connected (0ms latency)" : "Running on 15m delayed data. Click to connect broker for live ticks."} style={{
+              background: portfolio.hasCredentials ? "rgba(16,185,129,0.12)" : "rgba(234,179,8,0.12)", 
+              border: `1px solid ${portfolio.hasCredentials ? "rgba(16,185,129,0.3)" : "rgba(234,179,8,0.3)"}`,
+              borderRadius: 10, padding: "6px 10px", 
+              color: portfolio.hasCredentials ? C.emerald : C.amber, 
+              fontSize: 11, fontWeight: 800, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 5,
             }}>
-              🔑 Key Active
+              {portfolio.hasCredentials ? "⚡ Live 0ms" : "⏱️ 15m Delayed"}
             </button>
             <button
               onClick={() => { auth.setScreen("auth"); auth.setUser(null); auth.setTncAccepted(false); }}

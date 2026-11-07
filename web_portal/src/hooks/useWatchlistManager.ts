@@ -118,7 +118,7 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
     }, 300);
   };
 
-  const addStock = async (explicitSym?: string, explicitName?: string) => {
+  const addStock = async (explicitSym?: string, explicitName?: string, buyPrice?: number, quantity?: number) => {
     const raw = (explicitSym || ticker).trim().toUpperCase();
     if (!raw) return;
 
@@ -207,6 +207,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
       };
       if (validatedIsin) payload.isin = validatedIsin;
       if (stockName) payload.company_name = stockName;
+      if (buyPrice && buyPrice > 0) payload.average_buy_price = Number(buyPrice);
+      if (quantity && quantity > 0) payload.quantity = Number(quantity);
 
       const conflictTarget = validatedIsin ? 'user_id,isin' : 'user_id,symbol';
       try {

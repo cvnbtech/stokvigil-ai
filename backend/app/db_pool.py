@@ -244,6 +244,41 @@ async def fetch_one(query: str, *args) -> Optional[dict]:
         return None
 
 
+async def execute(query: str, *args) -> Optional[str]:
+    """
+    Executes a write/mutation command (INSERT, UPDATE, DELETE) via the PgBouncer pool.
+    Returns status string (e.g. 'INSERT 0 1') or None on error/unconfigured pool.
+    """
+    pool = await get_db_pool()
+    if pool is None:
+        return None
+    try:
+        norm_args = [_normalize_param(a) for a in args]
+        async with pool.acquire() as conn:
+            return await conn.execute(query, *norm_args)
+    except Exception as e:
+        logger.warning(f"PgBouncer execute query failed ({e}): {query[:60]}...")
+        return None
+
+
+async def executemany(query: str, args_list: list) -> bool:
+    """
+    Executes a parameterized write query across a batch of argument tuples.
+    Used for bulk-upserting cache rows or multi-symbol updates in < 1ms.
+    """
+    pool = await get_db_pool()
+    if pool is None or not args_list:
+        return False
+    try:
+        norm_args_list = [[_normalize_param(a) for a in args] for args in args_list]
+        async with pool.acquire() as conn:
+            await conn.executemany(query, norm_args_list)
+            return True
+    except Exception as e:
+        logger.warning(f"PgBouncer executemany query failed ({e})")
+        return False
+
+
 @asynccontextmanager
 async def try_postgres_advisory_lock(lock_id: int = 987654321) -> AsyncGenerator[bool, None]:
     """

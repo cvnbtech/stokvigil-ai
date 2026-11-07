@@ -2,6 +2,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from app.brokers.base import BaseBrokerAdapter
 from app.brokers.icici_adapter import IciciBrokerAdapter
+from app.brokers.dhan_adapter import DhanBrokerAdapter
+from app.brokers.angel_adapter import AngelBrokerAdapter
 
 logger = logging.getLogger("stokvigil.brokers.registry")
 
@@ -10,14 +12,14 @@ class BrokerRegistry:
     """
     Central Registry for Broker Adapters.
     Provides dynamic broker discovery and instantiation.
-    Adding a new broker (Zerodha, Angel One, Upstox, Groww) in the future requires:
-    1. Creating NewBrokerAdapter(BaseBrokerAdapter)
-    2. Registering it here with register_broker(NewBrokerAdapter())
+    Supports ICICI Direct, Dhan HQ, Angel One SmartAPI, and extensible adapters.
     """
     def __init__(self):
         self._adapters: Dict[str, BaseBrokerAdapter] = {}
         # Pre-register default active adapters
         self.register_broker(IciciBrokerAdapter())
+        self.register_broker(DhanBrokerAdapter())
+        self.register_broker(AngelBrokerAdapter())
 
     def register_broker(self, adapter: BaseBrokerAdapter) -> None:
         self._adapters[adapter.broker_id.lower()] = adapter

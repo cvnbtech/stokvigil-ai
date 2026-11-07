@@ -84,18 +84,29 @@ def place_trade_order(
     try:
         cred_res = db.table("user_credentials").select("*").eq("user_id", req.user_id).execute()
         if not cred_res.data:
-            raise HTTPException(status_code=400, detail="No ICICI credentials configured for user.")
+            raise HTTPException(status_code=400, detail="No broker credentials configured for user.")
 
         cred = cred_res.data[0]
         raw_tok = cred.get("encrypted_session_token")
+        raw_app_key = cred.get("encrypted_app_key")
         session_token = (vault.decrypt(raw_tok) if raw_tok else "").strip().strip('"').strip("'")
+        decrypted_app_key = (vault.decrypt(raw_app_key) if raw_app_key else "").strip()
 
-        # Pure Institutional Master App Model: Master keys reside exclusively in server configuration
-        app_key = (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
+        # Pure Institutional Master App Model: Server keys take precedence for ICICI; user app key for Dhan/Angel One
+        app_key = decrypted_app_key or (settings.ICICI_MASTER_APP_KEY or "").strip().strip('"').strip("'")
         secret_key = (settings.ICICI_MASTER_SECRET_KEY or "").strip().strip('"').strip("'")
 
         broker_id = cred.get("broker_id") or "icici"
         adapter = get_broker(broker_id)
+
+        creds_payload = {
+            "app_key": app_key,
+            "secret_key": secret_key,
+            "session_token": session_token,
+            "client_id": decrypted_app_key,
+            "client_code": decrypted_app_key,
+            "api_key": decrypted_app_key
+        }
 
         try:
             action_type = "buy" if req.action.upper() == "BUY" else "sell"
@@ -126,11 +137,7 @@ def place_trade_order(
             if not product_type:
                 if action_type == "sell":
                     # Check if user holds sufficient quantity in Demat holdings
-                    user_holdings = adapter.fetch_holdings({
-                        "app_key": app_key,
-                        "secret_key": secret_key,
-                        "session_token": session_token
-                    })
+                    user_holdings = adapter.fetch_holdings(creds_payload)
                     if user_holdings:
                         update_demat_portfolio_cache(req.user_id, user_holdings)
                     req_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "")
@@ -161,11 +168,7 @@ def place_trade_order(
             exchange_code = "BSE" if is_bse else "NSE"
 
             order_res = adapter.place_order(
-                decrypted_creds={
-                    "app_key": app_key,
-                    "secret_key": secret_key,
-                    "session_token": session_token
-                },
+                decrypted_creds=creds_payload,
                 order_params={
                     "stock_code": clean_stock_code,
                     "exchange_code": exchange_code,
@@ -179,20 +182,30 @@ def place_trade_order(
                 }
             )
 
-            # Detect ICICI Breeze Silent RMS Rejection (Status 500 / Error without Python exception)
+            # Detect Broker RMS Rejection
             broker_status = order_res.get("Status") if isinstance(order_res, dict) else None
             broker_error = order_res.get("Error") if isinstance(order_res, dict) else None
+            generic_status = order_res.get("status") if isinstance(order_res, dict) else None
 
-            if isinstance(order_res, dict) and (broker_status not in [200, "200"] or broker_error):
-                err_msg = broker_error or f"Broker RMS rejected order with status {broker_status}"
-                logger.error(f"ICICI Breeze RMS rejection for {req.symbol}: {err_msg}")
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Broker RMS rejected order: {err_msg}"
-                )
+            if isinstance(order_res, dict):
+                if generic_status == "error":
+                    err_msg = order_res.get("message") or "Broker RMS rejected order"
+                    logger.error(f"Broker RMS rejection for {req.symbol}: {err_msg}")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Broker RMS rejected order: {err_msg}"
+                    )
+                elif broker_status is not None and (broker_status not in [200, "200"] or broker_error):
+                    err_msg = broker_error or f"Broker RMS rejected order with status {broker_status}"
+                    logger.error(f"Broker RMS rejection for {req.symbol}: {err_msg}")
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Broker RMS rejected order: {err_msg}"
+                    )
 
             order_resp = {
                 "status": "success",
+                "broker": broker_id,
                 "symbol": req.symbol,
                 "exchange": exchange_code,
                 "action": req.action,

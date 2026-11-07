@@ -521,7 +521,7 @@ class LiveTickerStreamManager:
             today_str = str(date.today())
             cred_row = await fetch_one("SELECT * FROM user_credentials WHERE token_date = $1 LIMIT 1", today_str)
             if cred_row:
-                from app.security import vault
+                from app.vault import vault
                 raw_tok = cred_row.get("encrypted_session_token")
                 session_tok = vault.decrypt(raw_tok) if raw_tok else ""
                 active_creds = {

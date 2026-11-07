@@ -124,7 +124,8 @@ async def _execute_market_scan_body(db: Client) -> Dict[str, Any]:
             sym = w.get("symbol")
             if sym:
                 clean_s = sym.strip().upper()
-                is_demat_row = bool(w.get("is_auto_synced") and w.get("average_buy_price"))
+                # Track positions with cost basis for downside protection (both auto-synced and manual Zerodha/Groww)
+                is_demat_row = bool(w.get("average_buy_price") and float(w.get("average_buy_price") or 0.0) > 0)
                 if uid in user_contexts:
                     user_contexts[uid]["symbols"].add(clean_s)
                     if is_demat_row:

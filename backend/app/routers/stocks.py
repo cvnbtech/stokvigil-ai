@@ -159,6 +159,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "buffered_breakdown_level": cached_tactical.get("buffered_breakdown_level"),
                     "signal": signal,
                     "signal_type": signal_type,
+                    "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
+                    "is_realtime": bool(cached_stock.get("is_realtime", False)) if cached_stock else False,
                     "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                 }
 
@@ -329,6 +331,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 "buffered_breakdown_level": buf_l4_val,
                                 "signal": signal,
                                 "signal_type": signal_type,
+                                "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
+                                "is_realtime": bool(cached_stock.get("is_realtime", False)) if cached_stock else False,
                                 "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                             }
 
@@ -493,6 +497,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "buffered_breakdown_level": buf_l4_val,
                     "signal": signal,
                     "signal_type": signal_type,
+                    "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
+                    "is_realtime": bool(cached_stock.get("is_realtime", False)) if cached_stock else False,
                     "disclaimer": "Mathematical volatility benchmarks (1.5x / 2.5x ATR). Not an advisory target or price promise."
                 }
 
@@ -834,7 +840,9 @@ async def get_single_stock_analysis(
         "technicals": pack.get("technicals"),
         "flow_data": pack.get("flow_data"),
         "forensics": pack.get("forensics"),
-        "analysis": pack.get("analysis")
+        "analysis": pack.get("analysis"),
+        "data_source_mode": pack.get("data_source_mode", "DELAYED_EOD_SCRAPE"),
+        "is_realtime": bool(pack.get("is_realtime", False))
     }
 
 
