@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import '../services/api_service.dart';
+import '../services/supabase_service.dart';
 
 bool isIndianMarketOpen() {
   final nowUtc = DateTime.now().toUtc();
@@ -11,10 +15,6 @@ bool isIndianMarketOpen() {
   return minutes >= marketOpen && minutes <= marketClose;
 }
 
-import 'dart:async';
-import 'package:flutter/foundation.dart';
-import '../services/api_service.dart';
-import '../services/supabase_service.dart';
 
 class WatchlistProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _watchlist = [];
