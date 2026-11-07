@@ -211,17 +211,27 @@ class SupabaseService {
     return clean;
   }
 
-  Future<bool> addToWatchlist(String symbol, {String? exchange, bool isAutoSynced = false}) async {
+  Future<bool> addToWatchlist(
+    String symbol, {
+    String? exchange,
+    String? isin,
+    String? companyName,
+    bool isAutoSynced = false,
+  }) async {
     final user = currentUser;
     if (user == null || !isConfigured) return false;
     final normalized = normalizeSymbol(symbol, exchange);
     if (normalized.isEmpty) return false;
+    final payload = {
+      'user_id': user.id,
+      'symbol': normalized,
+      'is_auto_synced': false,
+      if (isin != null && isin.isNotEmpty) 'isin': isin,
+      if (companyName != null && companyName.isNotEmpty) 'company_name': companyName,
+    };
+    final conflictTarget = (isin != null && isin.isNotEmpty) ? 'user_id,isin' : 'user_id,symbol';
     try {
-      await client.from('user_watchlists').upsert({
-        'user_id': user.id,
-        'symbol': normalized,
-        'is_auto_synced': isAutoSynced,
-      }, onConflict: 'user_id,symbol');
+      await client.from('user_watchlists').upsert(payload, onConflict: conflictTarget);
       return true;
     } catch (e) {
       debugPrint("Error adding to watchlist: $e");

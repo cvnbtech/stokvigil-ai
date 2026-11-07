@@ -55,34 +55,43 @@ Automated surveillance via StokVigil AI 🛡️''';
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("1-TAP SHAREABLE ALPHA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppTheme.cyan)),
-                    Row(
-                      children: [
-                        Text(alert.cleanSymbol, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
-                          ),
-                          child: Text(
-                            alert.exchange,
-                            style: TextStyle(
-                              color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("1-TAP SHAREABLE ALPHA", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppTheme.cyan)),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              alert.cleanSymbol,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                            ),
+                            child: Text(
+                              alert.exchange,
+                              style: TextStyle(
+                                color: alert.exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(

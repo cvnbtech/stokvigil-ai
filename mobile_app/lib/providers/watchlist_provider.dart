@@ -226,10 +226,18 @@ class WatchlistProvider extends ChangeNotifier {
     item['volatility_regime'] = q['volatility_regime'];
   }
 
-  Future<bool> addStock(String symbol, {String? exchange, bool isAutoSynced = false}) async {
+  Future<bool> addStock(
+    String symbol, {
+    String? exchange,
+    String? isin,
+    String? companyName,
+    bool isAutoSynced = false,
+  }) async {
     final success = await SupabaseService().addToWatchlist(
       symbol,
       exchange: exchange,
+      isin: isin,
+      companyName: companyName,
       isAutoSynced: isAutoSynced,
     );
     if (success) {

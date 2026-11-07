@@ -129,11 +129,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadPortfolioData,
-          color: AppTheme.cyan,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20.0, 16.0, 20.0, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top Brand Header with Key Active Badge
               StokVigilBrandHeader(
@@ -223,20 +222,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              const Text("🏛️ ", style: TextStyle(fontSize: 12)),
-                              const Text(
-                                "Institutional FII / DII Flows",
-                                style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                "(${_fiiDiiFlows!['date'] ?? ''})",
-                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 9.5),
-                              ),
-                            ],
+                          Expanded(
+                            child: Row(
+                              children: [
+                                const Text("🏛️ ", style: TextStyle(fontSize: 12)),
+                                const Flexible(
+                                  child: Text(
+                                    "Institutional FII / DII Flows",
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "(${_fiiDiiFlows!['date'] ?? ''})",
+                                  style: const TextStyle(color: AppTheme.textMuted, fontSize: 9.5),
+                                ),
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
@@ -574,80 +579,89 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
-              if (_isLoading)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(30),
-                    child: CircularProgressIndicator(color: AppTheme.cyan),
-                  ),
-                )
-              else if (_holdings.isEmpty)
-                GlassCard(
-                  child: Column(
-                    children: [
-                      const Icon(Icons.account_balance_wallet_outlined, color: AppTheme.textSecondary, size: 40),
-                      const SizedBox(height: 12),
-                      const Text("No Holdings Found or Token Expired", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 6),
-                      const Text(
-                        "Tap 'Needs Key' to setup your ICICI Breeze Session token.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        height: 44,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Color(0xFF00B4D8),
-                              Color(0xFF0284C7),
-                              Color(0xFF6366F1),
-                              Color(0xFF8B5CF6),
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
+              // Active Holdings Scrollable Area
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _loadPortfolioData,
+                  color: AppTheme.cyan,
+                  child: _isLoading
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(30),
+                            child: CircularProgressIndicator(color: AppTheme.cyan),
                           ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x5506B6D4),
-                              blurRadius: 12,
-                              offset: Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                          ),
-                          onPressed: widget.onOpenCredentials,
-                          child: const Text(
-                            "⚡ Connect Demat Broker →",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _holdings.length,
-                  itemBuilder: (context, index) {
-                    final item = _holdings[index];
-                    final pnlPos = item.pnl >= 0;
+                        )
+                      : _holdings.isEmpty
+                          ? ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                GlassCard(
+                                  child: Column(
+                                    children: [
+                                      const Icon(Icons.account_balance_wallet_outlined, color: AppTheme.textSecondary, size: 40),
+                                      const SizedBox(height: 12),
+                                      const Text("No Holdings Found or Token Expired", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        "Tap 'Needs Key' to setup your ICICI Breeze Session token.",
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Container(
+                                        height: 44,
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            colors: [
+                                              Color(0xFF00B4D8),
+                                              Color(0xFF0284C7),
+                                              Color(0xFF6366F1),
+                                              Color(0xFF8B5CF6),
+                                            ],
+                                            begin: Alignment.centerLeft,
+                                            end: Alignment.centerRight,
+                                          ),
+                                          borderRadius: BorderRadius.circular(14),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Color(0x5506B6D4),
+                                              blurRadius: 12,
+                                              offset: Offset(0, 3),
+                                            ),
+                                          ],
+                                        ),
+                                        child: ElevatedButton(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.transparent,
+                                            shadowColor: Colors.transparent,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                                          ),
+                                          onPressed: widget.onOpenCredentials,
+                                          child: const Text(
+                                            "⚡ Connect Demat Broker →",
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w900,
+                                              fontSize: 13.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 16),
+                              itemCount: _holdings.length,
+                              itemBuilder: (context, index) {
+                                final item = _holdings[index];
+                                final pnlPos = item.pnl >= 0;
                     return GlassCard(
                       margin: const EdgeInsets.only(bottom: 12),
                       onTap: () {
@@ -785,9 +799,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ],
                       ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
+              ),
             ],
           ),
         ),

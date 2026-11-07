@@ -143,12 +143,18 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
     final exchange = validation['exchange'] ?? 'NSE';
     final name = displayName ?? validation['name'] ?? "$sym ($exchange)";
+    final isin = validation['isin']?.toString();
 
     // Clear suggestions immediately
     setState(() => _suggestions = []);
     _searchController.clear();
 
-    final ok = await context.read<WatchlistProvider>().addStock(sym, exchange: exchange);
+    final ok = await context.read<WatchlistProvider>().addStock(
+      sym,
+      exchange: exchange,
+      isin: isin,
+      companyName: name,
+    );
     if (mounted) {
       if (ok) {
         ErrorHandler.showSuccessSnackBar(context, "✅ $sym ($name) added to watchlist!");
@@ -500,26 +506,31 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    children: [
-                      const Text("📊", style: TextStyle(fontSize: 20)),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text(
-                            "Demat Auto-Sync Watchlist",
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const Text("📊", style: TextStyle(fontSize: 20)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: const [
+                              Text(
+                                "Demat Auto-Sync Watchlist",
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                "Automatically import & monitor active demat stocks",
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                              ),
+                            ],
                           ),
-                          SizedBox(height: 2),
-                          Text(
-                            "Automatically import & monitor active demat stocks",
-                            style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   Switch(
                     value: _autoSync,
                     activeColor: AppTheme.cyan,

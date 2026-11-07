@@ -382,74 +382,78 @@ class _AuditLedgerScreenState extends State<AuditLedgerScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Top Row: Symbol, Date, Outcome Badge
+                      // Top Row: Symbol, Catalyst, Defense Badges & Outcome Badge
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Text(
-                                "[$symbol]",
-                                style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 15),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppTheme.cyan.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: AppTheme.cyan.withOpacity(0.3)),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  "[$symbol]",
+                                  style: const TextStyle(color: AppTheme.cyan, fontWeight: FontWeight.w900, fontSize: 15),
                                 ),
-                                child: Text(
-                                  catalyst,
-                                  style: const TextStyle(color: AppTheme.cyan, fontSize: 9.5, fontWeight: FontWeight.w800),
-                                ),
-                              ),
-                              if (isCapExit) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.dangerRose.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: AppTheme.dangerRose.withOpacity(0.5)),
+                                if (catalyst.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.cyan.withOpacity(0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppTheme.cyan.withOpacity(0.3)),
+                                    ),
+                                    child: Text(
+                                      catalyst,
+                                      style: const TextStyle(color: AppTheme.cyan, fontSize: 9.5, fontWeight: FontWeight.w800),
+                                    ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.shield, color: AppTheme.dangerRose, size: 10),
-                                      SizedBox(width: 3),
-                                      Text(
-                                        "CAPITAL DEFENSE",
-                                        style: TextStyle(color: AppTheme.dangerRose, fontSize: 8.5, fontWeight: FontWeight.w900),
-                                      ),
-                                    ],
+                                if (isCapExit)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.dangerRose.withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.5)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(Icons.shield, color: AppTheme.dangerRose, size: 10),
+                                        SizedBox(width: 3),
+                                        Text(
+                                          "CAPITAL DEFENSE",
+                                          style: TextStyle(color: AppTheme.dangerRose, fontSize: 8.5, fontWeight: FontWeight.w900),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else if (isMisShort)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.secondaryAmber.withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: AppTheme.secondaryAmber.withOpacity(0.5)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Icon(Icons.flash_on, color: AppTheme.secondaryAmber, size: 10),
+                                        SizedBox(width: 3),
+                                        Text(
+                                          "MIS SHORT",
+                                          style: TextStyle(color: AppTheme.secondaryAmber, fontSize: 8.5, fontWeight: FontWeight.w900),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ] else if (isMisShort) ...[
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.secondaryAmber.withOpacity(0.18),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: AppTheme.secondaryAmber.withOpacity(0.5)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(Icons.flash_on, color: AppTheme.secondaryAmber, size: 10),
-                                      SizedBox(width: 3),
-                                      Text(
-                                        "MIS SHORT",
-                                        style: TextStyle(color: AppTheme.secondaryAmber, fontSize: 8.5, fontWeight: FontWeight.w900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
                               ],
-                            ],
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(

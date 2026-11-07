@@ -411,80 +411,81 @@ class _CandleChartModalState extends State<CandleChartModal> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Stock Symbol & Live Price
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF06B6D4), Color(0xFF6366F1)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
+                Expanded(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF06B6D4), Color(0xFF6366F1)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        borderRadius: BorderRadius.circular(4),
+                        child: const Text(
+                          'SV',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                       ),
-                      child: const Text(
-                        'SV',
-                        style: TextStyle(
+                      Text(
+                        cleanSym,
+                        style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 9.5,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
+                          fontSize: 18,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      cleanSym,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
-                      ),
-                      child: Text(
-                        exchange,
-                        style: TextStyle(
-                          color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
-                          fontSize: 8.5,
-                          fontWeight: FontWeight.w900,
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                        ),
+                        child: Text(
+                          exchange,
+                          style: TextStyle(
+                            color: exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                    ),
-                    if (lastPrice != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        "₹${lastPrice.toStringAsFixed(2)}",
-                        style: TextStyle(
-                          color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
+                      if (lastPrice != null) ...[
+                        Text(
+                          "₹${lastPrice.toStringAsFixed(2)}",
+                          style: TextStyle(
+                            color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "(${isPos ? '+' : ''}${priceChange.toStringAsFixed(2)})",
-                        style: TextStyle(
-                          color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                        Text(
+                          "(${isPos ? '+' : ''}${priceChange.toStringAsFixed(2)})",
+                          style: TextStyle(
+                            color: isPos ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
+                const SizedBox(width: 8),
 
                 // Header Actions (Full Screen & Close)
                 Row(

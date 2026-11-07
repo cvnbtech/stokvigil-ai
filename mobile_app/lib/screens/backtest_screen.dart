@@ -422,20 +422,23 @@ class _BacktestScreenState extends State<BacktestScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    r['resolved_ticker']?.toString() ?? '',
-                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    "Replay: ${r['period']} • ${_selectedStrategy == 'camarilla_breakout' ? 'Camarilla H4/L4' : 'Confluence Trend'}",
-                    style: const TextStyle(color: AppTheme.textMuted, fontSize: 10.5),
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r['resolved_ticker']?.toString() ?? '',
+                      style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "Replay: ${r['period']} • ${_selectedStrategy == 'camarilla_breakout' ? 'Camarilla H4/L4' : 'Confluence Trend'}",
+                      style: const TextStyle(color: AppTheme.textMuted, fontSize: 10.5),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Text(
                 "${isProfit ? '+' : ''}₹${totalPnl.toStringAsFixed(2)} (${r['total_return_pct']}%)",
                 style: TextStyle(
@@ -586,40 +589,47 @@ class _BacktestScreenState extends State<BacktestScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: type == 'BUY' ? AppTheme.emerald.withOpacity(0.15) : AppTheme.rose.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    type,
-                                    style: TextStyle(
-                                      color: type == 'BUY' ? AppTheme.emerald : AppTheme.rose,
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w900,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: type == 'BUY' ? AppTheme.emerald.withOpacity(0.15) : AppTheme.rose.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      type,
+                                      style: TextStyle(
+                                        color: type == 'BUY' ? AppTheme.emerald : AppTheme.rose,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  "Entry: ₹${(trade['entry_price'] as num?)?.toDouble().toStringAsFixed(1)} → Exit: ₹${(trade['exit_price'] as num?)?.toDouble().toStringAsFixed(1)}",
-                                  style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              "${trade['entry_date']} • ${trade['exit_reason']?.toString().replaceAll('_', ' ')} (${trade['bars_held']} bars)",
-                              style: const TextStyle(color: AppTheme.textMuted, fontSize: 9.5),
-                            ),
-                          ],
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: Text(
+                                      "Entry: ₹${(trade['entry_price'] as num?)?.toDouble().toStringAsFixed(1)} → Exit: ₹${(trade['exit_price'] as num?)?.toDouble().toStringAsFixed(1)}",
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                "${trade['entry_date']} • ${trade['exit_reason']?.toString().replaceAll('_', ' ')} (${trade['bars_held']} bars)",
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: AppTheme.textMuted, fontSize: 9.5),
+                              ),
+                            ],
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
                           "${tWin ? '+' : ''}₹${tPnl.toStringAsFixed(1)}\n(${trade['return_pct']}%)",
                           textAlign: TextAlign.right,

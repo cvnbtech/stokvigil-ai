@@ -899,52 +899,57 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
               // Header: Badge + Symbol + Close Button
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: (isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.18),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                            width: 1.2,
+                  Expanded(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: (isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Text(
+                            "$_tradeType ORDER",
+                            style: TextStyle(
+                              color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
                           ),
                         ),
-                        child: Text(
-                          "$_tradeType ORDER",
-                          style: TextStyle(
-                            color: isBuy ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 12,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                          ),
+                          child: Text(
+                            _exchange,
+                            style: TextStyle(
+                              color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: _exchange == 'BSE' ? const Color(0xFFF59E0B).withOpacity(0.15) : AppTheme.cyan.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan, width: 0.8),
+                        Text(
+                          _cleanSymbol,
+                          style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
                         ),
-                        child: Text(
-                          _exchange,
-                          style: TextStyle(
-                            color: _exchange == 'BSE' ? const Color(0xFFF59E0B) : AppTheme.cyan,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        _cleanSymbol,
-                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 6),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
