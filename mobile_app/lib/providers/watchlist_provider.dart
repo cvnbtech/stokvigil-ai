@@ -1,3 +1,16 @@
+
+bool isIndianMarketOpen() {
+  final nowUtc = DateTime.now().toUtc();
+  final ist = nowUtc.add(const Duration(hours: 5, minutes: 30));
+  if (ist.weekday == DateTime.saturday || ist.weekday == DateTime.sunday) {
+    return false;
+  }
+  final minutes = ist.hour * 60 + ist.minute;
+  const marketOpen = 9 * 60 + 15;
+  const marketClose = 15 * 60 + 30;
+  return minutes >= marketOpen && minutes <= marketClose;
+}
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
@@ -15,6 +28,20 @@ class WatchlistProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get watchlist => _watchlist;
   bool get isLoading => _isLoading;
   bool get autoSync => _autoSync;
+  bool get isMarketOpen => isIndianMarketOpen();
+
+  void _scheduleNextPoll() {
+    _refreshTimer?.cancel();
+    if (_currentUserId == null || _currentUserId!.isEmpty) return;
+
+    final isOpen = isIndianMarketOpen();
+    final delay = isOpen ? const Duration(seconds: 30) : const Duration(minutes: 5);
+
+    _refreshTimer = Timer(delay, () async {
+      await refreshQuotesOnly();
+      _scheduleNextPoll();
+    });
+  }
 
   void initialize(String? userId) {
     if (_currentUserId == userId && _watchlistSub != null) {
@@ -34,10 +61,8 @@ class WatchlistProvider extends ChangeNotifier {
     _loadInitialData(userId);
     _subscribeToWatchlist();
 
-    // Periodic quote refresh every 30 seconds
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      refreshQuotesOnly();
-    });
+    // Market-aware periodic quote refresh (30s during market hours, 5m off-market)
+    _scheduleNextPoll();
   }
 
   void clear() {
@@ -171,6 +196,8 @@ class WatchlistProvider extends ChangeNotifier {
       item['stop_loss'] = null;
       item['trailing_sl'] = null;
       item['is_high_beta'] = false;
+      item['is_circuit_locked'] = false;
+      item['circuit_lock_type'] = null;
       return;
     }
 
@@ -224,6 +251,8 @@ class WatchlistProvider extends ChangeNotifier {
     item['trailing_sl'] = item['signal'] != null ? q['trailing_sl'] : null;
     item['is_high_beta'] = q['is_high_beta'] == true;
     item['volatility_regime'] = q['volatility_regime'];
+    item['is_circuit_locked'] = q['is_circuit_locked'] == true;
+    item['circuit_lock_type'] = q['circuit_lock_type'];
   }
 
   Future<bool> addStock(

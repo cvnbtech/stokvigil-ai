@@ -9,6 +9,26 @@ export function getCachedClientQuote(symbol: string): any {
   return clientQuoteCache[clean] || clientQuoteCache[symbol.trim().toUpperCase()];
 }
 
+export function isIndianMarketOpen(): boolean {
+  try {
+    const now = new Date();
+    const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+    const istDate = new Date(istString);
+    const day = istDate.getDay(); // 0 is Sunday, 6 is Saturday
+    if (day === 0 || day === 6) return false;
+
+    const hours = istDate.getHours();
+    const minutes = istDate.getMinutes();
+    const currentMins = hours * 60 + minutes;
+
+    const marketOpen = 9 * 60 + 15;   // 09:15 AM IST
+    const marketClose = 15 * 60 + 30; // 03:30 PM IST
+    return currentMins >= marketOpen && currentMins <= marketClose;
+  } catch {
+    return true; // Graceful fallback
+  }
+}
+
 interface UseWatchlistManagerProps {
   userId?: string;
 }
@@ -58,7 +78,9 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
                 signal,
                 signalType,
                 target,
-                sl
+                sl,
+                isCircuitLocked: Boolean(q.is_circuit_locked),
+                circuitLockType: q.circuit_lock_type || null
               };
             });
           };
@@ -307,7 +329,9 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
             signal,
             signalType,
             target,
-            sl
+            sl,
+            isCircuitLocked: q.is_circuit_locked !== undefined ? Boolean(q.is_circuit_locked) : item.isCircuitLocked,
+            circuitLockType: q.circuit_lock_type !== undefined ? q.circuit_lock_type : item.circuitLockType
           };
         }));
 
@@ -324,18 +348,29 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
     }
   }, []);
 
-  // 30-Second Background Auto-Refresh (Silent In-Place Sync)
+  // Market-Aware Background Auto-Refresh (30s during market hours, 300s off-market)
   useEffect(() => {
     if (!userId) return;
 
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-      refreshQuotesOnly();
-    }, 30000);
+    let timer: NodeJS.Timeout | null = null;
 
-    return () => clearInterval(interval);
+    const scheduleNextPoll = () => {
+      const isOpen = isIndianMarketOpen();
+      const delay = isOpen ? 30000 : 300000; // 30s live, 5m off-market
+
+      timer = setTimeout(() => {
+        if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+          refreshQuotesOnly();
+        }
+        scheduleNextPoll();
+      }, delay);
+    };
+
+    scheduleNextPoll();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [userId, refreshQuotesOnly]);
 
   return {

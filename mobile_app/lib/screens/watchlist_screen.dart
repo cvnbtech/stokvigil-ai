@@ -268,36 +268,42 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                         ),
                       ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFF10B981).withOpacity(0.35)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                            ),
+                    Consumer<WatchlistProvider>(
+                      builder: (context, provider, _) {
+                        final isOpen = provider.isMarketOpen;
+                        final color = isOpen ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: color.withOpacity(0.35)),
                           ),
-                          const SizedBox(width: 5),
-                          const Text(
-                            "LIVE 30s TICK",
-                            style: TextStyle(
-                              color: Color(0xFF10B981),
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.4,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                isOpen ? "LIVE 30s TICK" : "MARKET CLOSED (EOD)",
+                                style: TextStyle(
+                                  color: color,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 0.4,
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -658,6 +664,10 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                             signalColor = const Color(0xFFA855F7);
                             signalBg = const Color(0xFFA855F7).withOpacity(0.16);
                             signalBorder = const Color(0xFFA855F7).withOpacity(0.45);
+                          } else if (signal == 'DEFENSIVE TRIM' || signal.contains('DEFENSIVE TRIM') || signal.contains('TRIM')) {
+                            signalColor = const Color(0xFFF59E0B); // Amber Warning
+                            signalBg = const Color(0xFFF59E0B).withOpacity(0.18);
+                            signalBorder = const Color(0xFFF59E0B).withOpacity(0.5);
                           } else if (signal == 'HOLD' || signal == 'NEUTRAL') {
                             signalColor = const Color(0xFFF59E0B);
                             signalBg = const Color(0xFFF59E0B).withOpacity(0.16);
@@ -997,7 +1007,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                          // Trade Order / Exit Order Button
                                          Builder(
                                            builder: (context) {
-                                             final isExitOrSell = signal.contains('EXIT') || signal.contains('STOP LOSS') || signal == 'SELL';
+                                             final isExitOrSell = signal.contains('EXIT') || signal.contains('STOP LOSS') || signal.contains('DEFENSIVE TRIM') || signal.contains('TRIM') || signal == 'SELL';
                                              final btnColor = !hasRealPrice ? AppTheme.textMuted : (isExitOrSell ? AppTheme.dangerRose : AppTheme.cyan);
                                              return GestureDetector(
                                                onTap: () {
@@ -1016,6 +1026,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                    stopLoss: (stopLoss == '--' || stopLoss == '-' || stopLoss == '₹0' || stopLoss == '0' || stopLoss.toString().contains('BREACHED'))
                                                        ? ''
                                                        : stopLoss.toString().replaceAll('₹', '').trim(),
+                                                    isCircuitLocked: item['is_circuit_locked'] == true,
+                                                    circuitLockType: item['circuit_lock_type']?.toString(),
                                                  );
                                                },
                                                child: Opacity(
@@ -1032,7 +1044,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                      Icon(Icons.bolt, color: btnColor, size: 14),
                                                      const SizedBox(width: 3),
                                                      Text(
-                                                       isExitOrSell ? "Exit Order" : "Trade Order",
+                                                       isExitOrSell ? (signal.contains("TRIM") ? "Trim Order" : "Exit Order") : "Trade Order",
                                                        style: TextStyle(color: btnColor, fontWeight: FontWeight.w900, fontSize: 11),
                                                      ),
                                                    ],

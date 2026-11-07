@@ -201,6 +201,19 @@ export default function LightweightCandleChart({
 
           const targetHeight = isMaximized ? Math.max(520, window.innerHeight - 240) : 380;
           const chart = createChart(chartContainerRef.current, {
+            localization: {
+              locale: "en-IN",
+              dateFormat: "dd MMM yyyy",
+              timeFormatter: (timestamp: number) => {
+                const date = new Date(timestamp * 1000);
+                return date.toLocaleTimeString("en-IN", {
+                  timeZone: "Asia/Kolkata",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                });
+              },
+            },
             layout: {
               background: { color: "#080B16" },
               textColor: "#94a3b8",
@@ -217,6 +230,15 @@ export default function LightweightCandleChart({
               secondsVisible: false,
               fixLeftEdge: true,
               fixRightEdge: true,
+              tickMarkFormatter: (time: any) => {
+                const ts = typeof time === "number" ? time : time?.timestamp || 0;
+                if (!ts) return "";
+                const date = new Date(ts * 1000);
+                if (interval === "1d") {
+                  return date.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+                }
+                return date.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+              },
             },
             crosshair: {
               vertLine: { color: "#06b6d4", width: 1, style: LineStyle.Dashed },
@@ -512,6 +534,19 @@ export default function LightweightCandleChart({
         <span style={{ color: "#64748b", fontWeight: 700 }}>
           {crosshair ? "CROSSHAIR:" : "LATEST:"}
         </span>
+        {crosshair?.time && (
+          <span style={{ color: "#38bdf8", fontWeight: 800 }}>
+            {(() => {
+              const ts = typeof crosshair.time === "number" ? crosshair.time : (crosshair.time as any)?.timestamp;
+              if (!ts) return "";
+              const d = new Date(ts * 1000);
+              return (
+                d.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }) +
+                " IST"
+              );
+            })()}
+          </span>
+        )}
         <span>
           O: <strong style={{ color: "#f8fafc" }}>₹{crosshair?.open?.toFixed(2) ?? "--"}</strong>
         </span>

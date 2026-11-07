@@ -477,6 +477,19 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                         sl_val = None
                         trailing_sl_val = None
 
+                is_circuit_locked = False
+                circuit_lock_type = None
+                if cached_stock:
+                    is_circuit_locked = bool(cached_stock.get("is_circuit_locked") or cached_stock.get("technicals", {}).get("is_circuit_locked", False))
+                    circuit_lock_type = cached_stock.get("circuit_lock_type") or cached_stock.get("technicals", {}).get("circuit_lock_type")
+                elif day_high is not None and day_low is not None and abs(day_high - day_low) < 1e-4 and abs(p - day_low) < 1e-4:
+                    if chg_pct is not None and chg_pct >= 1.90:
+                        is_circuit_locked = True
+                        circuit_lock_type = "UPPER_CIRCUIT"
+                    elif chg_pct is not None and chg_pct <= -1.90:
+                        is_circuit_locked = True
+                        circuit_lock_type = "LOWER_CIRCUIT"
+
                 quote_result = {
                     "symbol": clean_sym,
                     "full_symbol": f"{clean_sym}{suffix}",
@@ -495,6 +508,8 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "is_high_beta": is_high_beta_val,
                     "buffered_breakout_level": buf_h4_val,
                     "buffered_breakdown_level": buf_l4_val,
+                    "is_circuit_locked": is_circuit_locked,
+                    "circuit_lock_type": circuit_lock_type,
                     "signal": signal,
                     "signal_type": signal_type,
                     "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
@@ -797,6 +812,9 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
                         q_dict["trailing_sl"] = tsl
             if q_dict.get("change_pct") is None and tech.get("change_pct") is not None:
                 q_dict["change_pct"] = tech.get("change_pct")
+            if tech.get("is_circuit_locked"):
+                q_dict["is_circuit_locked"] = True
+                q_dict["circuit_lock_type"] = tech.get("circuit_lock_type")
 
     return {"quotes": results}
 

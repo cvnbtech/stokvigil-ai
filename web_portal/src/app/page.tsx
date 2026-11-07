@@ -40,7 +40,7 @@ export default function App() {
 
   // Trade Execution Modal State
   const [showTradeModal, setShowTradeModal] = useState(false);
-  const [tradeData, setTradeData] = useState<{ symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string } | null>(null);
+  const [tradeData, setTradeData] = useState<{ symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; isCircuitLocked?: boolean; circuitLockType?: string | null } | null>(null);
   const [orderQty, setOrderQty] = useState(10);
   const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [orderSent, setOrderSent] = useState(false);
@@ -168,6 +168,8 @@ export default function App() {
       type: isSell ? "SELL" : "BUY",
       target: stock.target && stock.target !== "--" ? stock.target : "--",
       sl: stock.sl && stock.sl !== "--" ? stock.sl : "--",
+      isCircuitLocked: (stock as any).isCircuitLocked,
+      circuitLockType: (stock as any).circuitLockType,
     });
     setTargetPriceInput(cleanTarget);
     setStopLossPriceInput(cleanSl);
@@ -177,7 +179,7 @@ export default function App() {
     setSelectedStock(null);
   };
 
-  const handleOpenTradeModalFromWatchlist = (stock: { symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; qty?: number }) => {
+  const handleOpenTradeModalFromWatchlist = (stock: { symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; qty?: number; isCircuitLocked?: boolean; circuitLockType?: string | null }) => {
     const cleanTarget = (stock.target && stock.target !== "--") ? stock.target.replace(/[^\d.]/g, "") : "";
     const cleanSl = (stock.sl && stock.sl !== "--") ? stock.sl.replace(/[^\d.]/g, "") : "";
     setTradeData({
@@ -186,6 +188,8 @@ export default function App() {
       type: stock.type,
       target: stock.target && stock.target !== "--" ? stock.target : "--",
       sl: stock.sl && stock.sl !== "--" ? stock.sl : "--",
+      isCircuitLocked: stock.isCircuitLocked,
+      circuitLockType: stock.circuitLockType,
     });
     setTargetPriceInput(cleanTarget);
     setStopLossPriceInput(cleanSl);

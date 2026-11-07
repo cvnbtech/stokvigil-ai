@@ -195,6 +195,27 @@ class _CandleChartModalState extends State<CandleChartModal> {
       var container = document.getElementById('chart');
 
       var chart = LC.createChart(container, {
+        localization: {
+          locale: 'en-IN',
+          dateFormat: 'dd MMM yyyy',
+          timeFormatter: function(timestamp) {
+            var date = new Date(timestamp * 1000);
+            return date.toLocaleTimeString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+          },
+          dateFormatter: function(timestamp) {
+            var date = new Date(timestamp * 1000);
+            return date.toLocaleDateString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              day: '2-digit',
+              month: 'short'
+            });
+          }
+        },
         layout: {
           background: { color: '#080B16' },
           textColor: '#94a3b8',
@@ -208,6 +229,17 @@ class _CandleChartModalState extends State<CandleChartModal> {
           borderColor: 'rgba(255, 255, 255, 0.1)',
           timeVisible: true,
           secondsVisible: false,
+          tickMarkFormatter: function(time) {
+            var ts = typeof time === 'number' ? time : (time ? time.timestamp : 0);
+            if (!ts) return '';
+            var date = new Date(ts * 1000);
+            return date.toLocaleTimeString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+          }
         },
         crosshair: {
           vertLine: { color: '#06b6d4', width: 1, style: (LC.LineStyle ? LC.LineStyle.Dashed : 2) },

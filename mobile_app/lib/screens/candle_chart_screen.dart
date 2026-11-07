@@ -272,6 +272,27 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
       var size = getContainerSize();
 
       var chart = LC.createChart(container, {
+        localization: {
+          locale: 'en-IN',
+          dateFormat: 'dd MMM yyyy',
+          timeFormatter: function(timestamp) {
+            var date = new Date(timestamp * 1000);
+            return date.toLocaleTimeString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false
+            });
+          },
+          dateFormatter: function(timestamp) {
+            var date = new Date(timestamp * 1000);
+            return date.toLocaleDateString('en-IN', {
+              timeZone: 'Asia/Kolkata',
+              day: '2-digit',
+              month: 'short'
+            });
+          }
+        },
         layout: {
           background: { color: '#080B16' },
           textColor: '#94a3b8',

@@ -231,6 +231,7 @@ export function SignalBadge({ signal, type }: { signal: string; type?: "strong_b
   const typeLower = (type || "").toLowerCase();
 
   const isCapExit = sigUpper.includes("STOP_LOSS") || sigUpper.includes("STOP LOSS") || sigUpper.includes("CAPITAL_PRESERVATION") || sigUpper.includes("CAPITAL PRESERVATION") || typeLower.includes("capital_preservation") || typeLower.includes("danger");
+  const isDefensiveTrim = sigUpper.includes("DEFENSIVE_TRIM") || sigUpper.includes("DEFENSIVE TRIM") || typeLower.includes("defensive_trim");
   const isMisShort = sigUpper.includes("MIS_SHORT") || sigUpper.includes("MIS SHORT") || sigUpper.includes("INTRADAY_MIS") || sigUpper.includes("INTRADAY MIS") || typeLower.includes("mis_short");
   const isStrong = type === "strong_buy" || sigUpper.includes("STRONG BUY") || sigUpper.includes("STRONG_BUY");
   const isBuy = type === "buy" || sigUpper === "BUY" || sigUpper.includes("ACCUMULATE");
@@ -239,50 +240,58 @@ export function SignalBadge({ signal, type }: { signal: string; type?: "strong_b
 
   const bg = isCapExit
     ? "linear-gradient(135deg, rgba(239,68,68,0.28), rgba(185,28,28,0.22))"
-    : isMisShort
-      ? "linear-gradient(135deg, rgba(245,158,11,0.25), rgba(217,119,6,0.2))"
-      : isStrong
-        ? "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.25))"
-        : isBuy
-          ? "rgba(6,182,212,0.18)"
-          : isSell
-            ? "rgba(239,68,68,0.18)"
-            : isHold
-              ? "rgba(234,179,8,0.18)"
-              : "rgba(148,163,184,0.15)";
+    : isDefensiveTrim
+      ? "linear-gradient(135deg, rgba(245,158,11,0.28), rgba(217,119,6,0.22))"
+      : isMisShort
+        ? "linear-gradient(135deg, rgba(245,158,11,0.25), rgba(217,119,6,0.2))"
+        : isStrong
+          ? "linear-gradient(135deg, rgba(16,185,129,0.25), rgba(6,182,212,0.25))"
+          : isBuy
+            ? "rgba(6,182,212,0.18)"
+            : isSell
+              ? "rgba(239,68,68,0.18)"
+              : isHold
+                ? "rgba(234,179,8,0.18)"
+                : "rgba(148,163,184,0.15)";
 
   const border = isCapExit
     ? "rgba(239,68,68,0.8)"
-    : isMisShort
-      ? "rgba(245,158,11,0.7)"
-      : isStrong
-        ? "rgba(16,185,129,0.5)"
-        : isBuy
-          ? "rgba(6,182,212,0.4)"
-          : isSell
-            ? "rgba(239,68,68,0.4)"
-            : isHold
-              ? "rgba(234,179,8,0.4)"
-              : "rgba(148,163,184,0.3)";
+    : isDefensiveTrim
+      ? "rgba(245,158,11,0.8)"
+      : isMisShort
+        ? "rgba(245,158,11,0.7)"
+        : isStrong
+          ? "rgba(16,185,129,0.5)"
+          : isBuy
+            ? "rgba(6,182,212,0.4)"
+            : isSell
+              ? "rgba(239,68,68,0.4)"
+              : isHold
+                ? "rgba(234,179,8,0.4)"
+                : "rgba(148,163,184,0.3)";
 
   const color = isCapExit
     ? C.rose
-    : isMisShort
+    : isDefensiveTrim
       ? C.amber
-      : isStrong
-        ? C.emerald
-        : isBuy
-          ? C.cyan
-          : isSell
-            ? C.rose
-            : isHold
-              ? "#EAB308"
-              : C.gray2;
+      : isMisShort
+        ? C.amber
+        : isStrong
+          ? C.emerald
+          : isBuy
+            ? C.cyan
+            : isSell
+              ? C.rose
+              : isHold
+                ? "#EAB308"
+                : C.gray2;
 
   const boxShadow = isCapExit
     ? "0 0 14px rgba(239,68,68,0.55)"
-    : isMisShort
-      ? "0 0 10px rgba(245,158,11,0.35)"
+    : isDefensiveTrim
+      ? "0 0 12px rgba(245,158,11,0.4)"
+      : isMisShort
+        ? "0 0 10px rgba(245,158,11,0.35)"
       : isStrong
         ? "0 0 10px rgba(16,185,129,0.3)"
         : "none";

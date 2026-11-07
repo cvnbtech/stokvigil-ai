@@ -132,6 +132,26 @@ def place_trade_order(
                     detail=f"Orders rejected during market close: {market_msg}"
                 )
 
+            # Pre-Trade Circuit Limit Validation
+            clean_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "").strip()
+            from app.engine.cache import market_cache
+            cached_pack = market_cache.get_stock(clean_sym)
+            if cached_pack:
+                tech = cached_pack.get("technicals", {})
+                is_circuit_locked = tech.get("is_circuit_locked", False)
+                circuit_lock_type = tech.get("circuit_lock_type")
+                if is_circuit_locked and circuit_lock_type:
+                    if action_type == "buy" and circuit_lock_type == "UPPER_CIRCUIT":
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Order rejected: {clean_sym} is currently locked in Upper Circuit freeze. Exchange does not accept Buy market orders during upper circuit limit."
+                        )
+                    elif action_type == "sell" and circuit_lock_type == "LOWER_CIRCUIT":
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Order rejected: {clean_sym} is currently locked in Lower Circuit freeze. Exchange does not accept Sell market orders during lower circuit limit."
+                        )
+
             # Dynamic Product Type Resolution (Option A: Auto-detect CNC vs MIS)
             product_type = req.product.lower() if getattr(req, "product", None) else None
             if not product_type:

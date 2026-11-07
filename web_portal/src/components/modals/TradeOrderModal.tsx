@@ -9,6 +9,8 @@ export interface TradeModalData {
   type: "BUY" | "SELL";
   target: string;
   sl: string;
+  isCircuitLocked?: boolean;
+  circuitLockType?: string | null;
 }
 
 interface TradeOrderModalProps {
@@ -96,6 +98,24 @@ export default function TradeOrderModal({
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Pre-Trade Circuit Band Validation Warning */}
+            {tradeData.isCircuitLocked && (
+              <div style={{
+                background: "rgba(239,68,68,0.12)",
+                border: "1.5px solid rgba(239,68,68,0.5)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                display: "flex",
+                gap: 8,
+                alignItems: "flex-start",
+              }}>
+                <span style={{ fontSize: 16 }}>🛑</span>
+                <span style={{ fontSize: 10.5, color: C.rose, lineHeight: 1.4, fontWeight: 700 }}>
+                  <b>Circuit Limit Freeze ({tradeData.circuitLockType?.replace("_", " ") || "CIRCUIT LOCKED"}):</b> This scrip is currently frozen at its daily price band. The exchange restricts {tradeData.type === "BUY" ? "buy" : "sell"} orders during circuit lock.
+                </span>
+              </div>
+            )}
+
             {/* SEBI Intraday MIS Short Regulatory Warning */}
             {tradeData.type === "SELL" && (
               <div style={{
@@ -331,15 +351,30 @@ export default function TradeOrderModal({
             </div>
 
             {/* Submit CTA */}
-            <Btn
-              variant={tradeData.type === "BUY" ? "primary" : "danger"}
-              onClick={onExecute}
-              disabled={orderSending || (orderType === "LIMIT" && (!limitPrice || parseFloat(limitPrice) <= 0))}
-            >
-              {orderType === "LIMIT" && (!limitPrice || parseFloat(limitPrice) <= 0)
-                ? "⚠️ Enter a Valid Limit Price"
-                : (orderSending ? "⚡ Sending Order via Breeze…" : "⚡ Confirm & Send Order via Breeze →")}
-            </Btn>
+            {(() => {
+              const isCircuitBlocked = Boolean(
+                tradeData.isCircuitLocked && (
+                  (tradeData.type === "BUY" && tradeData.circuitLockType === "UPPER_CIRCUIT") ||
+                  (tradeData.type === "SELL" && tradeData.circuitLockType === "LOWER_CIRCUIT")
+                )
+              );
+              const isInvalidLimit = orderType === "LIMIT" && (!limitPrice || parseFloat(limitPrice) <= 0);
+              const isBtnDisabled = orderSending || isInvalidLimit || isCircuitBlocked;
+
+              return (
+                <Btn
+                  variant={tradeData.type === "BUY" ? "primary" : "danger"}
+                  onClick={onExecute}
+                  disabled={isBtnDisabled}
+                >
+                  {isCircuitBlocked
+                    ? `⚠️ ${tradeData.circuitLockType?.replace("_", " ")} Active (Order Blocked)`
+                    : isInvalidLimit
+                    ? "⚠️ Enter a Valid Limit Price"
+                    : (orderSending ? "⚡ Sending Order via Breeze…" : "⚡ Confirm & Send Order via Breeze →")}
+                </Btn>
+              );
+            })()}
           </div>
         )}
       </div>

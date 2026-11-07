@@ -705,6 +705,8 @@ class TradeOrderModal extends StatefulWidget {
   final String targetPrice;
   final String stopLoss;
   final String? exchange;
+  final bool isCircuitLocked;
+  final String? circuitLockType;
 
   const TradeOrderModal({
     super.key,
@@ -714,6 +716,8 @@ class TradeOrderModal extends StatefulWidget {
     this.targetPrice = '',
     this.stopLoss = '',
     this.exchange,
+    this.isCircuitLocked = false,
+    this.circuitLockType,
   });
 
   static void show(
@@ -724,6 +728,8 @@ class TradeOrderModal extends StatefulWidget {
     String targetPrice = '',
     String stopLoss = '',
     String? exchange,
+    bool isCircuitLocked = false,
+    String? circuitLockType,
   }) {
     showModalBottomSheet(
       context: context,
@@ -736,6 +742,8 @@ class TradeOrderModal extends StatefulWidget {
         targetPrice: targetPrice,
         stopLoss: stopLoss,
         exchange: exchange,
+        isCircuitLocked: isCircuitLocked,
+        circuitLockType: circuitLockType,
       ),
     );
   }
@@ -1036,6 +1044,30 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                   ),
                 ),
               ] else ...[
+                if (widget.isCircuitLocked) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.dangerRose.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text("🛑", style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            "Circuit Limit Freeze (${widget.circuitLockType?.replaceAll('_', ' ') ?? 'CIRCUIT LOCKED'}): Trading restricted by exchange price band limits.",
+                            style: const TextStyle(color: AppTheme.dangerRose, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 // BUY / SELL Segmented Switcher
                 Container(
                   decoration: BoxDecoration(
@@ -1577,6 +1609,7 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                   ),
                   child: Builder(
                     builder: (context) {
+                      final isCircuitBlocked = widget.isCircuitLocked && ((_tradeType == 'BUY' && widget.circuitLockType == 'UPPER_CIRCUIT') || (_tradeType == 'SELL' && widget.circuitLockType == 'LOWER_CIRCUIT'));
                       final isInvalidLimit = _orderType == 'LIMIT' && (double.tryParse(_limitPriceController.text.trim()) ?? 0.0) <= 0.0;
                       return ElevatedButton(
                         style: ElevatedButton.styleFrom(
@@ -1585,7 +1618,7 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           padding: EdgeInsets.zero,
                         ),
-                        onPressed: (_isSubmitting || isInvalidLimit) ? null : _executeOrder,
+                        onPressed: (_isSubmitting || isInvalidLimit || isCircuitBlocked) ? null : _executeOrder,
                         child: _isSubmitting
                             ? const Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1607,11 +1640,11 @@ class _TradeOrderModalState extends State<TradeOrderModal> {
                                 ],
                               )
                             : Text(
-                                isInvalidLimit
-                                    ? "⚠️ Enter a Valid Limit Price"
-                                    : "⚡ Confirm $_tradeType & Send Order via Breeze →",
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                isCircuitBlocked
+                                    ? "⚠️ ${widget.circuitLockType?.replaceAll('_', ' ')} (Order Blocked)"
+                                    : (isInvalidLimit ? "⚠️ Enter a Valid Limit Price" : "⚡ Confirm $_tradeType & Send Order via Breeze →"),
+                                style: TextStyle(
+                                  color: isCircuitBlocked ? AppTheme.dangerRose : Colors.white,
                                   fontWeight: FontWeight.w900,
                                   fontSize: 14.5,
                                   letterSpacing: -0.2,

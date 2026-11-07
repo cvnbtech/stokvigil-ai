@@ -18,6 +18,8 @@ interface StockQuote {
   volatility_regime?: string;
   signal: string | null;
   signal_type: string | null;
+  is_circuit_locked?: boolean;
+  circuit_lock_type?: string | null;
 }
 
 // In-memory cache in Node.js server instance with 15-second TTL
@@ -70,6 +72,9 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
         // Preserve tactical levels from previous cache if available
         const prevCached = quoteCache.get(sym)?.data || quoteCache.get(cleanSym)?.data;
 
+        const isDirectCircuit = (dayHigh !== null && dayLow !== null && Math.abs(dayHigh - dayLow) < 0.01 && Math.abs(price - dayLow) < 0.01 && Math.abs(chgPct) >= 1.90);
+        const directLockType = isDirectCircuit ? (chgPct >= 1.90 ? "UPPER_CIRCUIT" : "LOWER_CIRCUIT") : null;
+
         return {
           symbol: sym,
           name,
@@ -84,6 +89,8 @@ async function fetchDirectYahooQuote(sym: string): Promise<StockQuote | null> {
           trailing_sl: prevCached?.trailing_sl ?? null,
           is_high_beta: prevCached?.is_high_beta ?? false,
           volatility_regime: prevCached?.volatility_regime ?? "STANDARD_CAMARILLA",
+          is_circuit_locked: prevCached?.is_circuit_locked ?? isDirectCircuit,
+          circuit_lock_type: prevCached?.circuit_lock_type ?? directLockType,
           signal: prevCached?.signal ?? null,
           signal_type: prevCached?.signal_type ?? null
         };

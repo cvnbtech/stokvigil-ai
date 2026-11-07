@@ -2,6 +2,7 @@
 import React from "react";
 import { C, HoldingItem } from "../ui/DesignTokens";
 import { SignalBadge } from "../ui/UiAtoms";
+import { isIndianMarketOpen } from "../../hooks/useWatchlistManager";
 
 interface WatchlistTabProps {
   watchlist: any[];
@@ -14,7 +15,7 @@ interface WatchlistTabProps {
   setTickerSuggestions: React.Dispatch<React.SetStateAction<any[]>>;
   addStock: (symbolToAdd?: string, nameToAdd?: string) => void;
   removeTicker: (id: string) => void;
-  onOpenTradeModal: (stock: { symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; qty?: number }) => void;
+  onOpenTradeModal: (stock: { symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; qty?: number; isCircuitLocked?: boolean; circuitLockType?: string | null }) => void;
   flashMap?: Record<string, "up" | "down">;
 }
 
@@ -50,19 +51,26 @@ export default function WatchlistTab({
             Real-time market feed • Auto-synced with ICICI Demat
           </div>
         </div>
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)",
-          borderRadius: 20, padding: "4px 10px", fontSize: 10, fontWeight: 800, color: C.emerald
-        }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: "50%",
-            backgroundColor: C.emerald,
-            boxShadow: `0 0 8px ${C.emerald}`,
-            display: "inline-block"
-          }} />
-          <span>LIVE 30s TICK</span>
-        </div>
+        {(() => {
+          const isMarketOpen = isIndianMarketOpen();
+          return (
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              background: isMarketOpen ? "rgba(16,185,129,0.08)" : "rgba(245,158,11,0.08)",
+              border: `1px solid ${isMarketOpen ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"}`,
+              borderRadius: 20, padding: "4px 10px", fontSize: 10, fontWeight: 800,
+              color: isMarketOpen ? C.emerald : C.amber
+            }}>
+              <span style={{
+                width: 7, height: 7, borderRadius: "50%",
+                backgroundColor: isMarketOpen ? C.emerald : C.amber,
+                boxShadow: `0 0 8px ${isMarketOpen ? C.emerald : C.amber}`,
+                display: "inline-block"
+              }} />
+              <span>{isMarketOpen ? "LIVE 30s TICK" : "MARKET CLOSED (EOD)"}</span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Enhanced Ticker Search & Add Bar */}
@@ -421,7 +429,7 @@ export default function WatchlistTab({
 
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {(() => {
-                    const isExitOrSell = item.signalType === "sell" || item.signalType === "danger" || item.signal?.includes("EXIT") || item.signal?.includes("STOP LOSS");
+                    const isExitOrSell = item.signalType === "sell" || item.signalType === "danger" || item.signal?.includes("EXIT") || item.signal?.includes("STOP LOSS") || item.signal?.includes("DEFENSIVE TRIM") || item.signal?.includes("TRIM");
                     const isDisabled = !item.price || item.price <= 0;
                     return (
                       <button
@@ -432,7 +440,9 @@ export default function WatchlistTab({
                           type: isExitOrSell ? "SELL" : "BUY",
                           target: item.target && item.target !== "--" ? item.target : "--",
                           sl: item.sl && item.sl !== "--" ? item.sl : "--",
-                          qty: 10
+                          qty: 10,
+                          isCircuitLocked: item.isCircuitLocked,
+                          circuitLockType: item.circuitLockType
                         })}
                         style={{
                           background: isDisabled ? "rgba(255,255,255,0.04)" : (isExitOrSell ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)"),
@@ -443,7 +453,7 @@ export default function WatchlistTab({
                           cursor: isDisabled ? "not-allowed" : "pointer"
                         }}
                       >
-                        ⚡ {isExitOrSell ? "Exit Order" : "Trade Order"}
+                        ⚡ {isExitOrSell ? (item.signal?.includes("TRIM") ? "Trim Order" : "Exit Order") : "Trade Order"}
                       </button>
                     );
                   })()}
