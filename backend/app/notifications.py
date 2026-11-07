@@ -231,13 +231,13 @@ def format_telegram_alert(
     """
     bias_upper = (action_bias or "HOLD_NEUTRAL").upper()
     if "TARGET_1" in bias_upper:
-        header_badge = "🎯 <b>STOKVIGIL PROTOCOL: TACTICAL LEVEL 1 REACHED & TRAIL TO COST</b> 🎯"
+        header_badge = "🎯 <b>STOKVIGIL PROTOCOL: TACTICAL TARGET 1 HIT — DE-RISK & LOCK PROFITS</b> 🎯"
     elif "CAPITAL_PRESERVATION" in bias_upper:
         header_badge = "🚨 <b>STOKVIGIL PROTOCOL: CAPITAL PRESERVATION EXIT TRIGGER</b> 🚨"
     elif "DEFENSIVE" in bias_upper or "TRIM" in bias_upper:
         header_badge = "⚠️ <b>STOKVIGIL PROTOCOL: DEFENSIVE PROFIT PROTECTION WARNING</b> ⚠️"
     elif "ACCUMULATE" in bias_upper:
-        header_badge = "⚡ <b>STOKVIGIL PROTOCOL: INSTITUTIONAL ACCUMULATION & PYRAMID</b> ⚡"
+        header_badge = "⚡ <b>STOKVIGIL PROTOCOL: INSTITUTIONAL ACCUMULATION & PYRAMID SIGNAL</b> ⚡"
     elif "TRAILING" in bias_upper or "TRAIL_ALERT" in bias_upper:
         header_badge = "🟡 <b>STOKVIGIL ALERT: TRAILING STOP-LOSS TRIGGER</b> 🟡"
     elif "BUY" in bias_upper:
@@ -270,12 +270,24 @@ def format_telegram_alert(
         avg_p = demat_position.get("average_buy_price", 0.0)
         pnl_pct = demat_position.get("unrealized_pnl_pct", 0.0)
         pnl_badge = "🟢" if pnl_pct >= 0 else "🔴"
+
+        # Calculate absolute P&L in Rupees if quantity > 0
+        cmp_val = (metrics_snapshot.get("current_price") or metrics_snapshot.get("price")) if metrics_snapshot else None
+        pnl_inr_str = ""
+        if cmp_val and qty > 0 and avg_p > 0:
+            try:
+                pnl_inr = (float(cmp_val) - avg_p) * qty
+                inr_sign = "+" if pnl_inr >= 0 else ""
+                pnl_inr_str = f" ({inr_sign}₹{pnl_inr:,.2f})"
+            except (ValueError, TypeError):
+                pass
+
         html += "💼 <b>Your ICICI Direct Demat Snapshot:</b>\n"
         html += f"• Position: {qty} Qty @ Avg ₹{avg_p:,.2f}\n"
-        html += f"• Current P&L: {pnl_badge} {pnl_pct:+.2f}%\n"
+        html += f"• Current P&L: {pnl_badge} {pnl_pct:+.2f}%{pnl_inr_str}\n"
         if holding_guidance:
             safe_guidance = html_lib.escape(str(holding_guidance), quote=False)
-            html += f"• <i>Guidance: {safe_guidance}</i>\n"
+            html += f"• 💡 <b>Tactical Advisory:</b> <i>{safe_guidance}</i>\n"
         html += "\n"
 
     # Factual Confluence Drivers
