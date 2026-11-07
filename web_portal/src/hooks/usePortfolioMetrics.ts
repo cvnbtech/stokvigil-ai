@@ -251,6 +251,7 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
     }
 
     if (currentUserId) {
+      let saved = false;
       try {
         const headers = await getAuthHeaders();
         const res = await fetch(`/api/user/credentials`, {
@@ -263,33 +264,26 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
           })
         });
         if (res.ok) {
+          saved = true;
           setHasCredentials(true);
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          console.error("Failed to save credentials via backend vault:", errData);
         }
       } catch (e) {
         console.warn("Backend save key error:", e);
       }
 
-      if (supabase) {
-        try {
-          await supabase.from("user_credentials").upsert({
-            user_id: currentUserId,
-            encrypted_session_token: cleanSessionTok,
-            broker_id: selectedBroker || "icici",
-            token_date: new Date().toISOString().split("T")[0],
-            updated_at: new Date().toISOString()
-          }, { onConflict: "user_id" });
-          setHasCredentials(true);
-        } catch (supaErr) {
-          console.warn("Supabase credentials save error:", supaErr);
-        }
-      }
-
       setKeySaving(false);
-      setKeySaved(true);
-      setShowKeyModal(false);
-      setSessionTok("");
-      loadPortfolioData(currentUserId);
-      setTimeout(() => setKeySaved(false), 3000);
+      if (saved) {
+        setKeySaved(true);
+        setShowKeyModal(false);
+        setSessionTok("");
+        loadPortfolioData(currentUserId);
+        setTimeout(() => setKeySaved(false), 3000);
+      } else {
+        alert("Failed to securely save broker session credentials via server vault. Please verify your connection and try again.");
+      }
     } else {
       setKeySaving(false);
     }

@@ -301,11 +301,7 @@ class SupabaseService {
     final user = currentUser;
     if (user == null || !isConfigured) return null;
     try {
-      final data = await client
-          .from('user_credentials')
-          .select('token_date, updated_at')
-          .eq('user_id', user.id)
-          .maybeSingle();
+      final data = await ApiService().fetchUserCredentials(user.id);
       if (data == null) return null;
 
       final todayStr = DateTime.now().toIso8601String().split('T')[0];

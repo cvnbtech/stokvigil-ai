@@ -192,10 +192,10 @@ export function useAuthSession({ onSessionLoaded, onSignedOut }: UseAuthSessionP
         body: JSON.stringify({ user_id: user.id })
       });
       if (supabase) {
-        await supabase.from("profiles").delete().eq("id", user.id);
-        await supabase.from("user_credentials").delete().eq("user_id", user.id);
-        await supabase.from("user_watchlists").delete().eq("user_id", user.id);
-        await supabase.from("stok_alerts").delete().eq("user_id", user.id);
+        try { await supabase.from("profiles").delete().eq("id", user.id); } catch (_) {}
+        try { await supabase.from("user_credentials").delete().eq("user_id", user.id); } catch (_) {}
+        try { await supabase.from("user_watchlists").delete().eq("user_id", user.id); } catch (_) {}
+        try { await supabase.from("stok_alerts").delete().eq("user_id", user.id); } catch (_) {}
         await supabase.auth.signOut();
       }
       setShowDeleteModal(false);
