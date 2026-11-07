@@ -763,24 +763,60 @@ async def evaluate_user_portfolio_and_watchlists(
                         raw_rsi = technicals.get("rsi_15m")
                         rsi_15m = float(raw_rsi) if raw_rsi is not None else None
                         
-                        if pnl_pct <= -3.5:
+                        raw_score = analysis.get("confluence_score", 50)
+                        base_bias = analysis.get("action_bias", "HOLD_NEUTRAL")
+                        drivers = list(analysis.get("confluence_drivers", []))
+                        is_block_dump = analysis.get("is_block_dump", False)
+                        raw_vwap_diff = technicals.get("price_vs_vwap_pct")
+                        curr_vwap = technicals.get("vwap")
+
+                        # 1. CAPITAL PRESERVATION EXIT: Hard Stop-Loss
+                        if pnl_pct <= -3.5 or base_bias in ["CAPITAL_PRESERVATION_EXIT"]:
                             analysis["action_bias"] = "CAPITAL_PRESERVATION_EXIT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
-                            analysis["alert_title"] = f"{symbol}: Capital Preservation Exit Trigger (P&L: {pnl_pct:+.1f}%)"
+                            analysis["alert_title"] = f"🚨 {symbol}: Capital Preservation Exit Trigger (P&L: {pnl_pct:+.1f}%)"
                             analysis["holding_guidance"] = f"CRITICAL RISK DEFENSE: Position down {pnl_pct:+.1f}%. Immediate capital preservation stop-loss active."
-                            drivers = list(analysis.get("confluence_drivers", []))
                             drivers.insert(0, f"Portfolio Risk: Position dropped {pnl_pct:+.1f}%. Protective stop-loss breach.")
                             analysis["confluence_drivers"] = drivers
+                        # 2. DEFENSIVE TRIM ALERT: VWAP loss or block sale
+                        elif is_block_dump or (curr_vwap and curr_p < float(curr_vwap) and raw_vwap_diff is not None and float(raw_vwap_diff) <= -0.8 and pnl_pct < 3.0):
+                            analysis["action_bias"] = "DEFENSIVE_TRIM_ALERT"
+                            analysis["has_actionable_signal"] = True
+                            analysis["catalyst_category"] = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
+                            analysis["alert_title"] = f"⚠️ {symbol}: Defensive Profit Protection Warning (P&L: {pnl_pct:+.1f}%)"
+                            analysis["holding_guidance"] = f"DEFENSIVE PROTOCOL: Price lost intraday VWAP support (P&L: {pnl_pct:+.1f}%). Trim 30-50% position to defend gains."
+                            drivers.insert(0, f"Defensive Risk Warning: Intraday VWAP breach / institutional selling detected (P&L: {pnl_pct:+.1f}%). Trim position to protect capital.")
+                            analysis["confluence_drivers"] = drivers
+                        # 3. TRAILING STOP-LOSS ALERT: Profit >= +5% and RSI > 72
                         elif pnl_pct >= 5.0 and rsi_15m is not None and rsi_15m > 72.0:
                             analysis["action_bias"] = "TRAILING_SL_ALERT"
                             analysis["has_actionable_signal"] = True
                             analysis["catalyst_category"] = "TRAILING_STOP_TRIGGER"
-                            analysis["alert_title"] = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
-                            analysis["holding_guidance"] = f"Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m:.1f}. Trailing SL active."
-                            drivers = list(analysis.get("confluence_drivers", []))
-                            drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m:.1f} (Overbought zone).")
+                            analysis["alert_title"] = f"🟡 {symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl_pct}%)"
+                            analysis["holding_guidance"] = f"PROFIT PROTECTION: Position gained +{pnl_pct}%; 15m RSI reached {rsi_15m:.1f}. Trailing SL active."
+                            drivers.insert(0, f"Position has gained {pnl_pct}%; 15m RSI reached {rsi_15m:.1f} (Overbought zone). Lock in partial gains.")
                             analysis["confluence_drivers"] = drivers
+                        # 4. ACCUMULATE / PYRAMID: Breakout on winning position
+                        elif base_bias == "BUY_WATCH" and raw_score >= 72:
+                            if pnl_pct >= 0.0:
+                                analysis["action_bias"] = "ACCUMULATE_WATCH"
+                                analysis["has_actionable_signal"] = True
+                                analysis["catalyst_category"] = "PRICE_BREAKOUT"
+                                analysis["alert_title"] = f"⚡ {symbol}: Institutional Accumulation / Pyramiding Signal (P&L: +{pnl_pct:+.1f}%)"
+                                analysis["holding_guidance"] = f"INSTITUTIONAL PYRAMIDING: Confirmed breakout on winning position (+{pnl_pct:+.1f}%). Safe to add 25-30% allocation above ₹{curr_p:,.2f} with trailing SL at breakeven."
+                                drivers.insert(0, f"Institutional Pyramiding Setup: High confluence ({raw_score}/100) breakout with positive P&L (+{pnl_pct:+.1f}%). Safe to add up to 25% allocation.")
+                                analysis["confluence_drivers"] = drivers
+                            else:
+                                analysis["action_bias"] = "HOLD_STEADY"
+                                analysis["has_actionable_signal"] = False
+                                analysis["holding_guidance"] = f"SEBI Risk Guardrail: Breakout setup detected, but position is currently at P&L {pnl_pct:+.1f}%. Averaging down into losing positions is strictly prohibited."
+                                drivers.insert(0, f"SEBI Risk Guardrail: Breakout setup detected, but position is currently at P&L {pnl_pct:+.1f}%. Averaging down into losing positions is prohibited.")
+                                analysis["confluence_drivers"] = drivers
+                        elif base_bias in ["HOLD_NEUTRAL", "BUY_WATCH"]:
+                            analysis["action_bias"] = "HOLD_STEADY"
+                            analysis["has_actionable_signal"] = False
+                            analysis["holding_guidance"] = f"Chandelier Trailing SL active (Protecting cost basis ₹{avg_p:,.2f}). Position healthy."
                 else:
                     fresh_pack = await evaluate_single_symbol_full(symbol, macro_data=macro_data, holding_info=holding_info)
                     technicals = fresh_pack.get("technicals", {})
@@ -867,7 +903,7 @@ async def evaluate_user_portfolio_and_watchlists(
                         logger.debug(f"Target 1 check note for {symbol}: {t1_err}")
                 
                 should_dispatch = False
-                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or confluence_score <= 35)
+                is_breakdown_or_sl = (action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT", "DEFENSIVE_TRIM_ALERT", "ACCUMULATE_WATCH"] or confluence_score <= 35)
 
                 if alert_sensitivity == "HIGH":
                     should_dispatch = (confluence_score >= 80) or is_breakdown_or_sl
@@ -880,7 +916,7 @@ async def evaluate_user_portfolio_and_watchlists(
                 if not should_dispatch:
                     return None
 
-                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
+                is_tier1 = (confluence_score >= 88 or action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "SELL_WATCH", "TARGET_1_TRAIL_ALERT", "DEFENSIVE_TRIM_ALERT", "ACCUMULATE_WATCH"] or catalyst_type in ["BLOCK_DEAL", "TRAILING_STOP_TRIGGER", "PRICE_BREAKOUT"])
                 allowed, reason = should_dispatch_alert(user_id, symbol, action_bias, confluence_score, is_tier1)
                 
                 if not allowed:
@@ -985,7 +1021,9 @@ async def evaluate_user_portfolio_and_watchlists(
                     "STOP_LOSS_DEFENSE": "TRAILING_STOP_TRIGGER",
                     "TARGET_1_ACHIEVED": "PRICE_BREAKOUT",
                     "MULTI_DAY_DOWNTREND": "PRICE_BREAKOUT",
-                    "CAPITAL_DEFENSE_TRIGGER": "TRAILING_STOP_TRIGGER"
+                    "CAPITAL_DEFENSE_TRIGGER": "TRAILING_STOP_TRIGGER",
+                    "ACCUMULATE_PYRAMID": "PRICE_BREAKOUT",
+                    "DEFENSIVE_TRIM": "TRAILING_STOP_TRIGGER"
                 }
                 normalized_catalyst = CATALYST_SYNONYM_MAP.get(catalyst_type, catalyst_type)
                 VALID_CATALYST_TYPES = {

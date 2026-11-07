@@ -40,8 +40,8 @@ def should_dispatch_alert(
     elapsed = now - cached["timestamp"]
     last_bias = cached["action_bias"]
     
-    # 1. Tier 1 Catalyst bypasses cooldown (Trailing SL hit, Capital preservation exit, Block deal, or Score >= 88)
-    if is_tier1_catalyst or action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT"] or impact_score >= 88:
+    # 1. Tier 1 Catalyst bypasses cooldown (Trailing SL hit, Capital preservation exit, Defensive trim, Target 1 trail, or Score >= 88)
+    if is_tier1_catalyst or action_bias in ["TRAILING_SL_ALERT", "CAPITAL_PRESERVATION_EXIT", "DEFENSIVE_TRIM_ALERT", "TARGET_1_TRAIL_ALERT", "ACCUMULATE_WATCH"] or impact_score >= 88:
         _ALERT_CACHE[key] = {
             "timestamp": now,
             "action_bias": action_bias,

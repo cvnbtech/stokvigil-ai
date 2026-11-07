@@ -93,7 +93,7 @@ def compute_tactical_levels(
         if demat_val and float(demat_val) > 0:
             budget = max(500.0, round(float(demat_val) * 0.01, 2))
 
-    is_defense_exit = action_bias in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT"] or (l4 is not None and price <= float(l4) and action_bias not in ["INTRADAY_MIS_SHORT", "SELL_WATCH"])
+    is_defense_exit = action_bias in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT", "DEFENSIVE_TRIM_ALERT"] or (l4 is not None and price <= float(l4) and action_bias not in ["INTRADAY_MIS_SHORT", "SELL_WATCH"])
     if is_defense_exit:
         sl_display = f"₹{l4:,.2f} (BREACHED)" if (l4 and float(l4) > 0) else "BREACHED"
         return {
@@ -690,23 +690,7 @@ def compute_deterministic_confluence(
         for r in reversed(breakdown_reasons + multiday_reasons):
             confluence_drivers.insert(0, f"Critical Supply Alert: {r}")
 
-    # Demat Holding Portfolio Protection Override
-    if demat_context["is_in_portfolio"]:
-        pnl = demat_context["unrealized_pnl_pct"]
-        if pnl <= -3.5:
-            action_bias = "CAPITAL_PRESERVATION_EXIT"
-            has_actionable_signal = True
-            catalyst_category = "TRAILING_STOP_TRIGGER"
-            alert_title = f"{symbol}: Capital Preservation Exit Trigger (P&L: {pnl:+.1f}%)"
-            confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach.")
-            confluence_score = min(20, confluence_score)
-        elif pnl >= 5.0 and rsi_15m_val is not None and rsi_15m_val > 72:
-            action_bias = "TRAILING_SL_ALERT"
-            has_actionable_signal = True
-            catalyst_category = "TRAILING_STOP_TRIGGER"
-            alert_title = f"{symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl:+.1f}%)"
-            confluence_drivers.insert(0, f"Position gained +{pnl:+.1f}%; 15m RSI reached {rsi_15m_val} (Overbought zone).")
-    elif not is_severe_breakdown and not is_multiday_breakdown and not is_locked:
+    if not is_severe_breakdown and not is_multiday_breakdown and not is_locked:
         if directional_score is not None and directional_score <= 40 and has_real_price:
             # PURE DIRECTIONAL BIAS: Technical momentum and order flow mandate SELL_WATCH regardless of high balance sheet forensics!
             action_bias = "SELL_WATCH"
@@ -853,6 +837,58 @@ def compute_deterministic_confluence(
             confluence_score = max(45, confluence_score + 8)
             confluence_drivers.append(f"Macro Trend Veto: Price ₹{current_price:,.2f} is above 200 EMA (₹{ema_200_val:,.2f}). Shorting against primary bull trend blocked.")
 
+    # Institutional 5-State Portfolio Lifecycle Contextualization for Demat Holdings
+    if demat_context["is_in_portfolio"]:
+        pnl = float(demat_context.get("unrealized_pnl_pct", 0.0) or 0.0)
+        curr_vwap = technicals.get("vwap")
+        price_vs_vwap = technicals.get("price_vs_vwap_pct")
+
+        # 1. CAPITAL PRESERVATION EXIT: Hard Stop-Loss breach (PnL <= -3.5%) or severe breakdown
+        if pnl <= -3.5 or is_severe_breakdown:
+            action_bias = "CAPITAL_PRESERVATION_EXIT"
+            has_actionable_signal = True
+            catalyst_category = "TRAILING_STOP_TRIGGER"
+            alert_title = f"🚨 {symbol}: Capital Preservation Exit Trigger (P&L: {pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach.")
+            confluence_score = min(20, confluence_score)
+
+        # 2. DEFENSIVE TRIM ALERT: Early warning - VWAP breakdown or Institutional Block dump or multi-day breakdown
+        elif is_block_dump or is_multiday_breakdown or (curr_vwap is not None and current_price < float(curr_vwap) and price_vs_vwap is not None and float(price_vs_vwap) <= -0.8 and pnl < 3.0):
+            action_bias = "DEFENSIVE_TRIM_ALERT"
+            has_actionable_signal = True
+            catalyst_category = "BLOCK_DEAL" if is_block_dump else "PRICE_BREAKOUT"
+            alert_title = f"⚠️ {symbol}: Defensive Profit Protection Warning (P&L: {pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"Defensive Risk Warning: Intraday VWAP breach / institutional selling detected (P&L: {pnl:+.1f}%). Trim position to protect capital.")
+            confluence_score = min(45, confluence_score)
+
+        # 3. TRAILING STOP-LOSS ALERT: High profit (+5%+) with overbought RSI (> 72)
+        elif pnl >= 5.0 and rsi_15m_val is not None and float(rsi_15m_val) > 72.0:
+            action_bias = "TRAILING_SL_ALERT"
+            has_actionable_signal = True
+            catalyst_category = "TRAILING_STOP_TRIGGER"
+            alert_title = f"🟡 {symbol}: Trailing Stop-Loss Trigger (P&L: +{pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"Position gained +{pnl:+.1f}%; 15m RSI reached {rsi_15m_val} (Overbought zone). Lock in partial gains.")
+
+        # 4. ACCUMULATE / PYRAMID WATCH: Breakout setup on an owned stock
+        elif action_bias == "BUY_WATCH" and confluence_score >= 72:
+            if pnl >= 0.0:
+                # SEBI Institutional Pyramiding Rule: Add only to winning or breakeven positions
+                action_bias = "ACCUMULATE_WATCH"
+                has_actionable_signal = True
+                catalyst_category = "PRICE_BREAKOUT"
+                alert_title = f"⚡ {symbol}: Institutional Accumulation / Pyramiding Signal (P&L: +{pnl:+.1f}%)"
+                confluence_drivers.insert(0, f"Institutional Pyramiding Setup: High confluence ({confluence_score}/100) breakout with positive P&L (+{pnl:+.1f}%). Safe to add up to 25% allocation.")
+            else:
+                # SEBI Institutional Anti-Averaging-Down Guardrail: Never average down into a loser
+                action_bias = "HOLD_STEADY"
+                has_actionable_signal = False
+                confluence_drivers.insert(0, f"SEBI Risk Guardrail: Breakout setup detected, but position is currently at P&L {pnl:+.1f}%. Averaging down into losing positions is strictly prohibited.")
+
+        # 5. HOLD STEADY: Healthy position within normal parameters
+        elif action_bias in ["HOLD_NEUTRAL", "BUY_WATCH"]:
+            action_bias = "HOLD_STEADY"
+            has_actionable_signal = False
+
     # Confluence Driver Highlights
     if technicals.get("macd_trend") == "BULLISH_CROSSOVER":
         confluence_drivers.append("15m MACD Bullish Crossover detected.")
@@ -895,17 +931,24 @@ def compute_deterministic_confluence(
             stock_beta=financials.get("beta_volatility") if financials else None,
             is_event_day=bool(news_items and len(news_items) > 0)
         )
-        if tactical_dict is None and has_actionable_signal and action_bias not in ["CAPITAL_PRESERVATION_EXIT"]:
+        if tactical_dict is None and has_actionable_signal and action_bias not in ["CAPITAL_PRESERVATION_EXIT", "DEFENSIVE_TRIM_ALERT"]:
             has_actionable_signal = False
             confluence_drivers.append("Tactical execution levels suspended: Authentic price volatility (ATR) unavailable.")
         if demat_context["is_in_portfolio"] and tactical_dict:
             avg_buy = demat_context.get("average_buy_price", current_price)
+            pnl = demat_context.get("unrealized_pnl_pct", 0.0)
             if action_bias == "CAPITAL_PRESERVATION_EXIT":
-                holding_guidance = f"CRITICAL DEFENSE: Severe breakdown at ₹{current_price:,.2f}. Capital preservation exit recommended to protect principal (Avg buy: ₹{avg_buy:,.2f})."
+                holding_guidance = f"CRITICAL DEFENSE: Severe breakdown at ₹{current_price:,.2f} (P&L: {pnl:+.1f}%). Capital preservation exit recommended to protect principal (Avg buy: ₹{avg_buy:,.2f})."
+            elif action_bias == "DEFENSIVE_TRIM_ALERT":
+                holding_guidance = f"DEFENSIVE PROTOCOL: Price lost intraday VWAP support (P&L: {pnl:+.1f}%). Trim 30-50% position to defend gains."
             elif action_bias == "TRAILING_SL_ALERT":
-                holding_guidance = f"CRITICAL DEFENSE: Position down {demat_context.get('unrealized_pnl_pct', 0.0):+.1f}%. Immediate capital preservation stop-loss active."
+                holding_guidance = f"PROFIT PROTECTION: Position gained {pnl:+.1f}%. Trail protective stop-loss to ₹{tactical_dict.get('protective_stop_loss', 'cost')}."
+            elif action_bias == "TARGET_1_TRAIL_ALERT":
+                holding_guidance = f"TACTICAL TARGET 1 HIT: Lock in 50% profit immediately; trail stop-loss to entry cost ₹{avg_buy:,.2f} (Free Trade)."
+            elif action_bias == "ACCUMULATE_WATCH":
+                holding_guidance = f"INSTITUTIONAL PYRAMIDING: Confirmed breakout on winning position (+{pnl:+.1f}%). Safe to add 25-30% allocation above ₹{current_price:,.2f} with trailing SL at breakeven."
             else:
-                holding_guidance = f"Chandelier Trailing SL active at {tactical_dict['protective_stop_loss']} (Protecting cost basis ₹{avg_buy:,.2f})."
+                holding_guidance = f"Chandelier Trailing SL active at {tactical_dict.get('protective_stop_loss', 'cost')} (Protecting cost basis ₹{avg_buy:,.2f}). Position healthy."
         else:
             holding_guidance = "Track for optimal entry in tactical range."
     else:
@@ -962,7 +1005,7 @@ def check_has_active_catalyst(
     volume, corporate filing, or Demat stop-loss catalyst before invoking Gemini AI.
     Quiet/flat stocks are evaluated via pure deterministic mathematics in 0.001 ms.
     """
-    # 1. Demat Holding Protection Trigger
+    # 1. Demat Holding 5-State Lifecycle Triggers
     if holding_info:
         raw_curr = technicals.get("current_price")
         curr_p = float(raw_curr) if raw_curr is not None else 0.0
@@ -971,8 +1014,17 @@ def check_has_active_catalyst(
         pnl_pct = ((curr_p - avg_p) / avg_p * 100) if avg_p > 0 else 0.0
         raw_rsi = technicals.get("rsi_15m")
         rsi = float(raw_rsi) if raw_rsi is not None else None
-        if (pnl_pct >= 5.0 and rsi is not None and rsi > 70.0) or pnl_pct <= -3.5:
-            return True, f"Demat Holding Protection Trigger (P&L: {pnl_pct:+.1f}%)"
+        
+        # Stop-Loss breach
+        if pnl_pct <= -3.5:
+            return True, f"Demat Holding Capital Preservation Trigger (P&L: {pnl_pct:+.1f}%)"
+        # Trailing SL on parabolic run
+        if pnl_pct >= 5.0 and rsi is not None and rsi > 70.0:
+            return True, f"Demat Holding Trailing Stop Trigger (P&L: {pnl_pct:+.1f}%, RSI: {rsi:.1f})"
+        # Defensive warning: VWAP breakdown or loss of momentum on winning/breakeven holding
+        raw_vwap = technicals.get("price_vs_vwap_pct")
+        if raw_vwap is not None and float(raw_vwap) <= -0.8 and pnl_pct < 3.0:
+            return True, f"Demat Holding Defensive Trim Trigger (VWAP: {float(raw_vwap):+.1f}%, P&L: {pnl_pct:+.1f}%)"
 
     # 2. Sharp Intraday Price Surge / Breakdown
     change_pct = technicals.get("change_pct")

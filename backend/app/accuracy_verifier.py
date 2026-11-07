@@ -178,7 +178,7 @@ def verify_single_alert(alert: Dict[str, Any], candles_df: Optional[pd.DataFrame
 
     alert_dt = parse_iso_datetime(alert.get("created_at"))
     is_bearish = (
-        bias in ["SELL", "SELL_WATCH", "STRONG_SELL", "DISTRIBUTION", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT"]
+        bias in ["SELL", "SELL_WATCH", "STRONG_SELL", "DISTRIBUTION", "CAPITAL_PRESERVATION_EXIT", "INTRADAY_MIS_SHORT", "DEFENSIVE_TRIM_ALERT"]
         or "SELL" in bias
         or (target_price is not None and sl_price is not None and target_price < sl_price)
     )

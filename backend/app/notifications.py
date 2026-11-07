@@ -230,14 +230,22 @@ def format_telegram_alert(
     Includes Action Badges, Demat context, Technical Drivers, and Risk-Reward Levels.
     """
     bias_upper = (action_bias or "HOLD_NEUTRAL").upper()
-    if "TARGET_1" in bias_upper or "TRAIL_ALERT" in bias_upper:
+    if "TARGET_1" in bias_upper:
         header_badge = "🎯 <b>STOKVIGIL PROTOCOL: TACTICAL LEVEL 1 REACHED & TRAIL TO COST</b> 🎯"
-    elif "BUY" in bias_upper or "ACCUMULATE" in bias_upper:
-        header_badge = "🟢 <b>STOKVIGIL SIGNAL: ACCUMULATE / BUY WATCH</b> 🟢"
+    elif "CAPITAL_PRESERVATION" in bias_upper:
+        header_badge = "🚨 <b>STOKVIGIL PROTOCOL: CAPITAL PRESERVATION EXIT TRIGGER</b> 🚨"
+    elif "DEFENSIVE" in bias_upper or "TRIM" in bias_upper:
+        header_badge = "⚠️ <b>STOKVIGIL PROTOCOL: DEFENSIVE PROFIT PROTECTION WARNING</b> ⚠️"
+    elif "ACCUMULATE" in bias_upper:
+        header_badge = "⚡ <b>STOKVIGIL PROTOCOL: INSTITUTIONAL ACCUMULATION & PYRAMID</b> ⚡"
+    elif "TRAILING" in bias_upper or "TRAIL_ALERT" in bias_upper:
+        header_badge = "🟡 <b>STOKVIGIL ALERT: TRAILING STOP-LOSS TRIGGER</b> 🟡"
+    elif "BUY" in bias_upper:
+        header_badge = "🟢 <b>STOKVIGIL SIGNAL: FRESH BUY WATCH</b> 🟢"
     elif "SELL" in bias_upper:
         header_badge = "🔴 <b>STOKVIGIL SIGNAL: PROFIT BOOK / SELL WATCH</b> 🔴"
-    elif "TRAILING" in bias_upper:
-        header_badge = "🟡 <b>STOKVIGIL ALERT: TRAILING STOP-LOSS TRIGGER</b> 🟡"
+    elif "HOLD_STEADY" in bias_upper:
+        header_badge = "🛡️ <b>STOKVIGIL GUARDIAN: POSITION HEALTHY & STEADY</b> 🛡️"
     else:
         header_badge = "⚪ <b>STOKVIGIL UPDATE: MARKET WATCHTOWER</b> ⚪"
 
