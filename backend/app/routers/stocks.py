@@ -628,96 +628,79 @@ def validate_stock(symbol: str = Query(..., min_length=1)):
             "error": f"'{sym}' contains invalid characters. Use valid alphanumeric stock symbols."
         }
 
-    search_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-    }
+    from app.engine.security_master import resolve_security, resolve_symbol_to_isin, _ISIN_TO_SECURITY
 
-    # 1. Fast quote API multi-exchange lookup (NSE and BSE)
-    try:
-        symbols_param = f"{clean_sym}.BO,{clean_sym}.NS" if is_explicit_bse else f"{clean_sym}.NS,{clean_sym}.BO"
-        url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols_param}"
-        req = urllib.request.Request(url, headers=search_headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            results = data.get("quoteResponse", {}).get("result", [])
-            for q in results:
-                q_sym = q.get("symbol", "")
-                price = q.get("regularMarketPrice")
-                if price is not None and price > 0:
-                    exch = "NSE" if q_sym.endswith(".NS") else "BSE"
-                    name = q.get("shortName") or q.get("longName") or f"{clean_sym} ({exch})"
-                    from app.engine.security_master import resolve_security
+    # Check if security master can resolve canonical ticker (e.g. 500325 -> RELIANCE)
+    resolved_canonical = clean_sym
+    isin_hint = resolve_symbol_to_isin(clean_sym)
+    if isin_hint and clean_sym.isdigit():
+        sec_record = _ISIN_TO_SECURITY.get(isin_hint)
+        if sec_record and sec_record.get("symbol"):
+            resolved_canonical = sec_record["symbol"]
+
+    # 1. Fast Yahoo v8 Chart API multi-exchange validation (NSE and BSE) with pooled HTTP session
+    for query_sym in ([clean_sym] if resolved_canonical == clean_sym else [resolved_canonical, clean_sym]):
+        for suffix, exch in candidate_suffixes:
+            for host in ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]:
+                try:
+                    url = f"https://{host}/v8/finance/chart/{query_sym}{suffix}?range=1d&interval=1d"
+                    res = _QUOTE_HTTP_SESSION.get(url, timeout=3.0)
+                    if res.status_code == 404:
+                        break
+                    if res.status_code == 200:
+                        data = res.json()
+                        res_list = data.get("chart", {}).get("result")
+                        if res_list and len(res_list) > 0:
+                            meta = res_list[0].get("meta", {})
+                            price = meta.get("regularMarketPrice")
+                            if price is not None and float(price) > 0:
+                                name = meta.get("shortName") or meta.get("longName") or f"{clean_sym} ({exch})"
+                                sec_info = resolve_security(clean_sym, exchange=exch)
+                                isin_val = sec_info.get("isin")
+                                out_symbol = clean_sym if exch == "NSE" else (clean_sym if clean_sym.isdigit() else f"{clean_sym}.BO")
+                                return {
+                                    "is_valid": True,
+                                    "symbol": out_symbol,
+                                    "clean_symbol": clean_sym,
+                                    "isin": isin_val,
+                                    "name": sec_info.get("company_name") or name,
+                                    "exchange": exch,
+                                    "price": float(price),
+                                    "full_symbol": f"{query_sym}{suffix}"
+                                }
+                except Exception as e:
+                    logger.debug(f"Fast chart validation for {query_sym}{suffix} on {host} failed: {e}")
+
+    # 2. Secondary fallback: Direct fast_info ticker check via yfinance (handles crumbs automatically)
+    for query_sym in ([clean_sym] if resolved_canonical == clean_sym else [resolved_canonical, clean_sym]):
+        for suffix, exch in candidate_suffixes:
+            try:
+                t = yf.Ticker(f"{query_sym}{suffix}")
+                fast = t.fast_info
+                price = getattr(fast, "last_price", None)
+                if price is not None and float(price) > 0:
+                    clean_name = f"{clean_sym} ({exch})"
+                    try:
+                        clean_name = getattr(fast, "short_name", None) or getattr(fast, "long_name", None) or clean_name
+                    except Exception:
+                        pass
+
                     sec_info = resolve_security(clean_sym, exchange=exch)
                     isin_val = sec_info.get("isin")
                     out_symbol = clean_sym if exch == "NSE" else (clean_sym if clean_sym.isdigit() else f"{clean_sym}.BO")
+
                     return {
                         "is_valid": True,
                         "symbol": out_symbol,
                         "clean_symbol": clean_sym,
                         "isin": isin_val,
-                        "name": name,
+                        "name": sec_info.get("company_name") or clean_name,
                         "exchange": exch,
-                        "price": price,
-                        "full_symbol": q_sym
+                        "price": float(price),
+                        "full_symbol": f"{query_sym}{suffix}"
                     }
-    except Exception as e:
-        logger.warning(f"Fast quote validation for {sym} failed: {e}")
-
-    # 2. Fast chart API validation
-    for suffix, exch in candidate_suffixes:
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{clean_sym}{suffix}?range=1d&interval=1d"
-            req = urllib.request.Request(url, headers=search_headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                res_list = data.get("chart", {}).get("result")
-                if res_list and len(res_list) > 0:
-                    meta = res_list[0].get("meta", {})
-                    price = meta.get("regularMarketPrice")
-                    if price is not None and price > 0:
-                        name = meta.get("shortName") or meta.get("longName") or f"{clean_sym} ({exch})"
-                        return {
-                            "is_valid": True,
-                            "symbol": clean_sym,
-                            "clean_symbol": clean_sym,
-                            "name": name,
-                            "exchange": exch,
-                            "price": price,
-                            "full_symbol": f"{clean_sym}{suffix}"
-                        }
-        except Exception:
-            pass
-
-    # 3. Direct fast_info ticker check
-    for suffix, exch in candidate_suffixes:
-        try:
-            t = yf.Ticker(f"{clean_sym}{suffix}")
-            fast = t.fast_info
-            price = getattr(fast, "last_price", None)
-            if price is not None and price > 0:
-                clean_name = f"{clean_sym} ({exch})"
-                try:
-                    clean_name = getattr(fast, "short_name", None) or getattr(fast, "long_name", None) or clean_name
-                except Exception:
-                    pass
-
-                from app.engine.security_master import resolve_security
-                sec_info = resolve_security(clean_sym, exchange=exch)
-                isin_val = sec_info.get("isin")
-
-                return {
-                    "is_valid": True,
-                    "symbol": clean_sym,
-                    "clean_symbol": clean_sym,
-                    "isin": isin_val,
-                    "name": clean_name or sec_info.get("company_name", clean_sym),
-                    "exchange": exch,
-                    "price": float(price),
-                    "full_symbol": f"{clean_sym}{suffix}"
-                }
-        except Exception:
-            continue
+            except Exception:
+                continue
 
     return {
         "is_valid": False,
