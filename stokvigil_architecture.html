@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>StokVigil AI - Rich Visual System Architecture</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&family=Rajdhani:wght@600;700;800&family=Fira+Code:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      background-color: #02040A;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .font-tech {
+      font-family: 'Rajdhani', sans-serif;
+    }
+    .font-code {
+      font-family: 'Fira Code', monospace;
+    }
+
+    /* Ambient Aurora Glows */
+    .aurora-bg {
+      background: radial-gradient(circle at 15% 20%, rgba(0, 245, 255, 0.12) 0%, transparent 45%),
+                  radial-gradient(circle at 85% 30%, rgba(255, 0, 122, 0.12) 0%, transparent 45%),
+                  radial-gradient(circle at 50% 80%, rgba(138, 43, 226, 0.15) 0%, transparent 55%),
+                  #030712;
+    }
+
+    /* Glassmorphism with Iridescent Border Highlights */
+    .glass-card-cyan {
+      background: linear-gradient(135deg, rgba(8, 35, 60, 0.7), rgba(4, 18, 32, 0.85));
+      border: 1.5px solid rgba(0, 245, 255, 0.4);
+      box-shadow: 0 0 25px rgba(0, 245, 255, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(16px);
+    }
+    .glass-card-green {
+      background: linear-gradient(135deg, rgba(6, 48, 29, 0.7), rgba(3, 26, 16, 0.85));
+      border: 1.5px solid rgba(0, 255, 136, 0.4);
+      box-shadow: 0 0 25px rgba(0, 255, 136, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(16px);
+    }
+    .glass-card-blue {
+      background: linear-gradient(135deg, rgba(13, 30, 66, 0.7), rgba(6, 15, 36, 0.85));
+      border: 1.5px solid rgba(66, 133, 244, 0.4);
+      box-shadow: 0 0 25px rgba(66, 133, 244, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(16px);
+    }
+    .glass-card-amber {
+      background: linear-gradient(135deg, rgba(56, 33, 4, 0.7), rgba(26, 15, 2, 0.85));
+      border: 1.5px solid rgba(255, 184, 0, 0.4);
+      box-shadow: 0 0 25px rgba(255, 184, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(16px);
+    }
+    .glass-card-purple {
+      background: linear-gradient(135deg, rgba(30, 16, 56, 0.7), rgba(15, 8, 30, 0.85));
+      border: 1.5px solid rgba(168, 85, 247, 0.4);
+      box-shadow: 0 0 25px rgba(168, 85, 247, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(16px);
+    }
+
+    /* Animated Laser Connection Lines */
+    @keyframes laserPulse {
+      0% { stroke-dashoffset: 100; opacity: 0.6; }
+      50% { opacity: 1; filter: drop-shadow(0 0 6px #00F5FF); }
+      100% { stroke-dashoffset: 0; opacity: 0.6; }
+    }
+    .laser-line-cyan {
+      stroke-dasharray: 8 6;
+      animation: laserPulse 2s linear infinite;
+    }
+    .laser-line-amber {
+      stroke-dasharray: 8 6;
+      animation: laserPulse 2s linear infinite;
+    }
+    .laser-line-blue {
+      stroke-dasharray: 8 6;
+      animation: laserPulse 2s linear infinite;
+    }
+
+    /* Glowing Pill Buttons */
+    .glow-pill {
+      background: linear-gradient(90deg, #00F5FF, #0070F3);
+      color: #02040A;
+      font-weight: 800;
+      box-shadow: 0 0 20px rgba(0, 245, 255, 0.6);
+    }
+    .inactive-pill {
+      background: rgba(255, 255, 255, 0.05);
+      color: #94A3B8;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .inactive-pill:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #FFFFFF;
+    }
+  </style>
+</head>
+<body class="p-2 md:p-6 text-slate-100 flex justify-center selection:bg-cyan-500 selection:text-white">
+
+  <!-- Master Canvas Container with Aurora Lighting -->
+  <div class="w-full max-w-[1320px] aurora-bg rounded-[40px] p-6 md:p-10 border-2 border-cyan-400/40 shadow-[0_0_80px_rgba(0,245,255,0.2)] relative overflow-hidden">
+    
+    <!-- Cyberpunk Corner Accents -->
+    <div class="absolute top-5 left-5 w-8 h-8 border-t-2 border-l-2 border-cyan-400"></div>
+    <div class="absolute top-5 right-5 w-8 h-8 border-t-2 border-r-2 border-cyan-400"></div>
+    <div class="absolute bottom-5 left-5 w-8 h-8 border-b-2 border-l-2 border-cyan-400"></div>
+    <div class="absolute bottom-5 right-5 w-8 h-8 border-b-2 border-r-2 border-cyan-400"></div>
+
+    <!-- HEADER TITLE & VIEW SWITCHER -->
+    <div class="flex flex-col lg:flex-row items-center justify-between pb-6 mb-8 border-b border-slate-800/80 gap-5 relative z-10">
+      <div>
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="px-3 py-0.5 rounded-full text-xs font-mono font-bold bg-cyan-500/15 border border-cyan-400/40 text-cyan-300">
+            ⚡ HIGH-LEVEL SYSTEM SPECIFICATION
+          </span>
+          <span class="px-3 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/15 border border-emerald-400/40 text-emerald-300">
+            SEBI NON-ADVISORY COMPLIANT
+          </span>
+        </div>
+        <h1 class="text-3xl md:text-5xl font-black font-tech tracking-wider uppercase">
+          <span class="bg-gradient-to-r from-cyan-400 via-sky-300 to-indigo-300 bg-clip-text text-transparent drop-shadow-[0_0_25px_rgba(0,245,255,0.7)]">
+            STOKVIGIL AI
+          </span>
+          <span class="text-white" id="canvas-title"> FULL-STACK END-TO-END MARKET ENGINE</span>
+        </h1>
+        <p class="text-slate-400 font-tech text-sm md:text-base tracking-widest uppercase mt-0.5">
+          Autonomous Institutional Market Surveillance • Real-Time Order Flow • Personal Lock-Screen Alerts
+        </p>
+      </div>
+
+      <!-- Mode Toggle Switcher -->
+      <div class="flex items-center p-1.5 bg-black/60 rounded-2xl border border-slate-700/80 font-tech text-xs tracking-wider">
+        <button onclick="setTab('engine')" id="tab-engine" class="px-5 py-2.5 rounded-xl glow-pill transition-all">
+          1. FULL-STACK MARKET ENGINE
+        </button>
+        <button onclick="setTab('notification')" id="tab-notif" class="px-5 py-2.5 rounded-xl inactive-pill transition-all ml-1">
+          2. NOTIFICATION ARCHITECTURE
+        </button>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 2: NOTIFICATION ARCHITECTURE (EXACT TO USER REF)    -->
+    <!-- ======================================================== -->
+    <div id="content-notif" class="w-full overflow-x-auto hidden justify-center py-2 relative z-10">
+      <svg width="1240" height="760" viewBox="0 0 1240 760" fill="none" xmlns="http://www.w3.org/2000/svg" class="max-w-full">
+        
+        <defs>
+          <!-- Dynamic Arrow Markers -->
+          <marker id="m-cyan" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#00F5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="m-green" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#00FF88" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="m-amber" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#FFB800" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="m-blue" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#38BDF8" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+
+          <!-- Glowing Card Gradients -->
+          <linearGradient id="card-grad-alert" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#072238" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#02111E" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="card-grad-green" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#052E1E" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#02170E" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="card-grad-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#331E04" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#1A0F02" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="card-grad-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0D2452" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#06122B" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="card-grad-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#241242" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#120822" stop-opacity="0.98"/>
+          </linearGradient>
+
+          <!-- Nebula Phone Wallpaper Gradient -->
+          <linearGradient id="phone-wallpaper" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1E1B4B"/>
+            <stop offset="40%" stop-color="#0F172A"/>
+            <stop offset="70%" stop-color="#0369A1"/>
+            <stop offset="100%" stop-color="#1E293B"/>
+          </linearGradient>
+        </defs>
+
+        <!-- BACKGROUND LASER CIRCUIT TRACES -->
+        <g stroke="#00F5FF" stroke-width="1.8" fill="none" opacity="0.4">
+          <path d="M70 70 L170 70 L200 100 L240 100" class="laser-line-cyan"/>
+          <circle cx="70" cy="70" r="4.5" fill="#00F5FF"/>
+          <circle cx="240" cy="100" r="4.5" fill="#00F5FF"/>
+          
+          <path d="M40 170 L110 170 L140 140 L180 140" />
+          <circle cx="40" cy="170" r="3" fill="#00F5FF"/>
+          
+          <path d="M70 600 L130 600 L170 640 L230 640" class="laser-line-cyan"/>
+          <circle cx="70" cy="600" r="4.5" fill="#00F5FF"/>
+          <circle cx="230" cy="640" r="4.5" fill="#00F5FF"/>
+
+          <!-- Glowing Circuit Microchip -->
+          <rect x="42" y="270" width="24" height="44" rx="4" fill="#041220" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="34" y1="280" x2="42" y2="280" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="34" y1="292" x2="42" y2="292" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="34" y1="304" x2="42" y2="304" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="66" y1="280" x2="74" y2="280" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="66" y1="292" x2="74" y2="292" stroke="#00F5FF" stroke-width="1.8"/>
+          <line x1="66" y1="304" x2="74" y2="304" stroke="#00F5FF" stroke-width="1.8"/>
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- 1. ALERT GEN ENGINE (LEFT HAND SIDE)                     -->
+        <!-- ======================================================== -->
+        
+        <!-- Top Shield Emblem with Glowing Dollar / Rupee -->
+        <g transform="translate(130, 8)">
+          <circle cx="48" cy="48" r="36" fill="#031F1C" stroke="#00FF88" stroke-width="2.5" filter="drop-shadow(0 0 15px rgba(0,255,136,0.6))"/>
+          <path d="M48 30L62 37V51C62 61 48 68 48 68C48 68 34 61 34 51V37L48 30Z" fill="#00FF88" fill-opacity="0.25" stroke="#00FF88" stroke-width="2.2"/>
+          <text x="48" y="54" fill="#00FF88" font-size="18" font-weight="900" font-family="'Rajdhani', sans-serif" text-anchor="middle">₹</text>
+        </g>
+
+        <!-- Main Alert Gen Engine Box -->
+        <g transform="translate(45, 95)">
+          <rect width="260" height="395" rx="24" fill="url(#card-grad-alert)" stroke="#00F5FF" stroke-width="2.5" filter="drop-shadow(0 0 25px rgba(0,245,255,0.35))"/>
+          
+          <text x="130" y="34" fill="#FFFFFF" font-size="16" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle">
+            ALERT GEN ENGINE
+          </text>
+          <line x1="25" y1="44" x2="235" y2="44" stroke="#00F5FF" stroke-width="1.2" stroke-opacity="0.4"/>
+
+          <!-- Sub-Card 1: Catalyst Event Detected -->
+          <g transform="translate(16, 58)">
+            <rect width="228" height="92" rx="16" fill="url(#card-grad-green)" stroke="#00FF88" stroke-width="2" filter="drop-shadow(0 0 12px rgba(0,255,136,0.3))"/>
+            <text x="114" y="28" fill="#00FF88" font-size="12.5" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+              CATALYST EVENT DETECTED
+            </text>
+            <text x="114" y="48" fill="#E2E8F0" font-size="10.5" text-anchor="middle">5-Min Block Deal • Breakout &gt; H4</text>
+            <text x="114" y="66" fill="#6EE7B7" font-size="10" font-weight="600" text-anchor="middle">Volume Surge &ge; 2.5x RVOL</text>
+          </g>
+
+          <!-- Inside Arrow -->
+          <path d="M130 152 L130 182" stroke="#00FF88" stroke-width="2.5" marker-end="url(#m-green)"/>
+
+          <!-- Sub-Card 2: User Portfolio Lookup -->
+          <g transform="translate(16, 188)">
+            <rect width="228" height="88" rx="16" fill="url(#card-grad-green)" stroke="#00FF88" stroke-width="2" filter="drop-shadow(0 0 12px rgba(0,255,136,0.3))"/>
+            <text x="114" y="30" fill="#00FF88" font-size="12.5" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+              USER PORTFOLIO LOOKUP
+            </text>
+            <text x="114" y="50" fill="#E2E8F0" font-size="10.5" text-anchor="middle">Demat Cost-Basis & Quantity</text>
+            <text x="114" y="68" fill="#6EE7B7" font-size="10" font-weight="600" text-anchor="middle">5-State Demat Guardian Context</text>
+          </g>
+
+          <!-- Sub-Card 3: Gemini Contextual AI -->
+          <g transform="translate(16, 290)">
+            <rect width="228" height="85" rx="16" fill="url(#card-grad-blue)" stroke="#38BDF8" stroke-width="1.8"/>
+            <text x="114" y="26" fill="#38BDF8" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+              GEMINI 3.5 FLASH LITE
+            </text>
+            <text x="114" y="45" fill="#BAE6FD" font-size="10" text-anchor="middle">&lt;untrusted_external_news&gt;</text>
+            <text x="114" y="63" fill="#34D399" font-size="9.5" font-weight="bold" text-anchor="middle">Mathematical Sovereignty Locked</text>
+          </g>
+        </g>
+
+        <!-- Bottom Glowing Tech Ring -->
+        <g transform="translate(130, 508)">
+          <circle cx="48" cy="48" r="32" fill="#041220" stroke="#00F5FF" stroke-width="2.2" filter="drop-shadow(0 0 15px rgba(0,245,255,0.4))"/>
+          <circle cx="48" cy="48" r="18" fill="#00F5FF" fill-opacity="0.2"/>
+          <path d="M48 36L58 48L48 60L38 48Z" stroke="#00F5FF" stroke-width="2" fill="none"/>
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- 2. USER NODES & SPECIFIC ALERTS BOX                      -->
+        <!-- ======================================================== -->
+
+        <!-- Connector Arrow from Engine to User Alerts -->
+        <path d="M305 245 L350 245" stroke="#00FF88" stroke-width="3" marker-end="url(#m-green)"/>
+
+        <!-- Top User Glowing Avatar -->
+        <g transform="translate(378, 160)">
+          <circle cx="25" cy="25" r="25" fill="#042C1E" stroke="#00FF88" stroke-width="2.5" filter="drop-shadow(0 0 12px rgba(0,255,136,0.6))"/>
+          <circle cx="25" cy="18" r="7.5" fill="#00FF88"/>
+          <path d="M14 34C14 28.5 19 26 25 26C31 26 36 28.5 36 34V37H14V34Z" fill="#00FF88"/>
+        </g>
+
+        <!-- User Specific Alerts Central Hub -->
+        <g transform="translate(335, 218)">
+          <rect width="135" height="126" rx="18" fill="url(#card-grad-blue)" stroke="#38BDF8" stroke-width="2.5" filter="drop-shadow(0 0 20px rgba(56,189,248,0.4))"/>
+          <text x="67" y="30" fill="#93C5FD" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            USER SPECIFIC
+          </text>
+          <text x="67" y="47" fill="#93C5FD" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            ALERTS
+          </text>
+          <text x="67" y="70" fill="#CBD5E1" font-size="9.5" text-anchor="middle">(USER_ID_1,</text>
+          <text x="67" y="85" fill="#CBD5E1" font-size="9.5" text-anchor="middle">USER_ID_2...</text>
+          <text x="67" y="100" fill="#CBD5E1" font-size="9.5" text-anchor="middle">USER_ID_N)</text>
+        </g>
+
+        <!-- Bottom User Glowing Avatar -->
+        <g transform="translate(378, 355)">
+          <circle cx="25" cy="25" r="25" fill="#042C1E" stroke="#00FF88" stroke-width="2.5" filter="drop-shadow(0 0 12px rgba(0,255,136,0.6))"/>
+          <circle cx="25" cy="18" r="7.5" fill="#00FF88"/>
+          <path d="M14 34C14 28.5 19 26 25 26C31 26 36 28.5 36 34V37H14V34Z" fill="#00FF88"/>
+        </g>
+
+        <!-- Split Golden Connector Lasers -->
+        <!-- Branch Up to Telegram -->
+        <path d="M470 252 L510 252 L510 120 L535 120" stroke="#FFB800" stroke-width="2.8" marker-end="url(#m-amber)" class="laser-line-amber"/>
+        
+        <!-- Branch Down to Firebase FCM -->
+        <path d="M470 295 L510 295 L510 470 L535 470" stroke="#FFB800" stroke-width="2.8" marker-end="url(#m-amber)" class="laser-line-amber"/>
+
+        <!-- ======================================================== -->
+        <!-- 3. TOP BRANCH: TELEGRAM BOT DELIVERY (VIBRANT BLUE)      -->
+        <!-- ======================================================== -->
+
+        <!-- Section Title: Telegram Bot Delivery -->
+        <text x="660" y="44" fill="#38BDF8" font-size="15" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle" filter="drop-shadow(0 0 8px rgba(56,189,248,0.6))">
+          TELEGRAM BOT DELIVERY (PERSONAL CHAT)
+        </text>
+
+        <!-- Box 1: Backend Sends Message -->
+        <g transform="translate(540, 65)">
+          <rect width="155" height="96" rx="18" fill="url(#card-grad-green)" stroke="#00FF88" stroke-width="2.2" filter="drop-shadow(0 0 15px rgba(0,255,136,0.35))"/>
+          <text x="77" y="32" fill="#00FF88" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            BACKEND SENDS
+          </text>
+          <text x="77" y="50" fill="#00FF88" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            MESSAGE
+          </text>
+          <text x="77" y="74" fill="#A7F3D0" font-size="10.5" font-family="'Fira Code', monospace" text-anchor="middle">
+            (CHAT_ID, TEXT)
+          </text>
+        </g>
+
+        <!-- Connecting Arrow -->
+        <path d="M695 113 L730 113" stroke="#00FF88" stroke-width="2.5" marker-end="url(#m-green)"/>
+
+        <!-- Box 2: Telegram API (BotFather) -->
+        <g transform="translate(735, 65)">
+          <rect width="150" height="96" rx="18" fill="url(#card-grad-blue)" stroke="#38BDF8" stroke-width="2.2" filter="drop-shadow(0 0 15px rgba(56,189,248,0.35))"/>
+          <text x="75" y="36" fill="#60A5FA" font-size="12.5" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            TELEGRAM API
+          </text>
+          <text x="75" y="54" fill="#93C5FD" font-size="11.5" text-anchor="middle">
+            (BOTFATHER)
+          </text>
+          <text x="75" y="76" fill="#64748B" font-size="9.5" text-anchor="middle">
+            HTTP/2 • 25 msg/s Leaky
+          </text>
+        </g>
+
+        <!-- Caption Pill below Telegram Path -->
+        <g transform="translate(585, 172)">
+          <rect width="250" height="36" rx="10" fill="#0B1B36" stroke="#38BDF8" stroke-width="1.4"/>
+          <text x="125" y="17" fill="#BAE6FD" font-size="10" font-weight="bold" text-anchor="middle">
+            MESSAGES ARE UNIQUE PER USER
+          </text>
+          <text x="125" y="29" fill="#94A3B8" font-size="8.5" text-anchor="middle">
+            (based on their unique CHAT_ID)
+          </text>
+        </g>
+
+        <!-- Branching Connectors to Telegram Chats -->
+        <path d="M885 113 L915 113 L915 55 L940 55" stroke="#38BDF8" stroke-width="2" marker-end="url(#m-blue)"/>
+        <path d="M885 113 L940 113" stroke="#38BDF8" stroke-width="2" marker-end="url(#m-blue)"/>
+        <path d="M885 113 L915 113 L915 170 L940 170" stroke="#38BDF8" stroke-width="2" marker-end="url(#m-blue)"/>
+
+        <!-- User 1 Telegram Chat Card (Realistic Frosted Glass UI) -->
+        <g transform="translate(945, 25)">
+          <circle cx="22" cy="26" r="16" fill="#0088CC" filter="drop-shadow(0 0 8px rgba(0,136,204,0.6))"/>
+          <path d="M15 26L28 20L26 31L22 27L19 29V26Z" fill="#FFFFFF"/>
+          
+          <rect x="46" y="0" width="250" height="52" rx="12" fill="#07233B" stroke="#0088CC" stroke-width="1.8" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.5))"/>
+          <text x="58" y="19" fill="#38BDF8" font-size="10" font-weight="bold">USER 1 TELEGRAM: Private Chat</text>
+          <text x="58" y="32" fill="#BAE6FD" font-size="9">@StokVigilBot</text>
+          <text x="58" y="44" fill="#E0F2FE" font-size="8.5" font-weight="600">STOKVIGIL: BLOCK DEAL: RELIANCE...</text>
+        </g>
+
+        <!-- User 2 Telegram Chat Card -->
+        <g transform="translate(945, 90)">
+          <circle cx="22" cy="26" r="16" fill="#0088CC" filter="drop-shadow(0 0 8px rgba(0,136,204,0.6))"/>
+          <path d="M15 26L28 20L26 31L22 27L19 29V26Z" fill="#FFFFFF"/>
+          
+          <rect x="46" y="0" width="250" height="52" rx="12" fill="#07233B" stroke="#0088CC" stroke-width="1.8" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.5))"/>
+          <text x="58" y="19" fill="#38BDF8" font-size="10" font-weight="bold">USER 2 TELEGRAM: Private Chat</text>
+          <text x="58" y="32" fill="#BAE6FD" font-size="9">@StokVigilBot</text>
+          <text x="58" y="44" fill="#E0F2FE" font-size="8.5" font-weight="600">STOKVIGIL: EARNINGS BEAT: TCS...</text>
+        </g>
+
+        <!-- User N Telegram Chat Card -->
+        <g transform="translate(945, 155)">
+          <circle cx="22" cy="20" r="15" fill="#0088CC"/>
+          <path d="M15 20L27 14L25 25L21 21L18 23V20Z" fill="#FFFFFF"/>
+          
+          <rect x="46" y="0" width="180" height="40" rx="12" fill="#07233B" stroke="#0088CC" stroke-width="1.8"/>
+          <text x="136" y="25" fill="#BAE6FD" font-size="10" font-weight="bold" text-anchor="middle">USER N TELEGRAM</text>
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- 4. BOTTOM BRANCH: FIREBASE FCM & IPHONE 16 LOCKSCREEN    -->
+        <!-- ======================================================== -->
+
+        <!-- Section Title: Firebase FCM -->
+        <text x="660" y="395" fill="#FFB800" font-size="15" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle" filter="drop-shadow(0 0 8px rgba(255,184,0,0.6))">
+          FIREBASE FCM (LOCK-SCREEN PUSH)
+        </text>
+
+        <!-- Box 1: Backend Pushes Data -->
+        <g transform="translate(540, 420)">
+          <rect width="155" height="96" rx="18" fill="url(#card-grad-green)" stroke="#00FF88" stroke-width="2.2" filter="drop-shadow(0 0 15px rgba(0,255,136,0.35))"/>
+          <text x="77" y="30" fill="#00FF88" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            BACKEND PUSHES
+          </text>
+          <text x="77" y="48" fill="#00FF88" font-size="12" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            DATA
+          </text>
+          <text x="77" y="70" fill="#A7F3D0" font-size="9.5" font-family="'Fira Code', monospace" text-anchor="middle">
+            (FCM_TOKEN, TITLE,
+          </text>
+          <text x="77" y="84" fill="#A7F3D0" font-size="9.5" font-family="'Fira Code', monospace" text-anchor="middle">
+            MESSAGE)
+          </text>
+        </g>
+
+        <!-- Connecting Arrow -->
+        <path d="M695 468 L730 468" stroke="#00FF88" stroke-width="2.5" marker-end="url(#m-green)"/>
+
+        <!-- Box 2: Firebase Cloud Messaging with Official Flame Logo -->
+        <g transform="translate(735, 420)">
+          <rect width="150" height="96" rx="18" fill="url(#card-grad-purple)" stroke="#A855F7" stroke-width="2.2" filter="drop-shadow(0 0 15px rgba(168,85,247,0.35))"/>
+          
+          <!-- Official Firebase 3D Flame Logo -->
+          <g transform="translate(62, 12)">
+            <path d="M4 25L13 4L18 13L22 7L27 25Z" fill="#FFA000"/>
+            <path d="M13 4L4 25L15 27L18 13Z" fill="#F57C00"/>
+            <path d="M27 25L22 7L18 13L20 27Z" fill="#FFCA28"/>
+          </g>
+
+          <text x="75" y="56" fill="#FFFFFF" font-size="11.5" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            FIREBASE CLOUD
+          </text>
+          <text x="75" y="72" fill="#FFFFFF" font-size="11.5" font-weight="bold" font-family="'Rajdhani', sans-serif" text-anchor="middle">
+            MESSAGING (FCM)
+          </text>
+        </g>
+
+        <!-- Caption Pill below FCM Path -->
+        <g transform="translate(585, 528)">
+          <rect width="250" height="36" rx="10" fill="#1A102E" stroke="#A855F7" stroke-width="1.4"/>
+          <text x="125" y="17" fill="#E9D5FF" font-size="10" font-weight="bold" text-anchor="middle">
+            ALERTS ARE USER-SPECIFIC
+          </text>
+          <text x="125" y="29" fill="#94A3B8" font-size="8.5" text-anchor="middle">
+            (Targeted via their unique DEVICE TOKEN)
+          </text>
+        </g>
+
+        <!-- Branching Connectors to FCM Notifications -->
+        <path d="M885 468 L915 468 L915 425 L940 425" stroke="#FFB800" stroke-width="2" marker-end="url(#m-amber)"/>
+        <path d="M885 468 L915 468 L915 505 L940 505" stroke="#FFB800" stroke-width="2" marker-end="url(#m-amber)"/>
+        <path d="M885 468 L915 468 L915 590 L940 590" stroke="#FFB800" stroke-width="2" marker-end="url(#m-amber)"/>
+
+        <!-- User 1 FCM Push Card -->
+        <g transform="translate(945, 405)">
+          <rect width="155" height="46" rx="10" fill="#241403" stroke="#FFB800" stroke-width="1.8" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.5))"/>
+          <text x="12" y="20" fill="#FBBF24" font-size="9" font-weight="bold">USER 1: FCM PUSH:</text>
+          <text x="12" y="34" fill="#FEF08A" font-size="8.5">RELIANCE alert</text>
+        </g>
+
+        <!-- User 2 FCM Push Card -->
+        <g transform="translate(945, 485)">
+          <rect width="155" height="46" rx="10" fill="#241403" stroke="#FFB800" stroke-width="1.8" filter="drop-shadow(0 4px 10px rgba(0,0,0,0.5))"/>
+          <text x="12" y="20" fill="#FBBF24" font-size="9" font-weight="bold">USER 2: FCM PUSH:</text>
+          <text x="12" y="34" fill="#FEF08A" font-size="8.5">TCS alert</text>
+        </g>
+
+        <!-- User N FCM Push Card -->
+        <g transform="translate(945, 570)">
+          <rect width="155" height="42" rx="10" fill="#241403" stroke="#FFB800" stroke-width="1.8"/>
+          <text x="77" y="25" fill="#FBBF24" font-size="9" font-weight="bold" text-anchor="middle">USER N: FCM PUSH</text>
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- REALISTIC 3D IPHONE 16 PRO LOCKSCREEN MOCKUP             -->
+        <!-- ======================================================== -->
+        <g transform="translate(1115, 380)">
+          <!-- Titanium Bezel Frame -->
+          <rect width="118" height="245" rx="24" fill="#1E293B" stroke="#64748B" stroke-width="3" filter="drop-shadow(0 15px 30px rgba(0,0,0,0.9))"/>
+          <!-- Inner Black Bezel -->
+          <rect width="110" height="237" rx="20" x="4" y="4" fill="#02040A"/>
+          <!-- OLED Nebula Wallpaper -->
+          <rect width="106" height="233" rx="18" x="6" y="6" fill="url(#phone-wallpaper)"/>
+
+          <!-- Dynamic Island Notch -->
+          <rect x="42" y="11" width="34" height="7" rx="3.5" fill="#000000"/>
+
+          <!-- Top Lock Icon -->
+          <circle cx="59" cy="30" r="4" fill="#FFFFFF" fill-opacity="0.9"/>
+          
+          <!-- Luminous Clock Display -->
+          <text x="59" y="55" fill="#FFFFFF" font-size="22" font-weight="bold" font-family="'Plus Jakarta Sans', sans-serif" text-anchor="middle">9:45</text>
+          <text x="59" y="68" fill="#CBD5E1" font-size="8" text-anchor="middle">Tuesday, July 22</text>
+
+          <!-- Push Notification Toast Banner (Glowing iOS Glass) -->
+          <g transform="translate(10, 88)">
+            <rect width="98" height="52" rx="10" fill="#FFFFFF" fill-opacity="0.95" filter="drop-shadow(0 6px 15px rgba(0,0,0,0.6))"/>
+            
+            <circle cx="16" cy="18" r="6" fill="#0284C7"/>
+            <text x="16" y="21" fill="#FFFFFF" font-size="7" font-weight="bold" text-anchor="middle">⚡</text>
+
+            <text x="27" y="16" fill="#0F172A" font-size="8" font-weight="800">USER 2:</text>
+            <text x="27" y="27" fill="#334155" font-size="7.5">FCM PUSH:</text>
+            <text x="12" y="42" fill="#0284C7" font-size="8" font-weight="bold">TCS alert (Target Hit)</text>
+          </g>
+
+          <!-- Flashlight and Camera Quick Buttons -->
+          <circle cx="25" cy="214" r="8" fill="#FFFFFF" fill-opacity="0.15"/>
+          <circle cx="93" cy="214" r="8" fill="#FFFFFF" fill-opacity="0.15"/>
+          
+          <!-- Home Gesture Bar -->
+          <rect x="38" y="232" width="42" height="2.5" rx="1.2" fill="#FFFFFF" fill-opacity="0.8"/>
+        </g>
+
+        <!-- Connector Arrow into Phone Mockup -->
+        <path d="M1100 508 L1115 508" stroke="#FFB800" stroke-width="2.5" marker-end="url(#m-amber)"/>
+
+        <!-- BOTTOM TECH CAPTION BANNER -->
+        <g transform="translate(45, 690)">
+          <rect width="1150" height="42" rx="14" fill="#041220" stroke="#00F5FF" stroke-width="1.5" filter="drop-shadow(0 0 15px rgba(0,245,255,0.25))"/>
+          <text x="575" y="26" fill="#38BDF8" font-size="12" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle">
+            ⚡ MULTI-TENANT ARCHITECTURE: INDIVIDUALIZED DEMAT SURVEILLANCE • ZERO DEVELOPER KEYS • INSTANT PRIVATE NOTIFICATIONS
+          </text>
+        </g>
+
+      </svg>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 1: FULL-STACK MARKET ENGINE (MATCHING VISUAL STYLE) -->
+    <!-- ======================================================== -->
+    <div id="content-engine" class="w-full overflow-x-auto flex justify-center py-2 relative z-10">
+      <svg width="1240" height="760" viewBox="0 0 1240 760" fill="none" xmlns="http://www.w3.org/2000/svg" class="max-w-full">
+        
+        <defs>
+          <!-- Dynamic Arrow Markers -->
+          <marker id="me-cyan" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#00F5FF" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="me-green" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#00FF88" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="me-amber" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#FFB800" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="me-purple" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#C084FC" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+          <marker id="me-blue" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M1 1L7 4.5L1 8" stroke="#38BDF8" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+          </marker>
+
+          <!-- Module Gradients -->
+          <linearGradient id="eng-grad-ingest" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#072238" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#02111E" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-state" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#140C2E" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#070414" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-quant" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#042618" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#01140C" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-ai" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#2A0826" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#120210" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-terminal" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0A1020" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#040710" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-mobile" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#120924" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#060310" stop-opacity="0.98"/>
+          </linearGradient>
+          <linearGradient id="eng-grad-broker" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#241204" stop-opacity="0.95"/>
+            <stop offset="100%" stop-color="#100802" stop-opacity="0.98"/>
+          </linearGradient>
+        </defs>
+
+        <!-- BACKGROUND LASER CIRCUIT TRACES -->
+        <g stroke="#00F5FF" stroke-width="1.8" fill="none" opacity="0.35">
+          <path d="M45 40 L180 40 L210 65" class="laser-line-cyan"/>
+          <path d="M230 360 L260 360" class="laser-line-cyan"/>
+          <path d="M435 360 L465 360" class="laser-line-cyan"/>
+          <path d="M700 240 L730 240" class="laser-line-cyan"/>
+          <path d="M700 480 L920 480" class="laser-line-cyan"/>
+          <path d="M890 200 L920 200" class="laser-line-cyan"/>
+          <circle cx="45" cy="40" r="4.5" fill="#00F5FF"/>
+          <circle cx="210" cy="65" r="4.5" fill="#00F5FF"/>
+          <circle cx="700" cy="480" r="4.5" fill="#00FF88"/>
+          <circle cx="920" cy="200" r="4.5" fill="#38BDF8"/>
+          <circle cx="920" cy="480" r="4.5" fill="#A855F7"/>
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- COLUMN 1: MARKET DATA INGESTION                         -->
+        <!-- ======================================================== -->
+        <g transform="translate(35, 50)">
+          <!-- Outer Card -->
+          <rect width="195" height="625" rx="20" fill="url(#eng-grad-ingest)" stroke="#00F5FF" stroke-width="2.2" filter="drop-shadow(0 0 25px rgba(0,245,255,0.25))"/>
+          
+          <!-- Tech Corner Accents -->
+          <path d="M12 25 L12 12 L25 12" stroke="#00F5FF" stroke-width="2" fill="none"/>
+          <path d="M183 25 L183 12 L170 12" stroke="#00F5FF" stroke-width="2" fill="none"/>
+          
+          <!-- Header -->
+          <circle cx="28" cy="30" r="12" fill="#00F5FF" fill-opacity="0.15"/>
+          <text x="28" y="34" fill="#00F5FF" font-size="12" font-weight="bold" text-anchor="middle">⚡</text>
+          <text x="46" y="27" fill="#00F5FF" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">1. INGESTION</text>
+          <text x="46" y="39" fill="#94A3B8" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">MULTI-STREAM PIPELINE</text>
+          
+          <!-- Card 1: NSE Bhavcopy Scraper -->
+          <g transform="translate(12, 55)">
+            <rect width="171" height="100" rx="12" fill="#031F14" stroke="#00FF88" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#00FF88" font-size="10" font-weight="bold">📊 NSE Bhavcopy EOD</text>
+            <text x="12" y="38" fill="#CBD5E1" font-size="8.5">• 4-Day Rolling History</text>
+            <text x="12" y="54" fill="#CBD5E1" font-size="8.5">• Delivery % Calculation</text>
+            <text x="12" y="70" fill="#CBD5E1" font-size="8.5">• 100% Free Cloud Cron (18:30)</text>
+            <rect x="10" y="78" width="151" height="16" rx="4" fill="#064E3B" fill-opacity="0.8"/>
+            <text x="85" y="89" fill="#34D399" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Wyckoff VSA Absorption</text>
+          </g>
+
+          <!-- Card 2: Broker WebSocket Stream -->
+          <g transform="translate(12, 165)">
+            <rect width="171" height="100" rx="12" fill="#07192C" stroke="#38BDF8" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#38BDF8" font-size="10" font-weight="bold">🌐 Multi-Broker Ticks</text>
+            <text x="12" y="38" fill="#CBD5E1" font-size="8.5">• ICICI Breeze Connect</text>
+            <text x="12" y="54" fill="#CBD5E1" font-size="8.5">• Dhan HQ WebSocket v2</text>
+            <text x="12" y="70" fill="#CBD5E1" font-size="8.5">• 5-Sec Polling Fallback</text>
+            <rect x="10" y="78" width="151" height="16" rx="4" fill="#0C4A6E" fill-opacity="0.8"/>
+            <text x="85" y="89" fill="#7DD3FC" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Sub-Second Live Ingestion</text>
+          </g>
+
+          <!-- Card 3: Derivatives & PCR -->
+          <g transform="translate(12, 275)">
+            <rect width="171" height="100" rx="12" fill="#241402" stroke="#FFB800" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#FBBF24" font-size="10" font-weight="bold">📈 Derivatives & PCR</text>
+            <text x="12" y="38" fill="#CBD5E1" font-size="8.5">• Put-Call Ratio (PCR)</text>
+            <text x="12" y="54" fill="#CBD5E1" font-size="8.5">• Max Pain Strike Price</text>
+            <text x="12" y="70" fill="#CBD5E1" font-size="8.5">• Gamma Exposure Shifts</text>
+            <rect x="10" y="78" width="151" height="16" rx="4" fill="#78350F" fill-opacity="0.8"/>
+            <text x="85" y="89" fill="#FDE68A" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Delta-OI Velocity Filter</text>
+          </g>
+
+          <!-- Card 4: Yahoo Finance & BSE -->
+          <g transform="translate(12, 385)">
+            <rect width="171" height="100" rx="12" fill="#1A0A26" stroke="#C084FC" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#C084FC" font-size="10" font-weight="bold">⏱️ Multi-Timeframe OHLCV</text>
+            <text x="12" y="38" fill="#CBD5E1" font-size="8.5">• 5m, 15m, Daily Bars</text>
+            <text x="12" y="54" fill="#CBD5E1" font-size="8.5">• Dual-Host Keep-Alive Pool</text>
+            <text x="12" y="70" fill="#CBD5E1" font-size="8.5">• BSE Scrip Master Resolver</text>
+            <rect x="10" y="78" width="151" height="16" rx="4" fill="#581C87" fill-opacity="0.8"/>
+            <text x="85" y="89" fill="#E9D5FF" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Resilient Failover Mesh</text>
+          </g>
+
+          <!-- Card 5: worker.py Tick Worker -->
+          <g transform="translate(12, 495)">
+            <rect width="171" height="115" rx="12" fill="#041420" stroke="#00F5FF" stroke-width="1.4"/>
+            <text x="12" y="22" fill="#38BDF8" font-size="10.5" font-weight="bold">🔄 worker.py Daemon</text>
+            <text x="12" y="42" fill="#6EE7B7" font-size="8.5">• Flushes RAM every 2.0s</text>
+            <text x="12" y="58" fill="#CBD5E1" font-size="8.5">• Heartbeat Watchdog</text>
+            <text x="12" y="74" fill="#CBD5E1" font-size="8.5">• Auto Token Re-Auth</text>
+            <rect x="10" y="86" width="151" height="18" rx="4" fill="#082F49"/>
+            <text x="85" y="98" fill="#00F5FF" font-size="8" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Process Supervisor</text>
+          </g>
+        </g>
+
+        <!-- Connector Arrow: Ingestion -> State Core -->
+        <path d="M230 360 L258 360" stroke="#00F5FF" stroke-width="2.8" marker-end="url(#me-cyan)"/>
+
+        <!-- ======================================================== -->
+        <!-- COLUMN 2: DUAL-TIER ZERO-REDIS STATE CORE               -->
+        <!-- ======================================================== -->
+        <g transform="translate(260, 50)">
+          <!-- Outer Card -->
+          <rect width="175" height="625" rx="20" fill="url(#eng-grad-state)" stroke="#818CF8" stroke-width="2" filter="drop-shadow(0 0 25px rgba(129,140,248,0.25))"/>
+          
+          <!-- Header -->
+          <circle cx="26" cy="30" r="12" fill="#818CF8" fill-opacity="0.15"/>
+          <text x="26" y="34" fill="#A5B4FC" font-size="12" font-weight="bold" text-anchor="middle">💾</text>
+          <text x="44" y="27" fill="#A5B4FC" font-size="12.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">2. DUAL STATE</text>
+          <text x="44" y="39" fill="#94A3B8" font-size="8" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">ZERO-REDIS CACHE ARCH</text>
+
+          <!-- Sub-Card 1: Tier 1 Process RAM -->
+          <g transform="translate(10, 55)">
+            <rect width="155" height="135" rx="12" fill="#021C1C" stroke="#00F5FF" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#00F5FF" font-size="9.5" font-weight="bold">⚡ TIER 1: PROCESS RAM</text>
+            <!-- Big Latency Badge -->
+            <rect x="12" y="28" width="131" height="32" rx="8" fill="#00F5FF" fill-opacity="0.15" stroke="#00F5FF" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="77" y="48" fill="#00F5FF" font-size="14" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">&lt; 0.01 ms</text>
+            <text x="77" y="57" fill="#A5F3FC" font-size="7" text-anchor="middle">Ultra-Low In-Memory Heap</text>
+            
+            <text x="12" y="78" fill="#CBD5E1" font-size="8.5">• 2,000 Symbol Capacity</text>
+            <text x="12" y="94" fill="#CBD5E1" font-size="8.5">• Per-Pod Volatile Memory</text>
+            <text x="12" y="110" fill="#6EE7B7" font-size="8.5">• Zero Serialization Lag</text>
+            <text x="12" y="125" fill="#38BDF8" font-size="8">• Thread-Safe Singleton</text>
+          </g>
+
+          <!-- Arrow between Tier 1 & Tier 2 -->
+          <path d="M87 190 L87 205" stroke="#C084FC" stroke-width="2" marker-end="url(#me-purple)"/>
+
+          <!-- Sub-Card 2: Tier 2 UNLOGGED Table -->
+          <g transform="translate(10, 208)">
+            <rect width="155" height="135" rx="12" fill="#180A28" stroke="#C084FC" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#C084FC" font-size="9.5" font-weight="bold">⚡ TIER 2: DB MEMORY</text>
+            <!-- Big Latency Badge -->
+            <rect x="12" y="28" width="131" height="32" rx="8" fill="#C084FC" fill-opacity="0.15" stroke="#C084FC" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="77" y="48" fill="#34D399" font-size="14" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">&lt; 0.80 ms</text>
+            <text x="77" y="57" fill="#E9D5FF" font-size="7" text-anchor="middle">market_memory_cache</text>
+            
+            <text x="12" y="78" fill="#CBD5E1" font-size="8.5">• UNLOGGED PostgreSQL</text>
+            <text x="12" y="94" fill="#FDE68A" font-size="8.5">• Bypasses WAL Disk I/O</text>
+            <text x="12" y="110" fill="#CBD5E1" font-size="8.5">• Cross-Pod Multi-Node Sync</text>
+            <text x="12" y="125" fill="#C084FC" font-size="8">• Zero Redis Cloud Bill</text>
+          </g>
+
+          <!-- Sub-Card 3: Persistent Supabase DB -->
+          <g transform="translate(10, 355)">
+            <rect width="155" height="255" rx="12" fill="#221203" stroke="#FFB800" stroke-width="1.5"/>
+            <text x="12" y="22" fill="#FBBF24" font-size="10" font-weight="bold">🗄️ SUPABASE POSTGRES</text>
+            <text x="12" y="40" fill="#FDE68A" font-size="8.5">• PgBouncer Pool (Port 6543)</text>
+            <text x="12" y="56" fill="#34D399" font-size="8" font-family="'Fira Code', monospace">• pg_try_advisory_lock()</text>
+            <text x="12" y="72" fill="#7DD3FC" font-size="8" font-family="'Fira Code', monospace">• InitPlan (auth.uid()) RLS</text>
+            
+            <line x1="12" y1="82" x2="143" y2="82" stroke="#FFB800" stroke-width="1" stroke-opacity="0.3"/>
+            
+            <text x="12" y="100" fill="#CBD5E1" font-size="8">• profiles (Settings &amp; T&amp;C)</text>
+            <text x="12" y="118" fill="#CBD5E1" font-size="8">• user_credentials (AES-256)</text>
+            <text x="12" y="136" fill="#CBD5E1" font-size="8">• watchlists (ISIN Dedup)</text>
+            <text x="12" y="154" fill="#CBD5E1" font-size="8">• stok_alerts (Audit Log)</text>
+            <text x="12" y="172" fill="#CBD5E1" font-size="8">• fii_dii_flows (Net Flows)</text>
+            <text x="12" y="190" fill="#CBD5E1" font-size="8">• user_orders (Ledger)</text>
+            
+            <rect x="8" y="210" width="139" height="32" rx="8" fill="#78350F" fill-opacity="0.7" stroke="#FFB800" stroke-width="1"/>
+            <text x="77" y="224" fill="#FEF3C7" font-size="8" font-weight="bold" text-anchor="middle">PURE MASTER APP</text>
+            <text x="77" y="236" fill="#FDE68A" font-size="7" text-anchor="middle">Zero Server Developer Keys</text>
+          </g>
+        </g>
+
+        <!-- Connector Arrow: State Core -> Quant Brain -->
+        <path d="M435 360 L463 360" stroke="#00FF88" stroke-width="2.8" marker-end="url(#me-green)"/>
+
+        <!-- ======================================================== -->
+        <!-- COLUMN 3: 4-PILLAR QUANTITATIVE CONFLUENCE CORE         -->
+        <!-- ======================================================== -->
+        <g transform="translate(465, 50)">
+          <!-- Outer Card -->
+          <rect width="235" height="625" rx="20" fill="url(#eng-grad-quant)" stroke="#00FF88" stroke-width="2.2" filter="drop-shadow(0 0 25px rgba(0,255,136,0.3))"/>
+          
+          <!-- Tech Corner Accents -->
+          <path d="M12 25 L12 12 L25 12" stroke="#00FF88" stroke-width="2" fill="none"/>
+          <path d="M223 25 L223 12 L210 12" stroke="#00FF88" stroke-width="2" fill="none"/>
+
+          <!-- Header -->
+          <circle cx="28" cy="30" r="12" fill="#00FF88" fill-opacity="0.15"/>
+          <text x="28" y="34" fill="#00FF88" font-size="12" font-weight="bold" text-anchor="middle">🧠</text>
+          <text x="46" y="27" fill="#00FF88" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">3. 4-PILLAR CONFLUENCE</text>
+          <text x="46" y="39" fill="#6EE7B7" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">1,417 LOC VECTORIZED MATH</text>
+
+          <!-- Sub-Card 1: Camarilla & VWAP -->
+          <g transform="translate(12, 55)">
+            <rect width="211" height="135" rx="12" fill="#052818" stroke="#34D399" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#34D399" font-size="10" font-weight="bold">Pillars 1 &amp; 2: Price &amp; Volume Anchor</text>
+            
+            <rect x="10" y="28" width="191" height="46" rx="6" fill="#021C12" stroke="#00FF88" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="16" y="42" fill="#FFFFFF" font-size="8.5" font-weight="bold">Camarilla Equation (H4/H3/L3/L4)</text>
+            <text x="16" y="56" fill="#FDE68A" font-size="8" font-family="'Fira Code', monospace">H4 = C + R × 1.1 / 2 (Breakout)</text>
+            <text x="16" y="68" fill="#A7F3D0" font-size="8" font-family="'Fira Code', monospace">L3 = C - R × 1.1 / 4 (Mean Rev)</text>
+
+            <rect x="10" y="80" width="191" height="46" rx="6" fill="#041E26" stroke="#38BDF8" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="16" y="94" fill="#FFFFFF" font-size="8.5" font-weight="bold">VWAP Dispersion Bands (±1σ, ±2σ)</text>
+            <text x="16" y="108" fill="#7DD3FC" font-size="8">Vectorized NumPy Rolling Arrays</text>
+            <text x="16" y="120" fill="#BAE6FD" font-size="8">Intraday Mean-Reversion Bands</text>
+          </g>
+
+          <!-- Sub-Card 2: TTM Squeeze & RVOL -->
+          <g transform="translate(12, 198)">
+            <rect width="211" height="125" rx="12" fill="#051C26" stroke="#38BDF8" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#38BDF8" font-size="10" font-weight="bold">Pillars 3 &amp; 4: Momentum &amp; RVOL</text>
+            
+            <rect x="10" y="28" width="191" height="42" rx="6" fill="#02141E" stroke="#38BDF8" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="16" y="42" fill="#FFFFFF" font-size="8.5" font-weight="bold">John Carter TTM Squeeze</text>
+            <text x="16" y="55" fill="#BAE6FD" font-size="8">Bollinger Bands inside Keltner Channels</text>
+            <text x="16" y="66" fill="#38BDF8" font-size="7.5" font-family="'Fira Code', monospace">Momentum Histogram Trigger</text>
+
+            <rect x="10" y="75" width="191" height="42" rx="6" fill="#241402" stroke="#FFB800" stroke-width="1" stroke-opacity="0.4"/>
+            <text x="16" y="89" fill="#FFFFFF" font-size="8.5" font-weight="bold">Midday RVOL 3.0x Hardening</text>
+            <text x="16" y="102" fill="#FDE68A" font-size="8">11:45-13:15 IST Institutional Hurdle</text>
+            <text x="16" y="113" fill="#FED7AA" font-size="7.5">Suppresses Fake Retail Breakouts</text>
+          </g>
+
+          <!-- Sub-Card 3: 6 Hard Institutional Vetoes -->
+          <g transform="translate(12, 331)">
+            <rect width="211" height="135" rx="12" fill="#260610" stroke="#F43F5E" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#FB7185" font-size="10" font-weight="bold">🛑 6 INSTITUTIONAL VETOES</text>
+            
+            <text x="12" y="38" fill="#FECDD3" font-size="8">• 11:30-13:30 Lunch Trap Blocker</text>
+            <text x="12" y="54" fill="#FECDD3" font-size="8">• 200 EMA Macro Trend Gatekeeper</text>
+            <text x="12" y="70" fill="#FECDD3" font-size="8">• Market Breadth ADR &lt; 0.60 Veto</text>
+            <text x="12" y="86" fill="#FECDD3" font-size="8">• VWAP +2σ Exhaustion Trap Veto</text>
+            <text x="12" y="102" fill="#FECDD3" font-size="8">• Camarilla Gap-Up Fade Veto</text>
+            <text x="12" y="118" fill="#FECDD3" font-size="8">• Wyckoff Supply Shock Override</text>
+            
+            <rect x="10" y="122" width="191" height="8" rx="2" fill="#F43F5E" fill-opacity="0.3"/>
+          </g>
+
+          <!-- Sub-Card 4: 5-State Demat Guardian -->
+          <g transform="translate(12, 474)">
+            <rect width="211" height="136" rx="12" fill="#221403" stroke="#FFB800" stroke-width="1.5"/>
+            <text x="12" y="20" fill="#FBBF24" font-size="10" font-weight="bold">🛡️ 5-STATE DEMAT GUARDIAN</text>
+            
+            <text x="12" y="38" fill="#FB7185" font-size="8" font-weight="bold">🔴 CAPITAL_PRESERVATION (L4 exit)</text>
+            <text x="12" y="54" fill="#FBBF24" font-size="8" font-weight="bold">🟡 DEFENSIVE_TRIM (50% at H4)</text>
+            <text x="12" y="70" fill="#34D399" font-size="8" font-weight="bold">🟢 TRAILING_SL (Chandelier ATR)</text>
+            <text x="12" y="86" fill="#38BDF8" font-size="8" font-weight="bold">🔵 ACCUMULATE_WATCH (Winners Only)</text>
+            <text x="12" y="102" fill="#CBD5E1" font-size="8">⚪ HOLD_STEADY (Healthy Trend)</text>
+
+            <rect x="8" y="110" width="195" height="20" rx="6" fill="#78350F" fill-opacity="0.8"/>
+            <text x="105" y="123" fill="#FEF3C7" font-size="8" font-weight="bold" text-anchor="middle">STRICTLY BANS AVERAGING DOWN</text>
+          </g>
+        </g>
+
+        <!-- Connector Arrow: Quant Brain -> Gemini AI -->
+        <path d="M700 240 L728 240" stroke="#C084FC" stroke-width="2.8" marker-end="url(#me-purple)"/>
+
+        <!-- ======================================================== -->
+        <!-- COLUMN 4: GEMINI 3.5 AI QUALITATIVE SENTINEL            -->
+        <!-- ======================================================== -->
+        <g transform="translate(730, 50)">
+          <!-- Outer Card -->
+          <rect width="160" height="625" rx="20" fill="url(#eng-grad-ai)" stroke="#C084FC" stroke-width="2" filter="drop-shadow(0 0 25px rgba(192,132,252,0.25))"/>
+          
+          <!-- Header -->
+          <circle cx="24" cy="30" r="12" fill="#C084FC" fill-opacity="0.15"/>
+          <text x="24" y="34" fill="#E879F9" font-size="12" font-weight="bold" text-anchor="middle">✨</text>
+          <text x="42" y="27" fill="#E879F9" font-size="12" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">4. GEMINI 3.5</text>
+          <text x="42" y="39" fill="#CBD5E1" font-size="7.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">QUALITATIVE REASONING</text>
+
+          <!-- Sub-Card 1: Mathematical Sovereignty -->
+          <g transform="translate(10, 55)">
+            <rect width="140" height="160" rx="12" fill="#1A061C" stroke="#E879F9" stroke-width="1.4"/>
+            <text x="10" y="20" fill="#E879F9" font-size="9" font-weight="bold">👑 SOVEREIGN MANDATE</text>
+            <text x="10" y="36" fill="#FFFFFF" font-size="8.5" font-weight="bold">Zero Math Hallucination</text>
+            
+            <text x="10" y="54" fill="#CBD5E1" font-size="8">• Python locks all ₹ levels</text>
+            <text x="10" y="70" fill="#CBD5E1" font-size="8">• AI only writes rationale</text>
+            <text x="10" y="86" fill="#FDE68A" font-size="8">• Strict SEBI compliance</text>
+            <text x="10" y="102" fill="#CBD5E1" font-size="8">• Non-advisory disclaimers</text>
+            
+            <rect x="8" y="114" width="124" height="36" rx="6" fill="#701A75" fill-opacity="0.6"/>
+            <text x="70" y="128" fill="#F5D0FE" font-size="7.5" font-weight="bold" text-anchor="middle">MATHEMATICAL</text>
+            <text x="70" y="140" fill="#F5D0FE" font-size="7.5" font-weight="bold" text-anchor="middle">SOVEREIGNTY LOCKED</text>
+          </g>
+
+          <!-- Sub-Card 2: Contextual Synthesis -->
+          <g transform="translate(10, 225)">
+            <rect width="140" height="175" rx="12" fill="#100620" stroke="#A855F7" stroke-width="1.4"/>
+            <text x="10" y="20" fill="#C084FC" font-size="9" font-weight="bold">🧠 SYNTHESIS SENTINEL</text>
+            <text x="10" y="36" fill="#FFFFFF" font-size="8.5" font-weight="bold">Macro &amp; News Analysis</text>
+            
+            <text x="10" y="54" fill="#CBD5E1" font-size="8">• FII/DII institutional flow</text>
+            <text x="10" y="70" fill="#CBD5E1" font-size="8">• Sector rotation tailwinds</text>
+            <text x="10" y="86" fill="#CBD5E1" font-size="8">• Earnings blackout check</text>
+            <text x="10" y="102" fill="#CBD5E1" font-size="8">• Structural volume thesis</text>
+            <text x="10" y="118" fill="#CBD5E1" font-size="8">• Geopolitical risk filters</text>
+            
+            <rect x="8" y="130" width="124" height="34" rx="6" fill="#3B0764" fill-opacity="0.8"/>
+            <text x="70" y="144" fill="#E9D5FF" font-size="7.5" font-weight="bold" text-anchor="middle">REASONING PROMPT</text>
+            <text x="70" y="156" fill="#D8B4FE" font-size="7" text-anchor="middle">Structured Context Vector</text>
+          </g>
+
+          <!-- Sub-Card 3: Security & Quota Engine -->
+          <g transform="translate(10, 410)">
+            <rect width="140" height="200" rx="12" fill="#180414" stroke="#F43F5E" stroke-width="1.4"/>
+            <text x="10" y="20" fill="#FB7185" font-size="9" font-weight="bold">🛡️ SECURITY &amp; QUOTA</text>
+            
+            <text x="10" y="38" fill="#FDE68A" font-size="7.5" font-family="'Fira Code', monospace">&lt;untrusted_external_news&gt;</text>
+            <text x="10" y="54" fill="#CBD5E1" font-size="8">• Prompt injection isolation</text>
+            
+            <text x="10" y="74" fill="#FFFFFF" font-size="8.5" font-weight="bold">Token Bucket Limiter</text>
+            <text x="10" y="90" fill="#A7F3D0" font-size="8" font-family="'Fira Code', monospace">Max 15 calls / scan run</text>
+            
+            <text x="10" y="110" fill="#CBD5E1" font-size="8">• Flash Lite fallback chain</text>
+            <text x="10" y="126" fill="#CBD5E1" font-size="8">• Free-Tier Hardening</text>
+            <text x="10" y="142" fill="#CBD5E1" font-size="8">• 429 Backoff Recovery</text>
+            
+            <rect x="8" y="156" width="124" height="34" rx="6" fill="#881337" fill-opacity="0.8"/>
+            <text x="70" y="170" fill="#FECDD3" font-size="7.5" font-weight="bold" text-anchor="middle">SEBI COMPLIANT</text>
+            <text x="70" y="182" fill="#FDA4AF" font-size="7" text-anchor="middle">Audit Trail Logged</text>
+          </g>
+        </g>
+
+        <!-- Connector Arrows: AI & Quant to Frontends -->
+        <path d="M890 200 L918 200" stroke="#38BDF8" stroke-width="2.8" marker-end="url(#me-blue)"/>
+        <path d="M700 520 L918 520" stroke="#00FF88" stroke-width="2.8" marker-end="url(#me-green)"/>
+
+        <!-- ======================================================== -->
+        <!-- COLUMN 5: REALISTIC FRONTENDS & SEBI EXECUTION GATEWAY   -->
+        <!-- ======================================================== -->
+        <g transform="translate(920, 50)">
+          
+          <!-- ====================================================== -->
+          <!-- MOCKUP 1: REALISTIC NEXT.JS 14 WEB TRADING TERMINAL    -->
+          <!-- ====================================================== -->
+          <g transform="translate(0, 0)">
+            <!-- Terminal Outer Window Frame -->
+            <rect width="285" height="305" rx="16" fill="url(#eng-grad-terminal)" stroke="#38BDF8" stroke-width="2" filter="drop-shadow(0 0 25px rgba(56,189,248,0.3))"/>
+            
+            <!-- macOS Traffic Light Header Bar -->
+            <path d="M0 16 C0 7.16 7.16 0 16 0 L269 0 C277.84 0 285 7.16 285 16 L285 32 L0 32 Z" fill="#0F172A"/>
+            <circle cx="16" cy="16" r="4.5" fill="#EF4444"/>
+            <circle cx="28" cy="16" r="4.5" fill="#F59E0B"/>
+            <circle cx="40" cy="16" r="4.5" fill="#10B981"/>
+            <text x="142" y="20" fill="#94A3B8" font-size="9" font-family="'Fira Code', monospace" text-anchor="middle">StokVigil Terminal — RELIANCE.NS</text>
+            <rect x="235" y="8" width="40" height="16" rx="4" fill="#064E3B"/>
+            <text x="255" y="19" fill="#34D399" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">● LIVE</text>
+            
+            <!-- Ticker & Live Confluence Banner -->
+            <g transform="translate(10, 38)">
+              <text x="4" y="16" fill="#FFFFFF" font-size="13" font-weight="bold">RELIANCE</text>
+              <text x="80" y="16" fill="#34D399" font-size="12" font-family="'Fira Code', monospace" font-weight="bold">₹2,945.50 ▲ +2.45%</text>
+              <rect x="180" y="3" width="85" height="18" rx="6" fill="#065F46"/>
+              <text x="222" y="15" fill="#6EE7B7" font-size="7.5" font-weight="bold" text-anchor="middle">CONF: 94% [BULL]</text>
+            </g>
+
+            <!-- Candlestick Chart Area Mockup -->
+            <g transform="translate(10, 68)">
+              <rect width="265" height="142" rx="10" fill="#070C16" stroke="#1E293B" stroke-width="1"/>
+              
+              <!-- Subtle Background Chart Grid Lines -->
+              <line x1="10" y1="35" x2="255" y2="35" stroke="#1E293B" stroke-width="0.8" stroke-dasharray="3 3"/>
+              <line x1="10" y1="70" x2="255" y2="70" stroke="#1E293B" stroke-width="0.8" stroke-dasharray="3 3"/>
+              <line x1="10" y1="105" x2="255" y2="105" stroke="#1E293B" stroke-width="0.8" stroke-dasharray="3 3"/>
+
+              <!-- Camarilla H4 Resistance Line (Gold Dashed) -->
+              <line x1="10" y1="42" x2="255" y2="42" stroke="#FFB800" stroke-width="1.8" stroke-dasharray="4 3"/>
+              <rect x="145" y="30" width="105" height="14" rx="4" fill="#78350F" fill-opacity="0.9"/>
+              <text x="197" y="40" fill="#FDE68A" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Camarilla H4: ₹2,942.00 [BREAKOUT]</text>
+
+              <!-- VWAP Dispersion Line (Cyan Dotted) -->
+              <line x1="10" y1="92" x2="255" y2="92" stroke="#00F5FF" stroke-width="1.6" stroke-dasharray="2 3"/>
+              <rect x="15" y="96" width="95" height="14" rx="4" fill="#0C4A6E" fill-opacity="0.9"/>
+              <text x="62" y="106" fill="#7DD3FC" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">VWAP: ₹2,918.50 (+1.8σ)</text>
+
+              <!-- Realistic Candlesticks -->
+              <!-- Candle 1: 9:15 Green -->
+              <line x1="30" y1="85" x2="30" y2="120" stroke="#10B981" stroke-width="1.2"/>
+              <rect x="25" y="95" width="10" height="20" rx="1.5" fill="#10B981"/>
+
+              <!-- Candle 2: 9:30 Red Pullback -->
+              <line x1="60" y1="90" x2="60" y2="115" stroke="#EF4444" stroke-width="1.2"/>
+              <rect x="55" y="94" width="10" height="16" rx="1.5" fill="#EF4444"/>
+
+              <!-- Candle 3: 9:45 Green VWAP Bounce -->
+              <line x1="95" y1="72" x2="95" y2="100" stroke="#10B981" stroke-width="1.2"/>
+              <rect x="90" y="80" width="10" height="18" rx="1.5" fill="#10B981"/>
+
+              <!-- Candle 4: 10:00 Green Momentum -->
+              <line x1="135" y1="52" x2="135" y2="85" stroke="#10B981" stroke-width="1.2"/>
+              <rect x="130" y="58" width="10" height="24" rx="1.5" fill="#10B981"/>
+
+              <!-- Candle 5: 10:15 Massive H4 Breakout Candle -->
+              <line x1="180" y1="28" x2="180" y2="60" stroke="#00FF88" stroke-width="1.8"/>
+              <rect x="174" y="32" width="12" height="25" rx="2" fill="#00FF88" filter="drop-shadow(0 0 8px rgba(0,255,136,0.8))"/>
+
+              <!-- Breakout Callout Badge -->
+              <rect x="195" y="60" width="60" height="18" rx="4" fill="#065F46" stroke="#00FF88" stroke-width="1"/>
+              <text x="225" y="72" fill="#34D399" font-size="7.5" font-weight="bold" text-anchor="middle">RVOL 3.4x 🚀</text>
+            </g>
+
+            <!-- Interactive Terminal Execution Footer -->
+            <g transform="translate(10, 218)">
+              <!-- Confluence Pills -->
+              <rect x="4" y="0" width="75" height="16" rx="4" fill="#0F291E" stroke="#10B981" stroke-width="0.8"/>
+              <text x="41" y="11" fill="#34D399" font-size="7" font-weight="bold" text-anchor="middle">Camarilla H4 ✓</text>
+              
+              <rect x="85" y="0" width="85" height="16" rx="4" fill="#0C2438" stroke="#38BDF8" stroke-width="0.8"/>
+              <text x="127" y="11" fill="#7DD3FC" font-size="7" font-weight="bold" text-anchor="middle">VWAP Dispersion ✓</text>
+              
+              <rect x="176" y="0" width="85" height="16" rx="4" fill="#241402" stroke="#FFB800" stroke-width="0.8"/>
+              <text x="218" y="11" fill="#FDE68A" font-size="7" font-weight="bold" text-anchor="middle">TTM Squeeze ON ✓</text>
+
+              <!-- Glowing 1-Click SEBI Order Button -->
+              <g transform="translate(4, 24)">
+                <rect width="257" height="38" rx="10" fill="url(#me-green)" stroke="#00FF88" stroke-width="2" filter="drop-shadow(0 0 15px rgba(0,255,136,0.6))" fill-opacity="0.2"/>
+                <text x="128" y="20" fill="#00FF88" font-size="11" font-weight="bold" font-family="'Rajdhani', sans-serif" tracking-wider uppercase text-anchor="middle">
+                  ⚡ 1-CLICK SEBI SL-LIMIT ORDER [₹2,946.00]
+                </text>
+                <text x="128" y="32" fill="#A7F3D0" font-size="7.5" font-family="'Fira Code', monospace" text-anchor="middle">
+                  Target: ₹2,975 • Stop-Loss: ₹2,932 • Tick: ₹0.05
+                </text>
+              </g>
+            </g>
+          </g>
+
+          <!-- ====================================================== -->
+          <!-- MOCKUP 2: FLUTTER MOBILE APP + SEBI BROKER GATEWAY     -->
+          <!-- ====================================================== -->
+          <g transform="translate(0, 318)">
+            
+            <!-- Left Sub-Card: Flutter Mobile Screen Mockup -->
+            <g transform="translate(0, 0)">
+              <rect width="138" height="297" rx="16" fill="url(#eng-grad-mobile)" stroke="#A855F7" stroke-width="1.8" filter="drop-shadow(0 0 20px rgba(168,85,247,0.25))"/>
+              
+              <!-- Dynamic Island -->
+              <rect x="52" y="8" width="34" height="6" rx="3" fill="#000000"/>
+              
+              <!-- Mobile Header -->
+              <text x="12" y="26" fill="#C084FC" font-size="9" font-weight="bold">StokVigil Mobile</text>
+              <rect x="96" y="16" width="30" height="12" rx="3" fill="#581C87"/>
+              <text x="111" y="25" fill="#E9D5FF" font-size="6.5" font-weight="bold" text-anchor="middle">Flutter</text>
+              
+              <!-- Watchlist Item 1: TCS L3 Bounce -->
+              <g transform="translate(8, 36)">
+                <rect width="122" height="52" rx="8" fill="#1C0D30" stroke="#C084FC" stroke-width="1"/>
+                <text x="8" y="16" fill="#FFFFFF" font-size="8.5" font-weight="bold">TCS.NS</text>
+                <text x="56" y="16" fill="#34D399" font-size="8" font-family="'Fira Code', monospace">₹4,185.00 ▲</text>
+                <text x="8" y="30" fill="#CBD5E1" font-size="7.5">Camarilla L3 Bounce</text>
+                <rect x="8" y="36" width="106" height="12" rx="3" fill="#065F46"/>
+                <text x="61" y="44" fill="#34D399" font-size="6.5" font-weight="bold" text-anchor="middle">CONF: 88% STRONG BULL</text>
+              </g>
+
+              <!-- Watchlist Item 2: INFY VWAP Retest -->
+              <g transform="translate(8, 94)">
+                <rect width="122" height="52" rx="8" fill="#150824" stroke="#818CF8" stroke-width="1"/>
+                <text x="8" y="16" fill="#FFFFFF" font-size="8.5" font-weight="bold">INFY.NS</text>
+                <text x="56" y="16" fill="#FBBF24" font-size="8" font-family="'Fira Code', monospace">₹1,820.00 ▼</text>
+                <text x="8" y="30" fill="#CBD5E1" font-size="7.5">VWAP Mean Retest</text>
+                <rect x="8" y="36" width="106" height="12" rx="3" fill="#78350F"/>
+                <text x="61" y="44" fill="#FDE68A" font-size="6.5" font-weight="bold" text-anchor="middle">CONF: 76% ACCUMULATE</text>
+              </g>
+
+              <!-- Demat Portfolio Risk Guardian Card -->
+              <g transform="translate(8, 152)">
+                <rect width="122" height="64" rx="8" fill="#042018" stroke="#00FF88" stroke-width="1"/>
+                <text x="8" y="14" fill="#00FF88" font-size="7.5" font-weight="bold">DEMAT RISK GUARDIAN</text>
+                <text x="8" y="27" fill="#CBD5E1" font-size="7">ISIN: INE002A01018</text>
+                <rect x="8" y="33" width="106" height="15" rx="4" fill="#064E3B"/>
+                <text x="61" y="44" fill="#6EE7B7" font-size="7" font-weight="bold" text-anchor="middle">🟢 HOLD_STEADY</text>
+                <text x="8" y="58" fill="#A7F3D0" font-size="6.5">Chandelier ATR Active</text>
+              </g>
+
+              <!-- Mobile Quick Order Button -->
+              <g transform="translate(8, 222)">
+                <rect width="122" height="28" rx="8" fill="#581C87" stroke="#C084FC" stroke-width="1.2"/>
+                <text x="61" y="18" fill="#F5D0FE" font-size="8" font-weight="bold" text-anchor="middle">⚡ Quick SL-L Order</text>
+              </g>
+            </g>
+
+            <!-- Right Sub-Card: SEBI Multi-Broker Order Routing Gateway -->
+            <g transform="translate(146, 0)">
+              <rect width="139" height="297" rx="16" fill="url(#eng-grad-broker)" stroke="#FB923C" stroke-width="1.8" filter="drop-shadow(0 0 20px rgba(251,146,60,0.25))"/>
+              
+              <text x="12" y="24" fill="#FB923C" font-size="10" font-weight="bold">🏛️ SEBI GATEWAY</text>
+              
+              <!-- Pre-Trade Safeguards Box -->
+              <g transform="translate(8, 36)">
+                <rect width="123" height="98" rx="8" fill="#180A04" stroke="#FB923C" stroke-width="1"/>
+                <text x="8" y="16" fill="#FDBA74" font-size="8" font-weight="bold">Pre-Trade Validation</text>
+                <text x="8" y="32" fill="#34D399" font-size="7.5">✓ SL-Limit Mandatory</text>
+                <text x="8" y="48" fill="#34D399" font-size="7.5">✓ Tick Snapping:</text>
+                <text x="16" y="60" fill="#FDE68A" font-size="7" font-family="'Fira Code', monospace">₹0.05 / ₹0.01 Rule</text>
+                <text x="8" y="74" fill="#34D399" font-size="7.5">✓ Circuit Freeze Check</text>
+                <text x="8" y="88" fill="#38BDF8" font-size="7">✓ Idempotency Lock</text>
+              </g>
+
+              <!-- Broker Connectors Box -->
+              <g transform="translate(8, 140)">
+                <rect width="123" height="72" rx="8" fill="#0C1B30" stroke="#38BDF8" stroke-width="1"/>
+                <text x="8" y="16" fill="#38BDF8" font-size="8" font-weight="bold">Broker Adapters</text>
+                <text x="8" y="32" fill="#BAE6FD" font-size="7.5">• ICICI Breeze Connect</text>
+                <text x="8" y="46" fill="#BAE6FD" font-size="7.5">• Dhan HQ API v2</text>
+                <text x="8" y="60" fill="#BAE6FD" font-size="7.5">• Angel One SmartAPI</text>
+              </g>
+
+              <!-- Exchanges Execution Box -->
+              <g transform="translate(8, 218)">
+                <rect width="123" height="68" rx="8" fill="#031F15" stroke="#00FF88" stroke-width="1.2"/>
+                <text x="8" y="16" fill="#00FF88" font-size="8" font-weight="bold">🏛️ EXCHANGES</text>
+                <text x="8" y="32" fill="#FFFFFF" font-size="7.5" font-weight="bold">NSE &amp; BSE Matching</text>
+                <text x="8" y="46" fill="#A7F3D0" font-size="7">Depository: NSDL/CDSL</text>
+                <text x="8" y="58" fill="#6EE7B7" font-size="7">ISIN Demat Settlement</text>
+              </g>
+            </g>
+          </g>
+
+        </g>
+
+        <!-- ======================================================== -->
+        <!-- BOTTOM CAPTION BANNER                                    -->
+        <!-- ======================================================== -->
+        <g transform="translate(35, 690)">
+          <rect width="1170" height="42" rx="14" fill="#041220" stroke="#00F5FF" stroke-width="1.5" filter="drop-shadow(0 0 15px rgba(0,245,255,0.25))"/>
+          <text x="585" y="26" fill="#38BDF8" font-size="11.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle">
+            ⚡ FULL-STACK QUANTITATIVE PIPELINE: TICK INGESTION ➔ ZERO-REDIS STATE ➔ 4-PILLAR CONFLUENCE ➔ 6 VETOES ➔ GEMINI AI SENTINEL ➔ WEB/MOBILE TERMINALS &amp; SEBI BROKER ROUTING
+          </text>
+        </g>
+
+      </svg>
+    </div>
+
+  </div>
+
+  <script>
+    function setTab(tab) {
+      const notifContent = document.getElementById('content-notif');
+      const engineContent = document.getElementById('content-engine');
+      const tabNotif = document.getElementById('tab-notif');
+      const tabEngine = document.getElementById('tab-engine');
+      const canvasTitle = document.getElementById('canvas-title');
+
+      if (tab === 'notification') {
+        notifContent.classList.remove('hidden');
+        notifContent.classList.add('flex');
+        engineContent.classList.add('hidden');
+        engineContent.classList.remove('flex');
+        tabNotif.className = 'px-5 py-2.5 rounded-xl glow-pill transition-all ml-1';
+        tabEngine.className = 'px-5 py-2.5 rounded-xl inactive-pill transition-all';
+        canvasTitle.innerText = ' MULTI-USER NOTIFICATION ARCHITECTURE';
+      } else {
+        notifContent.classList.add('hidden');
+        notifContent.classList.remove('flex');
+        engineContent.classList.remove('hidden');
+        engineContent.classList.add('flex');
+        tabEngine.className = 'px-5 py-2.5 rounded-xl glow-pill transition-all';
+        tabNotif.className = 'px-5 py-2.5 rounded-xl inactive-pill transition-all ml-1';
+        canvasTitle.innerText = ' FULL-STACK END-TO-END MARKET ENGINE';
+      }
+    }
+  </script>
+</body>
+</html>

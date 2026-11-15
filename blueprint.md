@@ -24,6 +24,26 @@ StokVigil AI is an institutional-grade, multi-tenant quantitative equity surveil
 
 ## 2. Full-Stack Layered Topology
 
+> [!TIP]
+> **Interactive Architecture Visualizer**: Open [`stokvigil_architecture.html`](stokvigil_architecture.html) in your browser to interactively explore and toggle between the Full-Stack Market Engine and Multi-User Notification Architecture with live laser animations and device mockups.
+
+### 2.1 Full-Stack End-to-End Market Engine
+
+<p align="center">
+  <img src="docs/assets/stokvigil_fullstack_engine.svg" alt="StokVigil AI Full-Stack Market Engine Architecture" width="100%" />
+</p>
+
+### 2.2 Multi-User Notification Architecture
+
+<p align="center">
+  <img src="docs/assets/stokvigil_notification_architecture.svg" alt="StokVigil AI Multi-User Notification Architecture" width="100%" />
+</p>
+
+### 2.3 Layered Topology Specification
+
+<details open>
+<summary><b>📐 Click to Expand/Collapse Mermaid Flowchart Topology</b></summary>
+
 ```mermaid
 flowchart TD
     subgraph ClientLayer ["1. Presentation & Client Tier"]
@@ -96,6 +116,7 @@ flowchart TD
     DISPATCH --> WEB
     DISPATCH --> MOBILE
 ```
+</details>
 
 ---
 

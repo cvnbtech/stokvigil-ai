@@ -74,7 +74,25 @@ Unlike platforms that delete bad calls, StokVigil AI permanently writes every em
 
 StokVigil AI is structured as a decoupled, multi-tiered full-stack architecture engineered for sub-millisecond execution, zero developer credential leakage, and 100% free-tier cloud viability.
 
-### 1. Full-Stack Layered Topology
+> [!TIP]
+> **Interactive Architecture Visualizer**: Open [`stokvigil_architecture.html`](stokvigil_architecture.html) in your browser to interactively explore and toggle between the Full-Stack Market Engine and Multi-User Notification views with live laser animations and device mockups.
+
+### 1. Full-Stack End-to-End Market Engine
+
+<p align="center">
+  <img src="docs/assets/stokvigil_fullstack_engine.svg" alt="StokVigil AI Full-Stack Market Engine Architecture" width="100%" />
+</p>
+
+### 2. Multi-User Notification Architecture
+
+<p align="center">
+  <img src="docs/assets/stokvigil_notification_architecture.svg" alt="StokVigil AI Multi-User Notification Architecture" width="100%" />
+</p>
+
+### 3. Layered Topology Specification
+
+<details open>
+<summary><b>📐 Click to Expand/Collapse Mermaid Flowchart Topology</b></summary>
 
 ```mermaid
 flowchart TD
@@ -151,8 +169,9 @@ flowchart TD
     DISPATCH --> WEB
     DISPATCH --> MOBILE
 ```
+</details>
 
-### 2. Full-Stack Layer Responsibility Matrix
+### 4. Full-Stack Layer Responsibility Matrix
 
 | Full-Stack Tier | Components & Technologies | Key Responsibilities & Guarantees |
 | :--- | :--- | :--- |
