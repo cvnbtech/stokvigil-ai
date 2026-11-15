@@ -429,10 +429,7 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
 
     # Deep link to custom StokVigil Web PWA if configured, otherwise direct exchange chart
     web_portal_base = (getattr(settings, "WEB_PORTAL_URL", None) or os.getenv("WEB_PORTAL_URL", "")).strip()
-    if web_portal_base:
-        chart_url = f"{web_portal_base.rstrip('/')}/chart?symbol={clean_sym}&exchange={chart_exchange}"
-    else:
-        chart_url = f"https://in.tradingview.com/chart/?symbol={chart_exchange}:{clean_sym}"
+    chart_url = f"{web_portal_base.rstrip('/')}/chart?symbol={clean_sym}&exchange={chart_exchange}"
 
     return {
         "inline_keyboard": [

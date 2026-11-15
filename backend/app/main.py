@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
@@ -110,6 +111,20 @@ def health_check():
         "mode": "Pure Intelligence & Factual Alerts (Non-Advisory)",
         "security": "JWT_Shielded_v1",
     }
+
+
+
+@app.get("/chart")
+def redirect_to_chart(symbol: str = "NIFTY 50", exchange: str = "NSE"):
+    """
+    Seamless redirect handler for Telegram deep links if called on the backend.
+    Redirects directly to the official StokVigil Web Portal chart.
+    """
+    clean_sym = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    ex = exchange.strip().upper()
+    portal_base = (getattr(settings, "WEB_PORTAL_URL", None) or "").strip().rstrip('/')
+    target_url = f"{portal_base}/chart?symbol={clean_sym}&exchange={ex}" if portal_base else f"/chart?symbol={clean_sym}&exchange={ex}"
+    return RedirectResponse(url=target_url, status_code=307)
 
 
 @app.get("/api/health/db")
