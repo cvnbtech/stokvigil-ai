@@ -192,14 +192,16 @@ flowchart TD
 
 ### 5. Architectural Dataflow Trajectories
 
-The system executes three synchronized, non-blocking dataflow loops:
+The system executes three synchronized, non-blocking operational dataflow loops:
 
 1. **Real-Time Market Data Synchronization (Sub-Second Loop)**:
-   $$\text{Broker Websockets / Yahoo Pool} \xrightarrow{\text{Sub-second ticks}} \text{Tier-1 Process RAM } (<0.01\text{ms}) \xrightarrow{\text{worker.py 2.0s flush}} \text{Tier-2 UNLOGGED Table } (<0.80\text{ms}) \xrightarrow{\text{SSE / Polling}} \text{Web & Mobile UIs}$$
+   > `Broker WebSockets / Yahoo Pool` ➔ **Sub-Second Ticks** ➔ `Tier-1 Process RAM (<0.01ms)` ➔ **worker.py 2.0s Flush** ➔ `Tier-2 UNLOGGED Table (<0.80ms)` ➔ **SSE / Polling** ➔ `Web & Mobile Clients`
+
 2. **5-Minute Quantitative Surveillance & Alerting Trajectory**:
-   $$\text{Cron Trigger} \xrightarrow{\text{Deduplicated Scrip Set}} \text{1,417 LOC Vector Engine} \xrightarrow{\text{4-Pillar Confluence Score} \ge 75\%} \text{6 Deterministic Vetoes} \xrightarrow{\text{Passed}} \text{Gemini AI Rationale} \xrightarrow{\text{HTTP/2}} \text{Telegram & FCM Lock Screen}$$
-3. **1-Click SEBI Compliant Broker Execution Trajectory**:
-   $$\text{User Click} \xrightarrow{\text{Signed JWT + Idempotency Key}} \text{Pre-Trade Circuit & Tick Snap} \xrightarrow{\text{SL-Limit Enforcement}} \text{Multi-Broker Adapter} \xrightarrow{\text{Open API}} \text{NSE / BSE Execution & Settlement}$$
+   > `Cron Trigger / Market Event` ➔ **Deduplicated Scrip Set** ➔ `1,417-LOC Vector Engine` ➔ **4-Pillar Confluence (≥75%)** ➔ `6 Deterministic Vetoes (Passed)` ➔ **Gemini 3.5 AI Rationale** ➔ `Telegram & FCM Lock Screen Push`
+
+3. **1-Click SEBI-Compliant Broker Execution Trajectory**:
+   > `User Click` ➔ **Signed JWT + Idempotency Key** ➔ `Pre-Trade Circuit & Dynamic Tick Snap` ➔ **SL-Limit Order Enforcement** ➔ `Multi-Broker Adapter` ➔ `NSE / BSE Clearing & Settlement`
 
 ---
 
