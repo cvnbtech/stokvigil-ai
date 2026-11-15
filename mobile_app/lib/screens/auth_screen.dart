@@ -24,6 +24,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isSignUp = false;
   bool _isLoading = false;
   bool _tncAccepted = false;
+  bool _obscurePassword = true;
   String? _errorMessage;
   String? _successMessage;
 
@@ -280,6 +281,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final newPasswordController = TextEditingController();
     bool isUpdating = false;
     bool isDone = false;
+    bool obscureNewPassword = true;
 
     await showDialog(
       context: context,
@@ -364,12 +366,26 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     child: TextField(
                       controller: newPasswordController,
-                      obscureText: true,
+                      obscureText: obscureNewPassword,
                       style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        prefixIcon: Icon(Icons.lock_outline, color: AppTheme.cyan, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.cyan, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureNewPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: obscureNewPassword ? AppTheme.textMuted : AppTheme.cyan,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              obscureNewPassword = !obscureNewPassword;
+                            });
+                          },
+                          splashRadius: 18,
+                          tooltip: obscureNewPassword ? "Show password" : "Hide password",
+                        ),
                       ),
                     ),
                   ),
@@ -812,12 +828,26 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             child: TextField(
                               controller: _passwordController,
-                              obscureText: true,
+                              obscureText: _obscurePassword,
                               style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                              decoration: const InputDecoration(
+                              decoration: InputDecoration(
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                prefixIcon: Icon(Icons.lock_outline, color: AppTheme.cyan, size: 20),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                                prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.cyan, size: 20),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                    color: _obscurePassword ? AppTheme.textMuted : AppTheme.cyan,
+                                    size: 20,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  splashRadius: 20,
+                                  tooltip: _obscurePassword ? "Show password" : "Hide password",
+                                ),
                               ),
                             ),
                           ),

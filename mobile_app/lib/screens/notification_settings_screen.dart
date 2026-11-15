@@ -213,6 +213,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final newPasswordController = TextEditingController();
     bool isUpdating = false;
     bool isDone = false;
+    bool obscureNewPassword = true;
 
     await showDialog(
       context: context,
@@ -292,14 +293,28 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     ),
                     child: TextField(
                       controller: newPasswordController,
-                      obscureText: true,
+                      obscureText: obscureNewPassword,
                       style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: "New Password",
-                        hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        prefixIcon: Icon(Icons.lock_outline, color: AppTheme.cyan, size: 18),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        prefixIcon: const Icon(Icons.lock_outline, color: AppTheme.cyan, size: 18),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscureNewPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: obscureNewPassword ? AppTheme.textMuted : AppTheme.cyan,
+                            size: 18,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              obscureNewPassword = !obscureNewPassword;
+                            });
+                          },
+                          splashRadius: 18,
+                          tooltip: obscureNewPassword ? "Show password" : "Hide password",
+                        ),
                       ),
                     ),
                   ),
