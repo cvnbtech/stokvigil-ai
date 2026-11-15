@@ -39,84 +39,111 @@ StokVigil AI is an institutional-grade, multi-tenant quantitative equity surveil
   <img src="./docs/assets/stokvigil_notification_architecture.svg" alt="StokVigil AI Multi-User Notification Architecture" width="100%" />
 </p>
 
-### 2.3 Layered Topology Specification
+### 2.3 Six-Tier Layered Topology Specification
 
-<details open>
-<summary><b>📐 Click to Expand/Collapse Mermaid Flowchart Topology</b></summary>
+The architecture follows a strict 6-tier unidirectional flow with sub-millisecond decoupled state, zero-trust security barriers, and cryptographic boundaries:
 
 ```mermaid
 flowchart TD
-    subgraph ClientLayer ["1. Presentation & Client Tier"]
-        WEB["Next.js 14 Web Portal<br/>(React 18, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts | Confluence Radar"]
-        MOBILE["Flutter Cross-Platform Mobile App<br/>(Dart 3.3+, Android & iOS)<br/>Provider State | Biometric Auth | Push Notifications"]
+    %% Global Styling
+    classDef client fill:#0C1E38,stroke:#38BDF8,stroke-width:2px,color:#E2E8F0;
+    classDef gateway fill:#131B2E,stroke:#818CF8,stroke-width:2px,color:#E2E8F0;
+    classDef app fill:#0A1E24,stroke:#00F5FF,stroke-width:2px,color:#E2E8F0;
+    classDef quant fill:#042618,stroke:#00FF88,stroke-width:2px,color:#E2E8F0;
+    classDef state fill:#261404,stroke:#FFB800,stroke-width:2px,color:#E2E8F0;
+    classDef exec fill:#2A0A18,stroke:#FB7185,stroke-width:2px,color:#E2E8F0;
+
+    subgraph TIER1 ["Tier 1: Presentation & Client Applications"]
+        WEB["Next.js 14 Web Portal<br/>(React 18, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts | Confluence Radar"]:::client
+        MOBILE["Flutter Mobile App (iOS / Android)<br/>(Dart 3.3+, Provider, Biometrics)<br/>Live Watchlist | Demat Risk Badges | Push Alerts"]:::client
     end
 
-    subgraph GatewaySecurity ["2. Ingress, Security & Gateway Tier"]
-        HTTPS_WSS["HTTPS / WSS (Cloudflare / Cloud Run Ingress)"]
-        AUTH_IDOR["JWT Verification & IDOR Access Validation<br/>(verify_user_access & auth.uid enforcement)"]
-        RATE_LIMIT["Token Bucket Rate Limiting & Proxy Guards<br/>(check_rate_limit & trusted proxies)"]
-        VAULT["Fernet AES-256 Cryptographic Vault<br/>(PBKDF2HMAC SHA-256 Key Derivation + Salt)"]
+    subgraph TIER2 ["Tier 2: Ingress, Security & Cryptographic Vault"]
+        INGRESS["Cloudflare CDN & Cloud Run Ingress<br/>(HTTPS / WSS Termination & Proxy Verification)"]:::gateway
+        AUTH_GUARD["Security Middleware & Zero-Trust IDOR Guard<br/>(JWT Bearer Auth & verify_user_access)"]:::gateway
+        RATE_LIMIT["Memory-Bounded Token Bucket Rate Limiter<br/>(Burst Protection & IP-Based Throttling)"]:::gateway
+        VAULT["Fernet AES-256-CBC Cryptographic Vault<br/>(PBKDF2HMAC SHA-256 Key Derivation + Salt)"]:::gateway
     end
 
-    subgraph AppServer ["3. FastAPI Backend Application Tier (Python 3.11+)"]
-        FASTAPI["FastAPI Lifespan Context Manager<br/>Async Uvicorn Workers | Defensive Security Headers"]
-        ROUTERS["REST API Routers<br/>/stocks | /orders | /market | /auth | /cron"]
-        AGENT_LOOP["5-Minute Multi-Tenant Agent Runner<br/>Deduplicated Scanning & Portfolio Evaluator"]
-        TICK_WORKER["Market Hours Real-Time Tick Worker<br/>(worker.py - 2.0s Dual-Tier Synchronization)"]
+    subgraph TIER3 ["Tier 3: FastAPI Backend & Daemon Orchestration"]
+        FASTAPI["FastAPI Async ASGI Application<br/>Lifespan Context Manager | Defensive Security Headers"]:::app
+        ROUTERS["REST API Routers<br/>/stocks | /orders | /market | /auth | /cron"]:::app
+        SCANNER["5-Min Multi-Tenant Surveillance Scanner<br/>(Deduplicated Scans & Portfolio Evaluator)"]:::app
+        TICK_WORKER["worker.py Real-Time Tick Daemon<br/>(2.0s Dual-Tier RAM Synchronization & Re-Auth)"]:::app
     end
 
-    subgraph ComputeEngine ["4. Quantitative Mathematical & AI Processing Tier"]
-        TECH_VEC["1,417-Line Vectorized Technical Engine<br/>Camarilla Pivots (H4/H3/L3/L4) | VWAP ±1σ/±2σ Bands<br/>TTM Squeeze | ADX 14 | Midday-Hardened RVOL | Mansfield RS"]
-        FLOW_VSA["Derivatives & Order Flow Engine<br/>Wyckoff VSA Absorption (CLQ) | NSE Delivery Bhavcopy<br/>Option Chain PCR & Max Pain Strike | Delta-OI Velocity"]
-        CONFLUENCE_VETO["Adaptive 4-Pillar Confluence Engine<br/>Regime Weights | 6 Hard Institutional Vetoes<br/>5-State Demat Portfolio Risk Lifecycle"]
-        GEMINI_AI["Gemini 3.5 Flash Lite Qualitative AI Engine<br/>google-genai SDK | 15 Calls/Scan Quota Limiter<br/>Mathematical Sovereignty (Numbers Hard-Locked by Python)"]
+    subgraph TIER4 ["Tier 4: Quantitative Confluence & Sovereign AI"]
+        MATH_CORE["1,417-Line Vectorized Quantitative Engine<br/>Camarilla Pivots (H4/H3/L3/L4) | VWAP ±1σ/±2σ Bands<br/>TTM Squeeze Momentum | Midday-Hardened RVOL (3.0x)"]:::quant
+        VETO_GATE["🛑 6 Hard Institutional Vetoes<br/>Lunch Trap | 200 EMA Gatekeeper | Breadth ADR &lt; 0.60<br/>VWAP +2σ Exhaustion | Wyckoff Supply Shock"]:::quant
+        DEMAT_GUARDIAN["🛡️ 5-State Demat Portfolio Risk Guardian<br/>CAPITAL_PRESERVATION | DEFENSIVE_TRIM | TRAILING_SL<br/>ACCUMULATE_WATCH | HOLD_STEADY"]:::quant
+        GEMINI_AI["Gemini 3.5 Flash Lite Qualitative AI Engine<br/>Mathematical Sovereignty (Zero Math Hallucination)<br/>&lt;untrusted_external_news&gt; Injection Defense | 15 Calls Limit"]:::quant
     end
 
-    subgraph StateStorage ["5. High-Speed State & Database Tier"]
-        RAM_TIER["Tier-1 Process RAM Cache<br/>(&lt;0.01ms Access | FIFO Bounded to 2,000 Symbols)"]
-        UNLOGGED_TIER["Tier-2 Supabase UNLOGGED Table<br/>(market_memory_cache | Bypasses WAL Disk I/O | &lt;0.8ms Access)"]
-        PGBOUNCER["PgBouncer Pool (Port 6543, Transaction Mode)<br/>statement_cache_size=0 | Advisory Locks (987654321)"]
-        SUPABASE_PG["Supabase PostgreSQL 15+ Engine<br/>Row Level Security (RLS) with (SELECT auth.uid()) InitPlan Cache<br/>profiles | user_credentials | user_watchlists | stok_alerts"]
+    subgraph TIER5 ["Tier 5: Ultra-Low Latency State & Persistence"]
+        RAM_CACHE["Tier-1 Process RAM Cache<br/>(&lt;0.01 ms Latency | LRU Bounded 2,000 Symbols)"]:::state
+        UNLOGGED_DB["Tier-2 Supabase UNLOGGED Table<br/>(market_memory_cache | &lt;0.80 ms DB Access | Zero Redis)"]:::state
+        PGBOUNCER["PgBouncer Pool (Port 6543, Transaction Mode)<br/>statement_cache_size=0 | Advisory Locks (987654321)"]:::state
+        SUPABASE_PG["Supabase PostgreSQL 15+ Core Store<br/>InitPlan (SELECT auth.uid()) Optimized RLS<br/>profiles | user_credentials | watchlists | stok_alerts"]:::state
     end
 
-    subgraph ExternalBrokers ["6. External Broker & Market Infrastructure"]
-        BROKERS["Multi-Broker Adapter Framework<br/>ICICI Direct Breeze Connect | Dhan HQ v2 | Angel One SmartAPI<br/>SEBI SL-M Order Prohibition | Dynamic Tick Snap (₹0.05/₹0.01)"]
-        MARKET_FEEDS["Official Market Feeds & Registries<br/>NSE Security-Wise Bhavcopy | NSE Option Chain | FII/DII Cash<br/>Yahoo Finance Pooled Keep-Alive HTTP | BSE Scrip API"]
-        DISPATCH["High-Priority Notification Dispatcher<br/>Persistent HTTP/2 Telegram Client (25 msg/s Leaky Bucket)<br/>Firebase Cloud Messaging (FCM Push)"]
+    subgraph TIER6 ["Tier 6: Multi-Broker Execution & Dispatch"]
+        SEBI_ENGINE["SEBI Pre-Trade Safety Validator<br/>Mandatory SL-Limit Only | Dynamic Tick Snap (₹0.05/₹0.01)<br/>Pre-Trade Circuit Freeze Check | Idempotency Debounce"]:::exec
+        BROKER_APIS["Multi-Broker API Adapters<br/>ICICI Breeze Connect | Dhan HQ v2 | Angel One SmartAPI<br/>Pure Master App Publisher (Zero Developer Keys on Server)"]:::exec
+        DISPATCH_ENGINE["High-Priority Async Dispatch Engine<br/>Telegram HTTP/2 Client (25 msg/s Leaky Bucket)<br/>Firebase Cloud Messaging (FCM Mobile Lock-Screen)"]:::exec
+        EXCHANGES["🏛️ Indian Capital Market Infrastructure<br/>NSE & BSE Matching Engines | NSDL & CDSL Depositories"]:::exec
     end
 
-    %% Wiring
-    WEB --> HTTPS_WSS
-    MOBILE --> HTTPS_WSS
-    HTTPS_WSS --> AUTH_IDOR
-    AUTH_IDOR --> RATE_LIMIT
+    %% Client to Ingress
+    WEB & MOBILE -->|"HTTPS / WSS"| INGRESS
+    INGRESS --> AUTH_GUARD
+    AUTH_GUARD --> RATE_LIMIT
     RATE_LIMIT --> FASTAPI
 
+    %% App Server Wiring
     FASTAPI --> ROUTERS
-    ROUTERS --> AGENT_LOOP
     ROUTERS --> VAULT
-    AGENT_LOOP --> TECH_VEC
-    AGENT_LOOP --> FLOW_VSA
-    TECH_VEC --> CONFLUENCE_VETO
-    FLOW_VSA --> CONFLUENCE_VETO
-    CONFLUENCE_VETO -- "Tier-1 Active Catalysts" --> GEMINI_AI
+    ROUTERS --> SCANNER
+    SCANNER --> MATH_CORE
+    TICK_WORKER <-->|"IPC &lt;0.01ms"| RAM_CACHE
+    RAM_CACHE <-->|"Periodic Sync"| UNLOGGED_DB
 
-    FASTAPI <--> RAM_TIER
-    TICK_WORKER <--> RAM_TIER
-    RAM_TIER <--> UNLOGGED_TIER
-    ROUTERS <--> PGBOUNCER
-    AGENT_LOOP <--> PGBOUNCER
+    %% Quantitative & AI Confluence Wiring
+    MATH_CORE --> VETO_GATE
+    VETO_GATE --> DEMAT_GUARDIAN
+    DEMAT_GUARDIAN -- "High-Conviction Catalysts Only" --> GEMINI_AI
+    DEMAT_GUARDIAN --> DISPATCH_ENGINE
+    GEMINI_AI -- "Qualitative Rationale" --> DISPATCH_ENGINE
+
+    %% State & Persistence Wiring
+    ROUTERS & SCANNER <-->|"Port 6543"| PGBOUNCER
     PGBOUNCER <--> SUPABASE_PG
 
-    ROUTERS --> BROKERS
-    AGENT_LOOP --> DISPATCH
-    TECH_VEC <--> MARKET_FEEDS
-    FLOW_VSA <--> MARKET_FEEDS
-    BROKERS <--> MARKET_FEEDS
-    DISPATCH --> WEB
-    DISPATCH --> MOBILE
+    %% Execution Wiring
+    ROUTERS -->|"1-Click Order"| SEBI_ENGINE
+    SEBI_ENGINE --> BROKER_APIS
+    BROKER_APIS -->|"FIX / Open API"| EXCHANGES
+    DISPATCH_ENGINE -->|"Telegram Bot & FCM Push"| WEB & MOBILE
 ```
-</details>
+
+### 2.4 Full-Stack Layer Responsibility & Latency SLA Matrix
+
+| Full-Stack Tier | Components & Technologies | Protocols & Ports | Latency SLA | Key Architectural Guarantees |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tier 1: Presentation Tier** | **Next.js 14 App Router** (React 18, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts, 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
+| **Tier 2: Ingress & Security** | **FastAPI Middleware**, Pydantic v2 Settings, **Fernet AES-256 Vault**, JWT Bearer Auth | HTTPS (443) | &lt; 2 ms overhead | Client-side IDOR validation (`verify_user_access`), memory-bounded token bucket rate limiting, HTTP security headers (HSTS, CSP), and PBKDF2HMAC credential protection. |
+| **Tier 3: App Server & Daemons** | **FastAPI Async Engine**, Uvicorn ASGI, Lifespan Context Manager, **PgBouncer Pool** | HTTP, IPC | &lt; 15 ms internal API | Multi-tenant 5-minute automated scanning loop, 2-second market-hours tick worker (`worker.py`), persistent thread pools, and non-blocking I/O. |
+| **Tier 4: Quantitative Math & AI** | **NumPy & Pandas Engine (1,417 LOC)**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Camarilla pivots ($H_4/L_3$), VWAP $\pm1\sigma/\pm2\sigma$, TTM Squeeze, Wyckoff VSA delivery absorption, 6 Hard Institutional Vetoes, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
+| **Tier 5: State & Persistence** | **Dual-Tier Cache** (Process RAM + Supabase `UNLOGGED` Table), **Supabase PostgreSQL 15+** | PostgreSQL Wire Protocol (Port 6543) | **&lt; 0.01 ms** (RAM)<br/>**&lt; 0.80 ms** (DB) | Sub-millisecond market state bypassing WAL disk I/O, PgBouncer transaction-mode pooling with `statement_cache_size=0`, Postgres advisory locking (`pg_try_advisory_lock`), and `(SELECT auth.uid())` InitPlan RLS. |
+| **Tier 6: Execution & Dispatch** | **Broker Adapters** (ICICI Breeze, Dhan HQ, Angel One), **Telegram HTTP/2 Client**, FCM | HTTP/2, REST APIs, WebSockets | &lt; 250 ms order dispatch | Mandatory SEBI Stop-Loss Limit (SL-L) orders, dynamic tick snapping (₹0.05 / ₹0.01), pre-trade circuit freeze rejections, dynamic CNC/MIS short detection, and 25 msg/s leaky-bucket Telegram alert dispatch. |
+
+### 2.5 Architectural Dataflow Trajectories
+
+1. **Real-Time Market Data Synchronization (Sub-Second Loop)**:
+   $$\text{Broker Websockets / Yahoo Pool} \xrightarrow{\text{Sub-second ticks}} \text{Tier-1 Process RAM } (<0.01\text{ms}) \xrightarrow{\text{worker.py 2.0s flush}} \text{Tier-2 UNLOGGED Table } (<0.80\text{ms}) \xrightarrow{\text{SSE / Polling}} \text{Web & Mobile UIs}$$
+2. **5-Minute Quantitative Surveillance & Alerting Trajectory**:
+   $$\text{Cron Trigger} \xrightarrow{\text{Deduplicated Scrip Set}} \text{1,417 LOC Vector Engine} \xrightarrow{\text{4-Pillar Confluence Score} \ge 75\%} \text{6 Deterministic Vetoes} \xrightarrow{\text{Passed}} \text{Gemini AI Rationale} \xrightarrow{\text{HTTP/2}} \text{Telegram & FCM Lock Screen}$$
+3. **1-Click SEBI Compliant Broker Execution Trajectory**:
+   $$\text{User Click} \xrightarrow{\text{Signed JWT + Idempotency Key}} \text{Pre-Trade Circuit & Tick Snap} \xrightarrow{\text{SL-Limit Enforcement}} \text{Multi-Broker Adapter} \xrightarrow{\text{Open API}} \text{NSE / BSE Execution & Settlement}$$
 
 ---
 
