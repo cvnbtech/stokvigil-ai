@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="1240" height="760" viewBox="0 0 1240 760" fill="none" xmlns="http://www.w3.org/2000/svg" class="max-w-full">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 760" width="100%" height="100%">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800;900&amp;family=Rajdhani:wght@600;700;800&amp;family=Fira+Code:wght@500;700&amp;display=swap');
   text { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -84,7 +84,7 @@
         <!-- ======================================================== -->
         <g transform="translate(35, 50)">
           <!-- Outer Card -->
-          <rect width="195" height="625" rx="20" fill="url(#eng-grad-ingest)" stroke="#00F5FF" stroke-width="2.2" filter="drop-shadow(0 0 25px rgba(0,245,255,0.25))"/>
+          <rect width="195" height="625" rx="20" fill="url(#eng-grad-ingest)" stroke="#00F5FF" stroke-width="2.2" style="filter: drop-shadow(0 0 25px rgba(0,245,255,0.25))"/>
           
           <!-- Tech Corner Accents -->
           <path d="M12 25 L12 12 L25 12" stroke="#00F5FF" stroke-width="2" fill="none"/>
@@ -93,8 +93,8 @@
           <!-- Header -->
           <circle cx="28" cy="30" r="12" fill="#00F5FF" fill-opacity="0.15"/>
           <text x="28" y="34" fill="#00F5FF" font-size="12" font-weight="bold" text-anchor="middle">⚡</text>
-          <text x="46" y="27" fill="#00F5FF" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">1. INGESTION</text>
-          <text x="46" y="39" fill="#94A3B8" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">MULTI-STREAM PIPELINE</text>
+          <text x="46" y="27" fill="#00F5FF" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="1.5">1. INGESTION</text>
+          <text x="46" y="39" fill="#94A3B8" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="2">MULTI-STREAM PIPELINE</text>
           
           <!-- Card 1: NSE Bhavcopy Scraper -->
           <g transform="translate(12, 55)">
@@ -118,10 +118,10 @@
             <text x="85" y="89" fill="#7DD3FC" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Sub-Second Live Ingestion</text>
           </g>
 
-          <!-- Card 3: Derivatives & PCR -->
+          <!-- Card 3: Derivatives &amp; PCR -->
           <g transform="translate(12, 275)">
             <rect width="171" height="100" rx="12" fill="#241402" stroke="#FFB800" stroke-width="1.5"/>
-            <text x="12" y="20" fill="#FBBF24" font-size="10" font-weight="bold">📈 Derivatives & PCR</text>
+            <text x="12" y="20" fill="#FBBF24" font-size="10" font-weight="bold">📈 Derivatives &amp; PCR</text>
             <text x="12" y="38" fill="#CBD5E1" font-size="8.5">• Put-Call Ratio (PCR)</text>
             <text x="12" y="54" fill="#CBD5E1" font-size="8.5">• Max Pain Strike Price</text>
             <text x="12" y="70" fill="#CBD5E1" font-size="8.5">• Gamma Exposure Shifts</text>
@@ -129,7 +129,7 @@
             <text x="85" y="89" fill="#FDE68A" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">Delta-OI Velocity Filter</text>
           </g>
 
-          <!-- Card 4: Yahoo Finance & BSE -->
+          <!-- Card 4: Yahoo Finance &amp; BSE -->
           <g transform="translate(12, 385)">
             <rect width="171" height="100" rx="12" fill="#1A0A26" stroke="#C084FC" stroke-width="1.5"/>
             <text x="12" y="20" fill="#C084FC" font-size="10" font-weight="bold">⏱️ Multi-Timeframe OHLCV</text>
@@ -160,13 +160,13 @@
         <!-- ======================================================== -->
         <g transform="translate(260, 50)">
           <!-- Outer Card -->
-          <rect width="175" height="625" rx="20" fill="url(#eng-grad-state)" stroke="#818CF8" stroke-width="2" filter="drop-shadow(0 0 25px rgba(129,140,248,0.25))"/>
+          <rect width="175" height="625" rx="20" fill="url(#eng-grad-state)" stroke="#818CF8" stroke-width="2" style="filter: drop-shadow(0 0 25px rgba(129,140,248,0.25))"/>
           
           <!-- Header -->
           <circle cx="26" cy="30" r="12" fill="#818CF8" fill-opacity="0.15"/>
           <text x="26" y="34" fill="#A5B4FC" font-size="12" font-weight="bold" text-anchor="middle">💾</text>
-          <text x="44" y="27" fill="#A5B4FC" font-size="12.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">2. DUAL STATE</text>
-          <text x="44" y="39" fill="#94A3B8" font-size="8" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">ZERO-REDIS CACHE ARCH</text>
+          <text x="44" y="27" fill="#A5B4FC" font-size="12.5" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="1.5">2. DUAL STATE</text>
+          <text x="44" y="39" fill="#94A3B8" font-size="8" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="2">ZERO-REDIS CACHE ARCH</text>
 
           <!-- Sub-Card 1: Tier 1 Process RAM -->
           <g transform="translate(10, 55)">
@@ -183,7 +183,7 @@
             <text x="12" y="125" fill="#38BDF8" font-size="8">• Thread-Safe Singleton</text>
           </g>
 
-          <!-- Arrow between Tier 1 & Tier 2 -->
+          <!-- Arrow between Tier 1 &amp; Tier 2 -->
           <path d="M87 190 L87 205" stroke="#C084FC" stroke-width="2" marker-end="url(#me-purple)"/>
 
           <!-- Sub-Card 2: Tier 2 UNLOGGED Table -->
@@ -232,7 +232,7 @@
         <!-- ======================================================== -->
         <g transform="translate(465, 50)">
           <!-- Outer Card -->
-          <rect width="235" height="625" rx="20" fill="url(#eng-grad-quant)" stroke="#00FF88" stroke-width="2.2" filter="drop-shadow(0 0 25px rgba(0,255,136,0.3))"/>
+          <rect width="235" height="625" rx="20" fill="url(#eng-grad-quant)" stroke="#00FF88" stroke-width="2.2" style="filter: drop-shadow(0 0 25px rgba(0,255,136,0.3))"/>
           
           <!-- Tech Corner Accents -->
           <path d="M12 25 L12 12 L25 12" stroke="#00FF88" stroke-width="2" fill="none"/>
@@ -241,10 +241,10 @@
           <!-- Header -->
           <circle cx="28" cy="30" r="12" fill="#00FF88" fill-opacity="0.15"/>
           <text x="28" y="34" fill="#00FF88" font-size="12" font-weight="bold" text-anchor="middle">🧠</text>
-          <text x="46" y="27" fill="#00FF88" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">3. 4-PILLAR CONFLUENCE</text>
-          <text x="46" y="39" fill="#6EE7B7" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">1,417 LOC VECTORIZED MATH</text>
+          <text x="46" y="27" fill="#00FF88" font-size="13" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="1.5">3. 4-PILLAR CONFLUENCE</text>
+          <text x="46" y="39" fill="#6EE7B7" font-size="8.5" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="2">1,417 LOC VECTORIZED MATH</text>
 
-          <!-- Sub-Card 1: Camarilla & VWAP -->
+          <!-- Sub-Card 1: Camarilla &amp; VWAP -->
           <g transform="translate(12, 55)">
             <rect width="211" height="135" rx="12" fill="#052818" stroke="#34D399" stroke-width="1.5"/>
             <text x="12" y="20" fill="#34D399" font-size="10" font-weight="bold">Pillars 1 &amp; 2: Price &amp; Volume Anchor</text>
@@ -260,7 +260,7 @@
             <text x="16" y="120" fill="#BAE6FD" font-size="8">Intraday Mean-Reversion Bands</text>
           </g>
 
-          <!-- Sub-Card 2: TTM Squeeze & RVOL -->
+          <!-- Sub-Card 2: TTM Squeeze &amp; RVOL -->
           <g transform="translate(12, 198)">
             <rect width="211" height="125" rx="12" fill="#051C26" stroke="#38BDF8" stroke-width="1.5"/>
             <text x="12" y="20" fill="#38BDF8" font-size="10" font-weight="bold">Pillars 3 &amp; 4: Momentum &amp; RVOL</text>
@@ -315,13 +315,13 @@
         <!-- ======================================================== -->
         <g transform="translate(730, 50)">
           <!-- Outer Card -->
-          <rect width="160" height="625" rx="20" fill="url(#eng-grad-ai)" stroke="#C084FC" stroke-width="2" filter="drop-shadow(0 0 25px rgba(192,132,252,0.25))"/>
+          <rect width="160" height="625" rx="20" fill="url(#eng-grad-ai)" stroke="#C084FC" stroke-width="2" style="filter: drop-shadow(0 0 25px rgba(192,132,252,0.25))"/>
           
           <!-- Header -->
           <circle cx="24" cy="30" r="12" fill="#C084FC" fill-opacity="0.15"/>
           <text x="24" y="34" fill="#E879F9" font-size="12" font-weight="bold" text-anchor="middle">✨</text>
-          <text x="42" y="27" fill="#E879F9" font-size="12" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase">4. GEMINI 3.5</text>
-          <text x="42" y="39" fill="#CBD5E1" font-size="7.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-widest uppercase">QUALITATIVE REASONING</text>
+          <text x="42" y="27" fill="#E879F9" font-size="12" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="1.5">4. GEMINI 3.5</text>
+          <text x="42" y="39" fill="#CBD5E1" font-size="7.5" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="2">QUALITATIVE REASONING</text>
 
           <!-- Sub-Card 1: Mathematical Sovereignty -->
           <g transform="translate(10, 55)">
@@ -356,7 +356,7 @@
             <text x="70" y="156" fill="#D8B4FE" font-size="7" text-anchor="middle">Structured Context Vector</text>
           </g>
 
-          <!-- Sub-Card 3: Security & Quota Engine -->
+          <!-- Sub-Card 3: Security &amp; Quota Engine -->
           <g transform="translate(10, 410)">
             <rect width="140" height="200" rx="12" fill="#180414" stroke="#F43F5E" stroke-width="1.4"/>
             <text x="10" y="20" fill="#FB7185" font-size="9" font-weight="bold">🛡️ SECURITY &amp; QUOTA</text>
@@ -377,12 +377,12 @@
           </g>
         </g>
 
-        <!-- Connector Arrows: AI & Quant to Frontends -->
+        <!-- Connector Arrows: AI &amp; Quant to Frontends -->
         <path d="M890 200 L918 200" stroke="#38BDF8" stroke-width="2.8" marker-end="url(#me-blue)"/>
         <path d="M700 520 L918 520" stroke="#00FF88" stroke-width="2.8" marker-end="url(#me-green)"/>
 
         <!-- ======================================================== -->
-        <!-- COLUMN 5: REALISTIC FRONTENDS & SEBI EXECUTION GATEWAY   -->
+        <!-- COLUMN 5: REALISTIC FRONTENDS &amp; SEBI EXECUTION GATEWAY   -->
         <!-- ======================================================== -->
         <g transform="translate(920, 50)">
           
@@ -391,7 +391,7 @@
           <!-- ====================================================== -->
           <g transform="translate(0, 0)">
             <!-- Terminal Outer Window Frame -->
-            <rect width="285" height="305" rx="16" fill="url(#eng-grad-terminal)" stroke="#38BDF8" stroke-width="2" filter="drop-shadow(0 0 25px rgba(56,189,248,0.3))"/>
+            <rect width="285" height="305" rx="16" fill="url(#eng-grad-terminal)" stroke="#38BDF8" stroke-width="2" style="filter: drop-shadow(0 0 25px rgba(56,189,248,0.3))"/>
             
             <!-- macOS Traffic Light Header Bar -->
             <path d="M0 16 C0 7.16 7.16 0 16 0 L269 0 C277.84 0 285 7.16 285 16 L285 32 L0 32 Z" fill="#0F172A"/>
@@ -402,7 +402,7 @@
             <rect x="235" y="8" width="40" height="16" rx="4" fill="#064E3B"/>
             <text x="255" y="19" fill="#34D399" font-size="7.5" font-family="'Fira Code', monospace" font-weight="bold" text-anchor="middle">● LIVE</text>
             
-            <!-- Ticker & Live Confluence Banner -->
+            <!-- Ticker &amp; Live Confluence Banner -->
             <g transform="translate(10, 38)">
               <text x="4" y="16" fill="#FFFFFF" font-size="13" font-weight="bold">RELIANCE</text>
               <text x="80" y="16" fill="#34D399" font-size="12" font-family="'Fira Code', monospace" font-weight="bold">₹2,945.50 ▲ +2.45%</text>
@@ -448,7 +448,7 @@
 
               <!-- Candle 5: 10:15 Massive H4 Breakout Candle -->
               <line x1="180" y1="28" x2="180" y2="60" stroke="#00FF88" stroke-width="1.8"/>
-              <rect x="174" y="32" width="12" height="25" rx="2" fill="#00FF88" filter="drop-shadow(0 0 8px rgba(0,255,136,0.8))"/>
+              <rect x="174" y="32" width="12" height="25" rx="2" fill="#00FF88" style="filter: drop-shadow(0 0 8px rgba(0,255,136,0.8))"/>
 
               <!-- Breakout Callout Badge -->
               <rect x="195" y="60" width="60" height="18" rx="4" fill="#065F46" stroke="#00FF88" stroke-width="1"/>
@@ -469,8 +469,8 @@
 
               <!-- Glowing 1-Click SEBI Order Button -->
               <g transform="translate(4, 24)">
-                <rect width="257" height="38" rx="10" fill="url(#me-green)" stroke="#00FF88" stroke-width="2" filter="drop-shadow(0 0 15px rgba(0,255,136,0.6))" fill-opacity="0.2"/>
-                <text x="128" y="20" fill="#00FF88" font-size="11" font-weight="bold" font-family="'Rajdhani', sans-serif" tracking-wider uppercase text-anchor="middle">
+                <rect width="257" height="38" rx="10" fill="url(#me-green)" stroke="#00FF88" stroke-width="2" style="filter: drop-shadow(0 0 15px rgba(0,255,136,0.6))" fill-opacity="0.2"/>
+                <text x="128" y="20" fill="#00FF88" font-size="11" font-weight="bold" font-family="'Rajdhani', sans-serif" letter-spacing="1.5" text-anchor="middle">
                   ⚡ 1-CLICK SEBI SL-LIMIT ORDER [₹2,946.00]
                 </text>
                 <text x="128" y="32" fill="#A7F3D0" font-size="7.5" font-family="'Fira Code', monospace" text-anchor="middle">
@@ -487,7 +487,7 @@
             
             <!-- Left Sub-Card: Flutter Mobile Screen Mockup -->
             <g transform="translate(0, 0)">
-              <rect width="138" height="297" rx="16" fill="url(#eng-grad-mobile)" stroke="#A855F7" stroke-width="1.8" filter="drop-shadow(0 0 20px rgba(168,85,247,0.25))"/>
+              <rect width="138" height="297" rx="16" fill="url(#eng-grad-mobile)" stroke="#A855F7" stroke-width="1.8" style="filter: drop-shadow(0 0 20px rgba(168,85,247,0.25))"/>
               
               <!-- Dynamic Island -->
               <rect x="52" y="8" width="34" height="6" rx="3" fill="#000000"/>
@@ -536,7 +536,7 @@
 
             <!-- Right Sub-Card: SEBI Multi-Broker Order Routing Gateway -->
             <g transform="translate(146, 0)">
-              <rect width="139" height="297" rx="16" fill="url(#eng-grad-broker)" stroke="#FB923C" stroke-width="1.8" filter="drop-shadow(0 0 20px rgba(251,146,60,0.25))"/>
+              <rect width="139" height="297" rx="16" fill="url(#eng-grad-broker)" stroke="#FB923C" stroke-width="1.8" style="filter: drop-shadow(0 0 20px rgba(251,146,60,0.25))"/>
               
               <text x="12" y="24" fill="#FB923C" font-size="10" font-weight="bold">🏛️ SEBI GATEWAY</text>
               
@@ -577,10 +577,11 @@
         <!-- BOTTOM CAPTION BANNER                                    -->
         <!-- ======================================================== -->
         <g transform="translate(35, 690)">
-          <rect width="1170" height="42" rx="14" fill="#041220" stroke="#00F5FF" stroke-width="1.5" filter="drop-shadow(0 0 15px rgba(0,245,255,0.25))"/>
-          <text x="585" y="26" fill="#38BDF8" font-size="11.5" font-family="'Rajdhani', sans-serif" font-weight="bold" tracking-wider uppercase text-anchor="middle">
+          <rect width="1170" height="42" rx="14" fill="#041220" stroke="#00F5FF" stroke-width="1.5" style="filter: drop-shadow(0 0 15px rgba(0,245,255,0.25))"/>
+          <text x="585" y="26" fill="#38BDF8" font-size="11.5" font-family="'Rajdhani', sans-serif" font-weight="bold" letter-spacing="1.5" text-anchor="middle">
             ⚡ FULL-STACK QUANTITATIVE PIPELINE: TICK INGESTION ➔ ZERO-REDIS STATE ➔ 4-PILLAR CONFLUENCE ➔ 6 VETOES ➔ GEMINI AI SENTINEL ➔ WEB/MOBILE TERMINALS &amp; SEBI BROKER ROUTING
           </text>
         </g>
 
-      </svg>
+      
+</svg>
