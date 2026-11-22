@@ -134,7 +134,7 @@ def place_trade_order(
 
             # Pre-Trade Circuit Limit Validation
             clean_sym = req.symbol.upper().replace(".NS", "").replace(".BO", "").strip()
-            from app.engine.cache import market_cache
+            from app.market_cache import market_cache
             cached_pack = market_cache.get_stock(clean_sym)
             if cached_pack:
                 tech = cached_pack.get("technicals", {})
@@ -151,6 +151,21 @@ def place_trade_order(
                             status_code=400,
                             detail=f"Order rejected: {clean_sym} is currently locked in Lower Circuit freeze. Exchange does not accept Sell market orders during lower circuit limit."
                         )
+
+                # Pre-Trade Liquidity & Bid-Ask Spread Quality Collar
+                # Protects against wide-spread execution slippage (> 0.40%) on mid/small cap & BSE cash scrips
+                if req.order_type.upper() in ["MARKET", "market"]:
+                    quote_data = cached_pack.get("quote", {}) or cached_pack.get("technicals", {})
+                    best_bid = float(quote_data.get("best_bid") or 0.0)
+                    best_ask = float(quote_data.get("best_ask") or 0.0)
+                    ltp = float(quote_data.get("current_price") or req.price or 0.0)
+                    if best_bid > 0 and best_ask > 0 and ltp > 0:
+                        spread_pct = round(((best_ask - best_bid) / ltp) * 100.0, 2)
+                        if spread_pct > 0.40:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Order rejected by Liquidity Guard: {clean_sym} Bid-Ask spread is {spread_pct}% (> 0.40% threshold). Market orders are blocked to prevent severe execution slippage. Use LIMIT order instead."
+                            )
 
             # Dynamic Product Type Resolution (Option A: Auto-detect CNC vs MIS)
             product_type = req.product.lower() if getattr(req, "product", None) else None
@@ -283,6 +298,17 @@ def place_trade_order(
         # Invalidate portfolio caches on successful order execution
         invalidate_demat_portfolio_cache(req.user_id)
         _USER_PORTFOLIO_CACHE.pop(req.user_id, None)
+
+        # On sell orders, immediately reconcile Demat holdings and auto-delete sold positions from watchlists
+        if action_type == "sell":
+            try:
+                from app.routers.auth import _async_sync_demat_to_watchlists
+                fresh_holdings = adapter.fetch_holdings(creds_payload)
+                if fresh_holdings is not None:
+                    update_demat_portfolio_cache(req.user_id, fresh_holdings)
+                    _async_sync_demat_to_watchlists(db, req.user_id, fresh_holdings)
+            except Exception as recon_err:
+                logger.debug(f"Post-sell watchlist reconciliation note for {req.symbol}: {recon_err}")
 
         return order_resp
 

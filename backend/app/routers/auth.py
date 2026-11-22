@@ -68,10 +68,13 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
     Normalizes symbols via Universal Canonical Suffix Rule (.NS stripped, .BO preserved)
     and deduplicates payloads in-memory by immutable ISIN to prevent duplicate database rows.
     """
-    if not holdings_or_symbols:
+    if holdings_or_symbols is None:
         return
     try:
         sync_payload_map: Dict[str, Dict[str, Any]] = {}
+        active_symbols: Set[str] = set()
+        active_isins: Set[str] = set()
+
         for item in holdings_or_symbols:
             if isinstance(item, dict):
                 raw_sym = item.get("symbol") or item.get("clean_symbol") or ""
@@ -86,27 +89,42 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
 
                 avg_price = float(item.get("average_price") or item.get("avg_price") or 0.0)
                 qty = int(item.get("quantity") or item.get("qty") or 0)
-                row = {
-                    "user_id": user_id,
-                    "symbol": clean_sym,
-                    "company_name": comp_name,
-                    "is_auto_synced": True,
-                }
-                if isin_val:
-                    row["isin"] = isin_val
-                if avg_price > 0:
-                    row["average_buy_price"] = avg_price
-                if qty > 0:
-                    row["quantity"] = qty
 
-                dedup_key = isin_val if isin_val else clean_sym
-                sync_payload_map[dedup_key] = row
+                # Track as actively held only if quantity is positive
+                if qty > 0 or ("quantity" not in item and "qty" not in item):
+                    active_symbols.add(clean_sym.upper())
+                    active_symbols.add(raw_sym.upper())
+                    active_symbols.add(clean_sym.replace(".BO", "").replace(".NS", "").upper())
+                    if isin_val:
+                        active_isins.add(isin_val)
+
+                    row = {
+                        "user_id": user_id,
+                        "symbol": clean_sym,
+                        "company_name": comp_name,
+                        "is_auto_synced": True,
+                    }
+                    if isin_val:
+                        row["isin"] = isin_val
+                    if avg_price > 0:
+                        row["average_buy_price"] = avg_price
+                    if qty > 0:
+                        row["quantity"] = qty
+
+                    dedup_key = isin_val if isin_val else clean_sym
+                    sync_payload_map[dedup_key] = row
 
             elif isinstance(item, str) and item.strip():
                 clean_sym = normalize_watchlist_symbol(item)
                 if not clean_sym:
                     continue
                 isin_val = resolve_symbol_to_isin(clean_sym)
+                active_symbols.add(clean_sym.upper())
+                active_symbols.add(item.strip().upper())
+                active_symbols.add(clean_sym.replace(".BO", "").replace(".NS", "").upper())
+                if isin_val:
+                    active_isins.add(isin_val)
+
                 dedup_key = isin_val if isin_val else clean_sym
                 if dedup_key not in sync_payload_map:
                     row_entry = {
@@ -129,6 +147,39 @@ def _async_sync_demat_to_watchlists(db: Client, user_id: str, holdings_or_symbol
                 db.table("user_watchlists").upsert(sync_payload, on_conflict="user_id,symbol").execute()
 
             logger.info(f"Background auto-synced {len(sync_payload)} Demat holdings with cost-basis and ISIN to user_watchlists for user {mask_id(user_id)}")
+
+        # Option A Lifecycle Reconciliation:
+        # Automatically DELETE any auto-synced row (is_auto_synced == True) that is no longer in active holdings (quantity = 0 or sold 100%).
+        # Protects manually added stocks (is_auto_synced == False), which are NEVER deleted.
+        try:
+            existing_synced_res = db.table("user_watchlists") \
+                .select("id, symbol, isin") \
+                .eq("user_id", user_id) \
+                .eq("is_auto_synced", True) \
+                .execute()
+            existing_rows = existing_synced_res.data or []
+            stale_ids = []
+            for r in existing_rows:
+                raw_s = str(r.get("symbol") or "").strip().upper()
+                clean_s = normalize_watchlist_symbol(raw_s).upper()
+                base_s = raw_s.replace(".BO", "").replace(".NS", "").strip().upper()
+                isin_s = str(r.get("isin") or "").strip().upper()
+
+                is_active = (
+                    raw_s in active_symbols or
+                    clean_s in active_symbols or
+                    base_s in active_symbols or
+                    (bool(isin_s) and isin_s in active_isins)
+                )
+                if not is_active and r.get("id"):
+                    stale_ids.append(r["id"])
+
+            if stale_ids:
+                db.table("user_watchlists").delete().in_("id", stale_ids).execute()
+                logger.info(f"Reconciled Demat holdings for user {mask_id(user_id)}: Auto-deleted {len(stale_ids)} completely sold holdings from user_watchlists.")
+        except Exception as recon_err:
+            logger.warning(f"Note on reconciling sold auto-synced watchlists for user {mask_id(user_id)}: {recon_err}")
+
     except Exception as sync_err:
         logger.warning(f"Note on background auto-syncing Demat holdings: {sync_err}")
 
@@ -315,25 +366,15 @@ def get_brokers_catalog():
 
 
 @router.get("/api/brokers/{broker_id}/login-url")
+@router.get("/api/broker/{broker_id}/login-url")
 def get_broker_login_url(broker_id: str):
     """
     Returns the official broker login URL configured with institutional Master Keys.
+    Supports both singular /api/broker/{broker_id}/login-url and plural /api/brokers/{broker_id}/login-url.
     """
     adapter = get_broker(broker_id)
     return {
         "broker": adapter.broker_id,
-        "login_url": adapter.get_login_url()
-    }
-
-
-@router.get("/api/broker/icici/login-url")
-def get_icici_login_url_alias():
-    """
-    Backward-compatible alias for 1-Click ICICI Direct login URL.
-    """
-    adapter = get_broker("icici")
-    return {
-        "broker": "icici",
         "login_url": adapter.get_login_url()
     }
 
@@ -643,8 +684,10 @@ def get_user_portfolio(
     total_pnl = round(total_val - total_investment, 2) if (total_val > 0 and total_investment > 0) else None
     total_pnl_pct = round(((total_pnl / total_investment) * 100), 2) if (total_pnl is not None and total_investment > 0) else None
 
+    # Reconcile Demat holdings with user_watchlists (auto-deleting completely sold positions)
+    background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, detailed_holdings)
+
     if detailed_holdings:
-        background_tasks.add_task(_async_sync_demat_to_watchlists, db, user_id, detailed_holdings)
         try:
             from app.engine.ticker_stream import ticker_manager
             ticker_manager.register_user_portfolio(user_id, detailed_holdings)

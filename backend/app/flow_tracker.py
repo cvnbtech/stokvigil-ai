@@ -6,11 +6,41 @@ import logging
 import time
 import urllib.parse
 import urllib.request
+import threading
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import feedparser
 import yfinance as yf
 from typing import Dict, Any, List, Optional, Set
 
 logger = logging.getLogger("stokvigil.flow_tracker")
+
+_NSE_SESSION: Optional[requests.Session] = None
+_NSE_SESSION_LOCK = threading.Lock()
+_NSE_LAST_INIT: float = 0.0
+
+def _get_nse_session() -> requests.Session:
+    """Pre-warms an HTTP session with valid NSE India cookies to prevent 401/403 WAF blocks."""
+    global _NSE_SESSION, _NSE_LAST_INIT
+    now = time.time()
+    with _NSE_SESSION_LOCK:
+        if _NSE_SESSION is None or (now - _NSE_LAST_INIT) > 600.0:
+            session = requests.Session()
+            adapter = HTTPAdapter(max_retries=Retry(total=1, backoff_factor=0.3, status_forcelist=[500, 502, 503, 504]))
+            session.mount("https://", adapter)
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+            try:
+                session.get("https://www.nseindia.com", timeout=3.0)
+                _NSE_LAST_INIT = now
+            except Exception as e:
+                logger.debug(f"NSE session cookie pre-warm notice: {e}")
+            _NSE_SESSION = session
+        return _NSE_SESSION
 
 # In-memory option chain cache: (symbol -> {data, timestamp}) with 900s (15-min) TTL
 _OPTION_CHAIN_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -253,124 +283,138 @@ def fetch_nse_option_chain(symbol: str) -> Optional[Dict[str, Any]]:
     url = f"{base_url}{urllib.parse.quote(clean_sym)}"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
         "Referer": f"https://www.nseindia.com/option-chain",
     }
 
+    raw_json = None
     try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=1.5) as resp:
-            if resp.status == 200:
-                raw_json = json.loads(resp.read().decode("utf-8"))
-                records = raw_json.get("records", {})
-                data_rows = records.get("data", [])
+        session = _get_nse_session()
+        resp = session.get(url, headers=headers, timeout=2.5)
+        if resp.status_code == 200:
+            raw_json = resp.json()
+    except Exception:
+        raw_json = None
+
+    if raw_json is None:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=2.5) as u_resp:
+                if getattr(u_resp, "status", None) == 200 or getattr(u_resp, "code", None) == 200:
+                    raw_json = json.loads(u_resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.debug(f"Direct NSE option chain query fallback skipped: {e}")
+
+    if raw_json and isinstance(raw_json, dict):
+        try:
+            records = raw_json.get("records", {})
+            data_rows = records.get("data", [])
                 
-                if not data_rows:
-                    return None
+            if not data_rows:
+                return None
 
-                # Granular Expiry Filtering: Filter strictly for near-month / weekly current expiry
-                # Eliminates far-month illiquid options from distorting PCR and Max Pain
-                expiry_dates = records.get("expiryDates", [])
-                current_expiry = expiry_dates[0] if expiry_dates else None
+            # Granular Expiry Filtering: Filter strictly for near-month / weekly current expiry
+            # Eliminates far-month illiquid options from distorting PCR and Max Pain
+            expiry_dates = records.get("expiryDates", [])
+            current_expiry = expiry_dates[0] if expiry_dates else None
 
-                filtered_rows = []
-                for row in data_rows:
-                    row_expiry = row.get("expiryDate") or row.get("CE", {}).get("expiryDate") or row.get("PE", {}).get("expiryDate")
-                    if current_expiry and row_expiry and row_expiry != current_expiry:
-                        continue
-                    filtered_rows.append(row)
+            filtered_rows = []
+            for row in data_rows:
+                row_expiry = row.get("expiryDate") or row.get("CE", {}).get("expiryDate") or row.get("PE", {}).get("expiryDate")
+                if current_expiry and row_expiry and row_expiry != current_expiry:
+                    continue
+                filtered_rows.append(row)
 
-                data_rows = filtered_rows if filtered_rows else data_rows
+            data_rows = filtered_rows if filtered_rows else data_rows
 
-                strikes_data = []
-                total_ce_oi = 0
-                total_pe_oi = 0
-                max_ce_oi = -1
-                max_pe_oi = -1
-                res_strike = 0.0
-                sup_strike = 0.0
+            strikes_data = []
+            total_ce_oi = 0
+            total_pe_oi = 0
+            max_ce_oi = -1
+            max_pe_oi = -1
+            res_strike = 0.0
+            sup_strike = 0.0
 
-                total_ce_change_oi = 0
-                total_pe_change_oi = 0
+            total_ce_change_oi = 0
+            total_pe_change_oi = 0
 
-                for row in data_rows:
-                    strike = float(row.get("strikePrice", 0.0))
-                    ce = row.get("CE", {})
-                    pe = row.get("PE", {})
-                    ce_oi = int(ce.get("openInterest", 0))
-                    pe_oi = int(pe.get("openInterest", 0))
-                    ce_change = int(ce.get("changeinOpenInterest", 0) or ce.get("pchangeinOpenInterest", 0) or 0)
-                    pe_change = int(pe.get("changeinOpenInterest", 0) or pe.get("pchangeinOpenInterest", 0) or 0)
+            for row in data_rows:
+                strike = float(row.get("strikePrice", 0.0))
+                ce = row.get("CE", {})
+                pe = row.get("PE", {})
+                ce_oi = int(ce.get("openInterest", 0))
+                pe_oi = int(pe.get("openInterest", 0))
+                ce_change = int(ce.get("changeinOpenInterest", 0) or ce.get("pchangeinOpenInterest", 0) or 0)
+                pe_change = int(pe.get("changeinOpenInterest", 0) or pe.get("pchangeinOpenInterest", 0) or 0)
 
-                    if strike > 0:
-                        strikes_data.append((strike, ce_oi, pe_oi))
-                        total_ce_oi += ce_oi
-                        total_pe_oi += pe_oi
-                        total_ce_change_oi += ce_change
-                        total_pe_change_oi += pe_change
+                if strike > 0:
+                    strikes_data.append((strike, ce_oi, pe_oi))
+                    total_ce_oi += ce_oi
+                    total_pe_oi += pe_oi
+                    total_ce_change_oi += ce_change
+                    total_pe_change_oi += pe_change
 
-                        if ce_oi > max_ce_oi:
-                            max_ce_oi = ce_oi
-                            res_strike = strike
-                        if pe_oi > max_pe_oi:
-                            max_pe_oi = pe_oi
-                            sup_strike = strike
+                    if ce_oi > max_ce_oi:
+                        max_ce_oi = ce_oi
+                        res_strike = strike
+                    if pe_oi > max_pe_oi:
+                        max_pe_oi = pe_oi
+                        sup_strike = strike
 
-                if not strikes_data or total_ce_oi == 0:
-                    return None
+            if not strikes_data or total_ce_oi == 0:
+                return None
 
-                pcr = round(total_pe_oi / max(1, total_ce_oi), 2)
-                net_oi_change = total_pe_change_oi - total_ce_change_oi
-                
-                if total_ce_change_oi < 0 and total_pe_change_oi >= 0:
-                    net_oi_bias = "CALL_UNWINDING_SHORT_COVERING"
-                elif total_pe_change_oi > total_ce_change_oi * 1.5 and total_pe_change_oi > 0:
-                    net_oi_bias = "AGGRESSIVE_PUT_WRITING"
-                elif total_ce_change_oi > total_pe_change_oi * 1.5 and total_ce_change_oi > 0:
-                    net_oi_bias = "CALL_WRITING_RESISTANCE"
-                elif net_oi_change > 0:
-                    net_oi_bias = "MILD_BULLISH_OI_ADDITION"
-                elif net_oi_change < 0:
-                    net_oi_bias = "MILD_BEARISH_OI_ADDITION"
-                else:
-                    net_oi_bias = "NEUTRAL_OI_CHANGE"
+            pcr = round(total_pe_oi / max(1, total_ce_oi), 2)
+            net_oi_change = total_pe_change_oi - total_ce_change_oi
+            
+            if total_ce_change_oi < 0 and total_pe_change_oi >= 0:
+                net_oi_bias = "CALL_UNWINDING_SHORT_COVERING"
+            elif total_pe_change_oi > total_ce_change_oi * 1.5 and total_pe_change_oi > 0:
+                net_oi_bias = "AGGRESSIVE_PUT_WRITING"
+            elif total_ce_change_oi > total_pe_change_oi * 1.5 and total_ce_change_oi > 0:
+                net_oi_bias = "CALL_WRITING_RESISTANCE"
+            elif net_oi_change > 0:
+                net_oi_bias = "MILD_BULLISH_OI_ADDITION"
+            elif net_oi_change < 0:
+                net_oi_bias = "MILD_BEARISH_OI_ADDITION"
+            else:
+                net_oi_bias = "NEUTRAL_OI_CHANGE"
 
-                # Vectorized / In-Memory Max Pain Calculation
-                # Max Pain = Strike K that minimizes total payout across all Call and Put writers
-                candidate_strikes = [s[0] for s in strikes_data]
-                min_loss = float("inf")
-                max_pain_strike = candidate_strikes[0]
+            # Vectorized / In-Memory Max Pain Calculation
+            # Max Pain = Strike K that minimizes total payout across all Call and Put writers
+            candidate_strikes = [s[0] for s in strikes_data]
+            min_loss = float("inf")
+            max_pain_strike = candidate_strikes[0]
 
-                for k in candidate_strikes:
-                    loss_k = sum(
-                        (max(0.0, s - k) * c_oi) + (max(0.0, k - s) * p_oi)
-                        for s, c_oi, p_oi in strikes_data
-                    )
-                    if loss_k < min_loss:
-                        min_loss = loss_k
-                        max_pain_strike = k
+            for k in candidate_strikes:
+                loss_k = sum(
+                    (max(0.0, s - k) * c_oi) + (max(0.0, k - s) * p_oi)
+                    for s, c_oi, p_oi in strikes_data
+                )
+                if loss_k < min_loss:
+                    min_loss = loss_k
+                    max_pain_strike = k
 
-                result = {
-                    "expiry_date": current_expiry,
-                    "pcr": pcr,
-                    "max_pain_strike": max_pain_strike,
-                    "major_support_strike": sup_strike,
-                    "major_resistance_strike": res_strike,
-                    "total_call_oi": total_ce_oi,
-                    "total_put_oi": total_pe_oi,
-                    "total_call_change_oi": total_ce_change_oi,
-                    "total_put_change_oi": total_pe_change_oi,
-                    "net_oi_change": net_oi_change,
-                    "net_oi_bias": net_oi_bias,
-                    "source": "NSE_OFFICIAL_OPTION_CHAIN"
-                }
+            result = {
+                "expiry_date": current_expiry,
+                "pcr": pcr,
+                "max_pain_strike": max_pain_strike,
+                "major_support_strike": sup_strike,
+                "major_resistance_strike": res_strike,
+                "total_call_oi": total_ce_oi,
+                "total_put_oi": total_pe_oi,
+                "total_call_change_oi": total_ce_change_oi,
+                "total_put_change_oi": total_pe_change_oi,
+                "net_oi_change": net_oi_change,
+                "net_oi_bias": net_oi_bias,
+                "source": "NSE_OFFICIAL_OPTION_CHAIN"
+            }
 
-                _OPTION_CHAIN_CACHE[clean_sym] = {"data": result, "timestamp": now}
-                return result
-    except Exception as e:
-        logger.debug(f"Direct NSE option chain query skipped/unavailable for {clean_sym}: {e}")
+            _OPTION_CHAIN_CACHE[clean_sym] = {"data": result, "timestamp": now}
+            return result
+        except Exception as e:
+            logger.debug(f"Direct NSE option chain query skipped/unavailable for {clean_sym}: {e}")
 
     return None
 

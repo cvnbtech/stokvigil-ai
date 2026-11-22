@@ -330,6 +330,45 @@ class TestFinancialTradeFlaws(unittest.TestCase):
         self.assertEqual(req_sl_l.price, 24480.0)
         self.assertEqual(req_sl_l.trigger_price, 24500.0)
 
+    def test_place_order_wide_bid_ask_spread_rejected(self):
+        """Pre-trade liquidity guard rejects MARKET orders when Bid-Ask spread > 0.40%."""
+        from app.market_cache import market_cache
+        from app.routers.orders import place_trade_order
+        from fastapi import HTTPException
+
+        clean_sym = "ILLIQUID_BSE"
+        # Bid: 99.0, Ask: 100.5 (Spread = 1.50 / 100 = 1.5% > 0.40%)
+        market_cache.set_stock(clean_sym, {
+            "symbol": clean_sym,
+            "quote": {"best_bid": 99.0, "best_ask": 100.5, "current_price": 100.0}
+        }, ttl_seconds=60)
+
+        mock_db = MagicMock()
+        mock_db.table().select().eq().execute.return_value.data = [{
+            "id": "user_spread_test",
+            "api_key": "k", "api_secret": "s", "session_token": "tok"
+        }]
+
+        req = PlaceOrderRequest(
+            user_id="user_spread_test",
+            symbol=clean_sym,
+            action="BUY",
+            order_type="MARKET",
+            quantity=10
+        )
+
+        with patch("app.routers.orders.get_market_session_status", return_value=(True, "Market Open")):
+            with self.assertRaises(HTTPException) as ctx:
+                place_trade_order(
+                    req=req,
+                    x_idempotency_key="spread_test_key_1",
+                    auth_user_id="user_spread_test",
+                    db=mock_db
+                )
+            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertIn("Liquidity Guard", ctx.exception.detail)
+            self.assertIn("Bid-Ask spread", ctx.exception.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

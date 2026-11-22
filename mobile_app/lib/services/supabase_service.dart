@@ -267,6 +267,58 @@ class SupabaseService {
     }
   }
 
+  /// Option A Lifecycle Reconciliation:
+  /// Automatically DELETE any auto-synced row (is_auto_synced == true) that is no longer in active holdings (sold 100%).
+  /// Preserves manually added watchlist items (is_auto_synced: false).
+  Future<int> reconcileAutoSyncedWatchlist(List<String> activeHoldingSymbols, [List<String>? activeIsins]) async {
+    final user = currentUser;
+    if (user == null || !isConfigured) return 0;
+    try {
+      final activeSet = <String>{};
+      for (final s in activeHoldingSymbols) {
+        final up = s.trim().toUpperCase();
+        activeSet.add(up);
+        activeSet.add(normalizeSymbol(up).toUpperCase());
+        activeSet.add(up.replaceAll(RegExp(r'\.(BO|NS)$', caseSensitive: false), '').trim());
+      }
+      final activeIsinSet = (activeIsins ?? []).map((i) => i.trim().toUpperCase()).where((i) => i.isNotEmpty).toSet();
+
+      final res = await client
+          .from('user_watchlists')
+          .select('id, symbol, isin')
+          .eq('user_id', user.id)
+          .eq('is_auto_synced', true);
+
+      final List rows = res as List? ?? [];
+      final List staleIds = [];
+      for (final r in rows) {
+        final sym = (r['symbol'] ?? '').toString().trim().toUpperCase();
+        final normSym = normalizeSymbol(sym).toUpperCase();
+        final baseSym = sym.replaceAll(RegExp(r'\.(BO|NS)$', caseSensitive: false), '').trim().toUpperCase();
+        final isin = (r['isin'] ?? '').toString().trim().toUpperCase();
+
+        final isActive = activeSet.contains(sym) ||
+            activeSet.contains(normSym) ||
+            activeSet.contains(baseSym) ||
+            (isin.isNotEmpty && activeIsinSet.contains(isin));
+
+        if (!isActive && r['id'] != null) {
+          staleIds.add(r['id']);
+        }
+      }
+
+      if (staleIds.isNotEmpty) {
+        await client.from('user_watchlists').delete().inFilter('id', staleIds);
+        debugPrint('Reconciled auto-synced watchlists: Deleted ${staleIds.length} completely sold holdings.');
+        return staleIds.length;
+      }
+      return 0;
+    } catch (e) {
+      debugPrint('Error reconciling auto-synced watchlist: $e');
+      return 0;
+    }
+  }
+
   Future<bool> removeFromWatchlist(dynamic id, [String? symbol]) async {
     final user = currentUser;
     if (user == null || !isConfigured) return true;

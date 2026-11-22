@@ -24,10 +24,12 @@ interface CandleItem {
 }
 
 interface CamarillaLevels {
+  h5?: number;
   h4: number;
   h3: number;
   l3: number;
   l4: number;
+  l5?: number;
 }
 
 interface CrosshairData {
@@ -53,7 +55,24 @@ function createCamarillaPriceLines(
   cam: CamarillaLevels
 ): IPriceLine[] {
   if (!cam || cam.h4 <= 0) return [];
-  return [
+  const lines: IPriceLine[] = [];
+
+  // H5: Target 2 / Ultra Breakout Expansion (Close + Range * 1.1)
+  if (cam.h5 && cam.h5 > 0) {
+    lines.push(
+      series.createPriceLine({
+        price: cam.h5,
+        color: "#a855f7",
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: `H5 Expansion (₹${cam.h5})`,
+      })
+    );
+  }
+
+  // H4: Primary Institutional Breakout Level (Close + Range * 0.55)
+  lines.push(
     series.createPriceLine({
       price: cam.h4,
       color: "#ec4899",
@@ -61,7 +80,11 @@ function createCamarillaPriceLines(
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
       title: `H4 Breakout (₹${cam.h4})`,
-    }),
+    })
+  );
+
+  // H3: Range Resistance / Tactical Target 1 (Close + Range * 0.275)
+  lines.push(
     series.createPriceLine({
       price: cam.h3,
       color: "#10b981",
@@ -69,7 +92,11 @@ function createCamarillaPriceLines(
       lineStyle: LineStyle.Dotted,
       axisLabelVisible: true,
       title: `H3 Tactical Res 1 (₹${cam.h3})`,
-    }),
+    })
+  );
+
+  // L3: Liquidity Floor / Mean-Reversion Demand (Close - Range * 0.275)
+  lines.push(
     series.createPriceLine({
       price: cam.l3,
       color: "#06b6d4",
@@ -77,7 +104,11 @@ function createCamarillaPriceLines(
       lineStyle: LineStyle.Dotted,
       axisLabelVisible: true,
       title: `L3 Liquidity (₹${cam.l3})`,
-    }),
+    })
+  );
+
+  // L4: Hard Protective Stop-Loss / Breakdown Floor (Close - Range * 0.55)
+  lines.push(
     series.createPriceLine({
       price: cam.l4,
       color: "#f43f5e",
@@ -85,8 +116,24 @@ function createCamarillaPriceLines(
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: true,
       title: `L4 Hard SL (₹${cam.l4})`,
-    }),
-  ];
+    })
+  );
+
+  // L5: Capitulation Floor (Close - Range * 1.1)
+  if (cam.l5 && cam.l5 > 0) {
+    lines.push(
+      series.createPriceLine({
+        price: cam.l5,
+        color: "#dc2626",
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: `L5 Capitulation (₹${cam.l5})`,
+      })
+    );
+  }
+
+  return lines;
 }
 
 export default function LightweightCandleChart({
@@ -169,18 +216,23 @@ export default function LightweightCandleChart({
       try {
         const cleanSym = symbol.trim().toUpperCase();
         const period = interval === "1d" ? "1y" : "5d";
+        
+        // Pure Backend Ingestion: Routes strictly to the Python FastAPI backend engine via /api/stocks/candles
         const res = await fetch(
-          `${backendUrl}/api/stocks/candles?symbol=${encodeURIComponent(cleanSym)}&interval=${interval}&period=${period}`
+          `/api/stocks/candles?symbol=${encodeURIComponent(cleanSym)}&interval=${interval}&period=${period}`,
+          { cache: "no-store", signal: AbortSignal.timeout(8000) }
         );
+
         if (!res.ok) {
-          throw new Error(`Failed to load candle data (HTTP ${res.status})`);
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || `Failed to load candle data from Python backend (HTTP ${res.status}).`);
         }
         const data = await res.json();
         if (!isMounted) return;
 
         const candles: CandleItem[] = data.candles || [];
         if (candles.length === 0) {
-          setError(`No intraday bar data available for ${cleanSym}.`);
+          setError(data.error || `No intraday bar data available from Python backend for ${cleanSym}.`);
           setLoading(false);
           return;
         }
@@ -620,8 +672,17 @@ export default function LightweightCandleChart({
         ))}
 
         {camarilla && camarilla.h4 > 0 && showCamarilla && (
-          <span style={{ fontSize: 9.5, color: "#64748b", marginLeft: "auto" }}>
-            H4: ₹{camarilla.h4} | H3: ₹{camarilla.h3} | L3: ₹{camarilla.l3} | L4: ₹{camarilla.l4}
+          <span style={{ fontSize: 9.5, color: "#64748b", marginLeft: "auto", display: "flex", gap: "6px", alignItems: "center" }}>
+            {camarilla.h5 != null && camarilla.h5 > 0 && (
+              <span style={{ color: "#a855f7" }}>H5: ₹{camarilla.h5}</span>
+            )}
+            <span style={{ color: "#ec4899" }}>H4: ₹{camarilla.h4}</span>
+            <span style={{ color: "#10b981" }}>H3: ₹{camarilla.h3}</span>
+            <span style={{ color: "#06b6d4" }}>L3: ₹{camarilla.l3}</span>
+            <span style={{ color: "#f43f5e" }}>L4: ₹{camarilla.l4}</span>
+            {camarilla.l5 != null && camarilla.l5 > 0 && (
+              <span style={{ color: "#dc2626" }}>L5: ₹{camarilla.l5}</span>
+            )}
           </span>
         )}
       </div>

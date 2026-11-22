@@ -38,7 +38,14 @@ class ApiService {
     if (configured.isNotEmpty && !configured.contains('xxxx.a.run.app')) {
       return configured.replaceAll(RegExp(r'/+$'), '');
     }
-    // Purely environment-driven: Return empty if not configured in environment (no dummy localhost)
+    // In local development/debug if no explicit backend is configured:
+    // Route Android emulator to host machine port 8000; default to localhost for desktop/web.
+    if (kDebugMode) {
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        return 'http://10.0.2.2:8000';
+      }
+      return 'http://localhost:8000';
+    }
     return '';
   }
 

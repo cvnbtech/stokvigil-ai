@@ -6,6 +6,7 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List
+from app.patterns import evaluate_candlestick_patterns
 
 logger = logging.getLogger("stokvigil.technical_engine")
 
@@ -392,10 +393,13 @@ def calculate_rvol_and_surge(df_5m: pd.DataFrame) -> Tuple[Optional[float], bool
 def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[float]]:
     """
     Computes Camarilla Equation Institutional Pivots from the prior completed daily session.
-    Provides mathematical floors (L3, L4) and ceilings (H3, H4) watched by institutional order books.
-    Returns None values if data is unavailable.
+    Provides mathematical expansion floors (L1-L5) and ceilings (H1-H5) watched by institutional order books.
+    Returns None values if data is unavailable (Zero-Default Policy).
     """
-    default_pivots = {"h4": None, "h3": None, "l3": None, "l4": None}
+    default_pivots = {
+        "h5": None, "h4": None, "h3": None, "h2": None, "h1": None,
+        "l1": None, "l2": None, "l3": None, "l4": None, "l5": None
+    }
     if len(df_daily) < 1:
         return default_pivots
 
@@ -423,15 +427,167 @@ def calculate_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[flo
         if pd.isna(c) or pd.isna(h) or pd.isna(l) or rng <= 0 or pd.isna(rng):
             return default_pivots
 
+        h5 = round(c + (rng * 1.1), 2)
         h4 = round(c + (rng * 1.1 / 2.0), 2)
         h3 = round(c + (rng * 1.1 / 4.0), 2)
+        h2 = round(c + (rng * 1.1 / 6.0), 2)
+        h1 = round(c + (rng * 1.1 / 12.0), 2)
+        l1 = round(c - (rng * 1.1 / 12.0), 2)
+        l2 = round(c - (rng * 1.1 / 6.0), 2)
         l3 = round(c - (rng * 1.1 / 4.0), 2)
         l4 = round(c - (rng * 1.1 / 2.0), 2)
+        l5 = round(c - (rng * 1.1), 2)
 
-        return {"h4": h4, "h3": h3, "l3": l3, "l4": l4}
+        return {
+            "h5": h5, "h4": h4, "h3": h3, "h2": h2, "h1": h1,
+            "l1": l1, "l2": l2, "l3": l3, "l4": l4, "l5": l5
+        }
     except Exception as e:
         logger.warning(f"Camarilla pivots calculation fallback: {e}")
         return default_pivots
+
+
+def calculate_weekly_camarilla_pivots(df_daily: pd.DataFrame) -> Dict[str, Optional[float]]:
+    """
+    Computes Weekly Camarilla Institutional Pivots from prior completed weekly data.
+    Institutional traders watch weekly pivots for multi-timeframe level clustering.
+    Returns None values if fewer than 5 daily bars are available.
+    """
+    default_pivots = {
+        "w_h5": None, "w_h4": None, "w_h3": None, "w_l3": None, "w_l4": None, "w_l5": None
+    }
+    if df_daily is None or len(df_daily) < 5:
+        return default_pivots
+
+    try:
+        df_copy = df_daily.copy()
+        if not isinstance(df_copy.index, pd.DatetimeIndex):
+            df_copy.index = pd.to_datetime(df_copy.index)
+
+        # Resample to weekly ending on Friday
+        df_weekly = df_copy.resample('W-FRI').agg({
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last'
+        }).dropna()
+
+        if len(df_weekly) < 2:
+            # Fallback to rolling prior 5 completed bars
+            ref_slice = df_copy.iloc[-10:-5] if len(df_copy) >= 10 else df_copy.iloc[:-1]
+            if ref_slice.empty:
+                return default_pivots
+            h = float(ref_slice['High'].max())
+            l = float(ref_slice['Low'].min())
+            c = float(ref_slice['Close'].iloc[-1])
+        else:
+            # Use prior completed week (iloc[-2])
+            ref_week = df_weekly.iloc[-2]
+            h = float(ref_week['High'])
+            l = float(ref_week['Low'])
+            c = float(ref_week['Close'])
+
+        rng = h - l
+        if pd.isna(c) or pd.isna(h) or pd.isna(l) or rng <= 0 or pd.isna(rng):
+            return default_pivots
+
+        w_h5 = round(c + (rng * 1.1), 2)
+        w_h4 = round(c + (rng * 1.1 / 2.0), 2)
+        w_h3 = round(c + (rng * 1.1 / 4.0), 2)
+        w_l3 = round(c - (rng * 1.1 / 4.0), 2)
+        w_l4 = round(c - (rng * 1.1 / 2.0), 2)
+        w_l5 = round(c - (rng * 1.1), 2)
+
+        return {
+            "w_h5": w_h5, "w_h4": w_h4, "w_h3": w_h3,
+            "w_l3": w_l3, "w_l4": w_l4, "w_l5": w_l5
+        }
+    except Exception as e:
+        logger.debug(f"Weekly Camarilla fallback: {e}")
+        return default_pivots
+
+
+def detect_camarilla_pivot_clustering(
+    daily_pivots: Dict[str, Optional[float]],
+    weekly_pivots: Dict[str, Optional[float]],
+    threshold_pct: float = 0.35
+) -> Dict[str, Any]:
+    """
+    Identifies high-probability Multi-Timeframe Pivot Clustering.
+    When a Daily pivot aligns within +/- 0.35% of a Weekly pivot, it creates an institutional fortress.
+    """
+    d_h4 = daily_pivots.get("h4")
+    d_l4 = daily_pivots.get("l4")
+    w_h3 = weekly_pivots.get("w_h3")
+    w_h4 = weekly_pivots.get("w_h4")
+    w_l3 = weekly_pivots.get("w_l3")
+    w_l4 = weekly_pivots.get("w_l4")
+
+    # Check Bullish Confluence
+    if d_h4 is not None and d_h4 > 0:
+        for w_lvl, name in [(w_h4, "Weekly H4"), (w_h3, "Weekly H3")]:
+            if w_lvl is not None and w_lvl > 0:
+                diff_pct = abs(d_h4 - w_lvl) / d_h4 * 100.0
+                if diff_pct <= threshold_pct:
+                    return {
+                        "is_pivot_cluster": True,
+                        "cluster_type": "BULLISH_MTF_CLUSTER",
+                        "confluence_level": d_h4,
+                        "description": f"Institutional Cluster: Daily H4 (₹{d_h4}) aligns with {name} (₹{w_lvl}) within {diff_pct:.2f}%."
+                    }
+
+    # Check Bearish Confluence
+    if d_l4 is not None and d_l4 > 0:
+        for w_lvl, name in [(w_l4, "Weekly L4"), (w_l3, "Weekly L3")]:
+            if w_lvl is not None and w_lvl > 0:
+                diff_pct = abs(d_l4 - w_lvl) / d_l4 * 100.0
+                if diff_pct <= threshold_pct:
+                    return {
+                        "is_pivot_cluster": True,
+                        "cluster_type": "BEARISH_MTF_CLUSTER",
+                        "confluence_level": d_l4,
+                        "description": f"Institutional Cluster: Daily L4 (₹{d_l4}) aligns with {name} (₹{w_lvl}) within {diff_pct:.2f}%."
+                    }
+
+    return {
+        "is_pivot_cluster": False,
+        "cluster_type": "NONE",
+        "confluence_level": None,
+        "description": "No multi-timeframe pivot cluster detected."
+    }
+
+
+def classify_camarilla_open(day_open: Optional[float], pivots: Dict[str, Optional[float]]) -> str:
+    """
+    Classifies the 9:15 AM market open relative to Camarilla boundaries.
+    The 5 Institutional Market Opens determine whether to trade breakout or mean-reversion:
+    1. OPEN_INSIDE_VALUE (L3 <= Open <= H3): High odds of range-bound day; fade extremes.
+    2. OPEN_ABOVE_H4_BREAKOUT (Open > H4): Gap-and-Go momentum; pullbacks to H4 become support.
+    3. OPEN_BELOW_L4_BREAKDOWN (Open < L4): Panic liquidation; pullbacks to L4 become resistance.
+    4. OPEN_IN_UPPER_TRAP_ZONE (H3 < Open <= H4): High risk of bull trap.
+    5. OPEN_IN_LOWER_TRAP_ZONE (L4 <= Open < L3): High risk of bear trap.
+    """
+    if day_open is None or day_open <= 0 or not pivots:
+        return "DATA_INSUFFICIENT"
+
+    h4 = pivots.get("h4")
+    h3 = pivots.get("h3")
+    l3 = pivots.get("l3")
+    l4 = pivots.get("l4")
+
+    if h4 is None or h3 is None or l3 is None or l4 is None:
+        return "DATA_INSUFFICIENT"
+
+    if day_open > h4:
+        return "OPEN_ABOVE_H4_BREAKOUT"
+    elif day_open < l4:
+        return "OPEN_BELOW_L4_BREAKDOWN"
+    elif l3 <= day_open <= h3:
+        return "OPEN_INSIDE_VALUE"
+    elif h3 < day_open <= h4:
+        return "OPEN_IN_UPPER_TRAP_ZONE"
+    elif l4 <= day_open < l3:
+        return "OPEN_IN_LOWER_TRAP_ZONE"
+    return "OPEN_INSIDE_VALUE"
 
 def calculate_relative_strength(df_daily: pd.DataFrame, nifty_20d_ret: float = 1.0) -> Dict[str, Any]:
     """
@@ -512,7 +668,17 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "atr_14": None,
         "adx_14": None,
         "adx_regime": "DATA_INSUFFICIENT",
-        "camarilla_pivots": {"h4": None, "h3": None, "l3": None, "l4": None},
+        "camarilla_pivots": {
+            "h5": None, "h4": None, "h3": None, "h2": None, "h1": None,
+            "l1": None, "l2": None, "l3": None, "l4": None, "l5": None
+        },
+        "weekly_camarilla_pivots": {
+            "w_h5": None, "w_h4": None, "w_h3": None, "w_l3": None, "w_l4": None, "w_l5": None
+        },
+        "camarilla_cluster": {
+            "is_pivot_cluster": False, "cluster_type": "NONE", "confluence_level": None, "description": "No cluster"
+        },
+        "camarilla_open_type": "DATA_INSUFFICIENT",
         "rs_rating": None,
         "rs_regime": "DATA_INSUFFICIENT",
         "rolling_3d_change_pct": None,
@@ -533,7 +699,7 @@ def fetch_multi_timeframe_technicals(symbol: str) -> Dict[str, Any]:
         "is_volume_surge": False,
         "close_location_pct": None,
         "candle_5m_change_pct": None,
-        "technical_score": 50
+        "technical_score": None
     }
 
     try:
@@ -741,7 +907,17 @@ def compute_technicals_from_frames(
         "atr_14": None,
         "adx_14": None,
         "adx_regime": "DATA_INSUFFICIENT",
-        "camarilla_pivots": {"h4": None, "h3": None, "l3": None, "l4": None},
+        "camarilla_pivots": {
+            "h5": None, "h4": None, "h3": None, "h2": None, "h1": None,
+            "l1": None, "l2": None, "l3": None, "l4": None, "l5": None
+        },
+        "weekly_camarilla_pivots": {
+            "w_h5": None, "w_h4": None, "w_h3": None, "w_l3": None, "w_l4": None, "w_l5": None
+        },
+        "camarilla_cluster": {
+            "is_pivot_cluster": False, "cluster_type": "NONE", "confluence_level": None, "description": "No cluster"
+        },
+        "camarilla_open_type": "DATA_INSUFFICIENT",
         "rs_rating": None,
         "rs_regime": "DATA_INSUFFICIENT",
         "rolling_3d_change_pct": None,
@@ -762,7 +938,7 @@ def compute_technicals_from_frames(
         "is_volume_surge": False,
         "close_location_pct": None,
         "candle_5m_change_pct": None,
-        "technical_score": 50
+        "technical_score": None
     }
 
     try:
@@ -804,9 +980,21 @@ def compute_technicals_from_frames(
                     ma_trend = "NEUTRAL"
                 
                 camarilla_pivots = calculate_camarilla_pivots(df_daily)
+                weekly_camarilla_pivots = calculate_weekly_camarilla_pivots(df_daily)
+                pivot_cluster = detect_camarilla_pivot_clustering(camarilla_pivots, weekly_camarilla_pivots)
+                camarilla_open_type = classify_camarilla_open(current_price, camarilla_pivots)
                 rs_dict = calculate_relative_strength(df_daily)
                 adx_dict = calculate_adx(df_daily, 14)
                 ttm_squeeze = calculate_ttm_squeeze(df_daily)
+                anchor_levels = {
+                    "vwap": None,
+                    "l3": camarilla_pivots.get("l3"),
+                    "l4": camarilla_pivots.get("l4"),
+                    "h3": camarilla_pivots.get("h3"),
+                    "h4": camarilla_pivots.get("h4"),
+                    "ema200": ema_200
+                }
+                patterns_daily = evaluate_candlestick_patterns(df_daily, timeframe="1d", anchor_levels=anchor_levels)
                 trend_stats = _calculate_multiday_trend_stats(df_daily, current_price)
                 r_3d = trend_stats["r_3d"]
                 r_5d = trend_stats["r_5d"]
@@ -816,31 +1004,45 @@ def compute_technicals_from_frames(
                 below_ema50 = trend_stats["below_ema50"]
                 dd_20d = trend_stats["drawdown_from_20d_high"]
                 
-                tech_score = 50
-                if ema_50:
-                    tech_score += 10 if current_price > ema_50 else -10
-                if rsi_daily is not None:
-                    if 50 <= rsi_daily <= 70:
-                        tech_score += 10
-                    elif rsi_daily < 35:
-                        tech_score -= 10
-                if rs_dict.get("rs_regime") == "OUTPERFORMING_LEADER":
-                    tech_score += 5
-                elif rs_dict.get("rs_regime") == "UNDERPERFORMING_LAGGARD":
-                    tech_score -= 5
-                tech_score = max(5, min(95, tech_score))
+                if current_price is None or current_price <= 0:
+                    tech_score = None
+                else:
+                    tech_score = 50
+                    if ema_50:
+                        tech_score += 10 if current_price > ema_50 else -10
+                    if rsi_daily is not None:
+                        if 50 <= rsi_daily <= 70:
+                            tech_score += 10
+                        elif rsi_daily < 35:
+                            tech_score -= 10
+                    if rs_dict.get("rs_regime") == "OUTPERFORMING_LEADER":
+                        tech_score += 5
+                    elif rs_dict.get("rs_regime") == "UNDERPERFORMING_LAGGARD":
+                        tech_score -= 5
+                    if pivot_cluster.get("is_pivot_cluster"):
+                        tech_score += 5
+                    tech_score += patterns_daily.get("pattern_score_boost", 0)
+                    tech_score = max(5, min(95, tech_score))
                 
                 return {
                     "symbol": symbol,
                     "current_price": current_price,
                     "change_pct": change_pct,
                     "gap_pct": None,
-        "day_open": None,
+                    "day_open": None,
                     "is_circuit_locked": False,
                     "circuit_lock_type": None,
                     "orb_high_15m": None,
                     "orb_low_15m": None,
                     "orb_status": "DATA_INSUFFICIENT",
+                    "candlestick_patterns": patterns_daily,
+                    "candlestick_patterns_daily": patterns_daily,
+                    "upper_wick_ratio": patterns_daily.get("upper_wick_ratio"),
+                    "lower_wick_ratio": patterns_daily.get("lower_wick_ratio"),
+                    "is_upper_wick_rejection": patterns_daily.get("is_upper_wick_rejection", False),
+                    "is_lower_wick_rejection": patterns_daily.get("is_lower_wick_rejection", False),
+                    "is_inside_bar": patterns_daily.get("is_inside_bar", False),
+                    "is_nr7": patterns_daily.get("is_nr7", False),
                     "rsi_5m": None,
                     "rsi_15m": None,
                     "rsi_daily": rsi_daily,
@@ -863,6 +1065,9 @@ def compute_technicals_from_frames(
                     "adx_14": adx_dict.get("adx_14"),
                     "adx_regime": adx_dict.get("adx_regime", "DATA_INSUFFICIENT"),
                     "camarilla_pivots": camarilla_pivots,
+                    "weekly_camarilla_pivots": weekly_camarilla_pivots,
+                    "camarilla_cluster": pivot_cluster,
+                    "camarilla_open_type": camarilla_open_type,
                     "rs_rating": rs_dict.get("rs_rating"),
                     "rs_regime": rs_dict.get("rs_regime", "DATA_INSUFFICIENT"),
                     "rolling_3d_change_pct": r_3d,
@@ -1084,8 +1289,11 @@ def compute_technicals_from_frames(
                 else:
                     ma_trend = "BELOW_200_EMA"
 
-        # Camarilla Institutional Pivots & Relative Strength vs NIFTY
+        # Camarilla Institutional Pivots (Daily & Weekly MTF Suite)
         camarilla_pivots = calculate_camarilla_pivots(df_daily)
+        weekly_camarilla_pivots = calculate_weekly_camarilla_pivots(df_daily)
+        pivot_cluster = detect_camarilla_pivot_clustering(camarilla_pivots, weekly_camarilla_pivots)
+        camarilla_open_type = classify_camarilla_open(today_open, camarilla_pivots)
         rs_dict = calculate_relative_strength(df_daily)
         rs_rating = rs_dict["rs_rating"]
         rs_regime = rs_dict["rs_regime"]
@@ -1098,67 +1306,100 @@ def compute_technicals_from_frames(
         below_ema50 = trend_stats["below_ema50"]
         dd_20d = trend_stats["drawdown_from_20d_high"]
 
+        # Institutional Location Anchoring for Candlestick Engine
+        anchor_levels = {
+            "vwap": vwap_val,
+            "l3": camarilla_pivots.get("l3"),
+            "l4": camarilla_pivots.get("l4"),
+            "h3": camarilla_pivots.get("h3"),
+            "h4": camarilla_pivots.get("h4"),
+            "ema200": ema_200,
+            "ema50": ema_50
+        }
+
+        # Morphological Candlestick Pattern Engine (15m execution & Daily macro with location anchoring)
+        patterns_15m = evaluate_candlestick_patterns(
+            df_15m if not df_15m.empty else df_5m, 
+            timeframe="15m", 
+            anchor_levels=anchor_levels
+        )
+        patterns_daily = evaluate_candlestick_patterns(
+            df_daily, 
+            timeframe="1d", 
+            anchor_levels=anchor_levels
+        )
+
         # Calculate Quantitative Technical Score (0 - 100)
-        tech_score = 50
-        if vwap_val is not None:
-            tech_score += 10 if current_price > vwap_val else -10
-            
-        if macd_trend in ["BULLISH_CROSSOVER", "EXPANDING_BULLISH_MOMENTUM"]:
-            tech_score += 15
-        elif macd_trend in ["BEARISH_CROSSOVER", "EXPANDING_BEARISH_MOMENTUM"]:
-            tech_score -= 15
-            
-        if rsi_15m is not None:
-            if 50 <= rsi_15m <= 70:
-                tech_score += 10
-            elif rsi_15m > 75:
-                tech_score -= 5
-            elif rsi_15m < 30:
-                tech_score -= 10
-            
-        if rsi_divergence == "BULLISH_REGULAR_DIVERGENCE":
-            tech_score += 15
-        elif rsi_divergence == "BEARISH_REGULAR_DIVERGENCE":
-            tech_score -= 15
-            
-        if is_volume_surge and current_price > df_5m['Open'].iloc[-1]:
-            tech_score += 15
-
-        # Intraday momentum & price action scoring adjustments
-        if change_pct is not None:
-            if change_pct <= -5.0:
-                tech_score -= 25
-            elif change_pct <= -3.0:
+        if current_price is None or current_price <= 0:
+            tech_score = None
+        else:
+            tech_score = 50
+            if vwap_val is not None:
+                tech_score += 10 if current_price > vwap_val else -10
+                
+            if macd_trend in ["BULLISH_CROSSOVER", "EXPANDING_BULLISH_MOMENTUM"]:
+                tech_score += 15
+            elif macd_trend in ["BEARISH_CROSSOVER", "EXPANDING_BEARISH_MOMENTUM"]:
                 tech_score -= 15
-            elif change_pct >= 5.0:
-                tech_score += 20
-            elif change_pct >= 3.0:
+                
+            if rsi_15m is not None:
+                if 50 <= rsi_15m <= 70:
+                    tech_score += 10
+                elif rsi_15m > 75:
+                    tech_score -= 5
+                elif rsi_15m < 30:
+                    tech_score -= 10
+                
+            if rsi_divergence == "BULLISH_REGULAR_DIVERGENCE":
+                tech_score += 15
+            elif rsi_divergence == "BEARISH_REGULAR_DIVERGENCE":
+                tech_score -= 15
+                
+            if is_volume_surge and current_price > df_5m['Open'].iloc[-1]:
+                tech_score += 15
+
+            # Intraday momentum & price action scoring adjustments
+            if change_pct is not None:
+                if change_pct <= -5.0:
+                    tech_score -= 25
+                elif change_pct <= -3.0:
+                    tech_score -= 15
+                elif change_pct >= 5.0:
+                    tech_score += 20
+                elif change_pct >= 3.0:
+                    tech_score += 10
+
+            if orb_status == "BEARISH_ORB_BREAKDOWN":
+                tech_score -= 10
+            elif orb_status == "BULLISH_ORB_BREAKOUT":
                 tech_score += 10
 
-        if orb_status == "BEARISH_ORB_BREAKDOWN":
-            tech_score -= 10
-        elif orb_status == "BULLISH_ORB_BREAKOUT":
-            tech_score += 10
+            # TTM Squeeze Release bonus / Squeeze compression notice
+            if ttm_squeeze.get("squeeze_release") and ttm_squeeze.get("momentum_trend") in ["EXPANDING_BULLISH", "CONTRACTING_BEARISH"]:
+                tech_score += 8
+            elif ttm_squeeze.get("squeeze_on"):
+                tech_score += 3  # Coiling setup
 
-        # TTM Squeeze Release bonus / Squeeze compression notice
-        if ttm_squeeze.get("squeeze_release") and ttm_squeeze.get("momentum_trend") in ["EXPANDING_BULLISH", "CONTRACTING_BEARISH"]:
-            tech_score += 8
-        elif ttm_squeeze.get("squeeze_on"):
-            tech_score += 3  # Coiling setup
+            # ADX Trend Strength bonus / chop penalty
+            if adx_regime == "STRONG_TREND":
+                tech_score += 5
+            elif adx_regime == "CHOPPY_SIDEWAYS":
+                tech_score -= 8
 
-        # ADX Trend Strength bonus / chop penalty
-        if adx_regime == "STRONG_TREND":
-            tech_score += 5
-        elif adx_regime == "CHOPPY_SIDEWAYS":
-            tech_score -= 8
+            # Relative Strength market leadership bonus / laggard penalty
+            if rs_regime == "OUTPERFORMING_LEADER":
+                tech_score += 5
+            elif rs_regime == "UNDERPERFORMING_LAGGARD":
+                tech_score -= 5
 
-        # Relative Strength market leadership bonus / laggard penalty
-        if rs_regime == "OUTPERFORMING_LEADER":
-            tech_score += 5
-        elif rs_regime == "UNDERPERFORMING_LAGGARD":
-            tech_score -= 5
-            
-        tech_score = max(5, min(95, tech_score))
+            # Multi-timeframe pivot clustering bonus
+            if pivot_cluster.get("is_pivot_cluster"):
+                tech_score += 5
+
+            # Morphological Candlestick Pattern boost/penalty (only applied if location-valid)
+            tech_score += patterns_15m.get("pattern_score_boost", 0)
+                
+            tech_score = max(5, min(95, tech_score))
 
         return {
             "symbol": symbol,
@@ -1171,6 +1412,17 @@ def compute_technicals_from_frames(
             "orb_high_15m": orb_high_15m,
             "orb_low_15m": orb_low_15m,
             "orb_status": orb_status,
+            "candlestick_patterns": patterns_15m,
+            "candlestick_patterns_daily": patterns_daily,
+            "upper_wick_ratio": patterns_15m.get("upper_wick_ratio"),
+            "lower_wick_ratio": patterns_15m.get("lower_wick_ratio"),
+            "is_upper_wick_rejection": patterns_15m.get("is_upper_wick_rejection", False),
+            "is_lower_wick_rejection": patterns_15m.get("is_lower_wick_rejection", False),
+            "is_inside_bar": patterns_15m.get("is_inside_bar", False),
+            "is_nr7": bool(patterns_daily.get("is_nr7", False) or patterns_15m.get("is_nr7", False)),
+            "is_location_valid": patterns_15m.get("is_location_valid", True),
+            "anchored_level": patterns_15m.get("anchored_level"),
+            "is_unanchored_churn": patterns_15m.get("is_unanchored_churn", False),
             "rsi_5m": rsi_5m,
             "rsi_15m": rsi_15m,
             "rsi_daily": rsi_daily,
@@ -1196,6 +1448,9 @@ def compute_technicals_from_frames(
             "adx_14": adx_14,
             "adx_regime": adx_regime,
             "camarilla_pivots": camarilla_pivots,
+            "weekly_camarilla_pivots": weekly_camarilla_pivots,
+            "camarilla_cluster": pivot_cluster,
+            "camarilla_open_type": camarilla_open_type,
             "rs_rating": rs_rating,
             "rs_regime": rs_regime,
             "rolling_3d_change_pct": r_3d,

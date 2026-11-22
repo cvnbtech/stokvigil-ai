@@ -331,6 +331,16 @@ class _CandleChartModalState extends State<CandleChartModal> {
 
       // 5. Overlaid Camarilla Equation Price Lines
       if (candleSeries && camarilla && camarilla.h4 > 0) {
+        if (camarilla.h5 > 0) {
+          candleSeries.createPriceLine({
+            price: camarilla.h5,
+            color: '#a855f7',
+            lineWidth: 1,
+            lineStyle: (LC.LineStyle ? LC.LineStyle.Solid : 0),
+            axisLabelVisible: true,
+            title: 'H5 Expansion (₹' + camarilla.h5 + ')',
+          });
+        }
         candleSeries.createPriceLine({
           price: camarilla.h4,
           color: '#ec4899',
@@ -363,6 +373,16 @@ class _CandleChartModalState extends State<CandleChartModal> {
           axisLabelVisible: true,
           title: 'L4 Hard SL (₹' + camarilla.l4 + ')',
         });
+        if (camarilla.l5 > 0) {
+          candleSeries.createPriceLine({
+            price: camarilla.l5,
+            color: '#dc2626',
+            lineWidth: 1,
+            lineStyle: (LC.LineStyle ? LC.LineStyle.Solid : 0),
+            axisLabelVisible: true,
+            title: 'L5 Capitulation (₹' + camarilla.l5 + ')',
+          });
+        }
       }
 
       chart.timeScale().fitContent();
@@ -614,10 +634,14 @@ class _CandleChartModalState extends State<CandleChartModal> {
                 _buildLegendItem("VWAP", const Color(0xFF06B6D4)),
                 _buildLegendItem("Chandelier SL", const Color(0xFFF59E0B)),
                 if (camarilla != null && (camarilla['h4'] ?? 0) > 0) ...[
+                  if (camarilla['h5'] != null && (camarilla['h5'] ?? 0) > 0)
+                    _buildLegendItem("H5: ₹${camarilla['h5']}", const Color(0xFFA855F7)),
                   _buildLegendItem("H4: ₹${camarilla['h4']}", const Color(0xFFEC4899)),
                   _buildLegendItem("H3: ₹${camarilla['h3']}", const Color(0xFF10B981)),
                   _buildLegendItem("L3: ₹${camarilla['l3']}", const Color(0xFF06B6D4)),
                   _buildLegendItem("L4: ₹${camarilla['l4']}", const Color(0xFFF43F5E)),
+                  if (camarilla['l5'] != null && (camarilla['l5'] ?? 0) > 0)
+                    _buildLegendItem("L5: ₹${camarilla['l5']}", const Color(0xFFDC2626)),
                 ],
               ],
             ),

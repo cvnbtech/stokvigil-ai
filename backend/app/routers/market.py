@@ -89,12 +89,14 @@ async def get_strategy_backtest(
     strategy: str = Query("camarilla_breakout"),
     capital: float = Query(200000.0),
     risk_budget: float = Query(2000.0),
+    slippage_bps: float = Query(5.0),
     auth_user_id: str = Depends(get_current_user_id)
 ):
     """
     In-Memory Vectorized Strategy Backtester.
     Runs historical replay simulation over NSE & BSE equities using 1% risk position sizing.
     Supports Camarilla Breakout and Confluence Trend algorithms.
+    Incorporates Indian exchange taxes (STT, Exchange turnover fee, GST, SEBI fee, Stamp duty) and slippage.
     Requires authentication to protect compute resources from unauthenticated DoS.
     """
     clean_sym = symbol.strip().upper()
@@ -109,7 +111,8 @@ async def get_strategy_backtest(
         interval=interval,
         strategy=strategy,
         initial_capital=capital,
-        risk_budget=risk_budget
+        risk_budget=risk_budget,
+        slippage_bps=slippage_bps
     )
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "Backtest data unavailable"))
@@ -124,6 +127,7 @@ async def post_strategy_backtest(
     """
     In-Memory Vectorized Strategy Backtester (POST interface).
     Supports custom backtest payload configurations.
+    Incorporates Indian exchange taxes (STT, Exchange turnover fee, GST, SEBI fee, Stamp duty) and slippage.
     Requires authentication to protect compute resources from unauthenticated DoS.
     """
     clean_sym = req.symbol.strip().upper()
@@ -138,7 +142,8 @@ async def post_strategy_backtest(
         interval=req.interval or "1d",
         strategy=req.strategy or "camarilla_breakout",
         initial_capital=req.capital or 200000.0,
-        risk_budget=req.risk_budget or 2000.0
+        risk_budget=req.risk_budget or 2000.0,
+        slippage_bps=req.slippage_bps or 5.0
     )
     if result.get("status") == "error":
         raise HTTPException(status_code=404, detail=result.get("message", "Backtest data unavailable"))

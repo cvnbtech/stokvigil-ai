@@ -362,7 +362,7 @@ async def evaluate_single_symbol_full(
         "news_items": news_items,
         "analysis": analysis,
         "current_price": technicals.get("current_price", 0.0),
-        "confluence_score": analysis.get("confluence_score", 50),
+        "confluence_score": analysis.get("confluence_score"),
         "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL"),
         "tactical_levels": analysis.get("tactical_levels", {})
     }
@@ -473,7 +473,7 @@ def precompute_symbol_market_state(
         "news_items": [],
         "analysis": analysis,
         "current_price": current_price,
-        "confluence_score": analysis.get("confluence_score", 50) if current_price > 0 else 0,
+        "confluence_score": analysis.get("confluence_score") if current_price > 0 else None,
         "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL") if current_price > 0 else "DATA_UNAVAILABLE",
         "tactical_levels": analysis.get("tactical_levels", {}) if current_price > 0 else {},
         "data_source_mode": data_source_mode,
@@ -977,7 +977,20 @@ async def evaluate_user_portfolio_and_watchlists(
 
                 fcm_sent = False
                 if fcm_token and fcm_enabled:
-                    fcm_body = f"Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Tactical Res: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
+                    cat_tag = catalyst_type.replace('_', ' ')
+                    evt_risk_data = analysis.get("event_risk") or {}
+                    if is_block_dump or catalyst_type == "BLOCK_DEAL":
+                        fcm_body = f"🚨 [BLOCK DEAL DUMP] Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Institutional supply shock. Protect capital."
+                    elif evt_risk_data.get("has_imminent_event_risk"):
+                        days_evt = evt_risk_data.get("days_to_earnings")
+                        fcm_body = f"🛡️ [EARNINGS SHIELD] Score: {confluence_score}/100 | Results in {days_evt}d | New longs locked against overnight gap."
+                    elif catalyst_type == "EARNINGS_BEAT":
+                        fcm_body = f"📈 [EARNINGS BEAT] Score: {confluence_score}/100 | Fundamental beat with volume expansion. Res: {tactical_levels.get('target_1', 'N/A')}"
+                    elif catalyst_type == "PRICE_BREAKOUT":
+                        fcm_body = f"🚀 [BREAKOUT] Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Res: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
+                    else:
+                        fcm_body = f"[{cat_tag}] Score: {confluence_score}/100 | {action_bias.replace('_', ' ')} | Res: {tactical_levels.get('target_1', 'N/A')} | SL: {tactical_levels.get('protective_stop_loss', 'N/A')}"
+                    
                     fcm_sent = await send_fcm_notification(fcm_token, alert_title, fcm_body, {
                         "symbol": symbol,
                         "action_bias": action_bias,
@@ -987,6 +1000,8 @@ async def evaluate_user_portfolio_and_watchlists(
 
                 telegram_sent = False
                 if telegram_enabled and telegram_chat_id:
+                    sec_rs_data = analysis.get("sector_rs") or {}
+                    evt_risk_data = analysis.get("event_risk") or {}
                     formatted_msg = format_telegram_alert(
                         symbol=symbol,
                         alert_title=alert_title,
@@ -1005,8 +1020,15 @@ async def evaluate_user_portfolio_and_watchlists(
                             "rsi_15m": technicals.get("rsi_15m"),
                             "rsi_5m": technicals.get("rsi_5m"),
                             "vwap": technicals.get("vwap"),
+                            "volume_multiple": technicals.get("volume_multiple"),
                             "delivery_pct": flow_data.get("delivery_pct"),
                             "vsa_regime": flow_data.get("vsa_regime"),
+                            "ttm_squeeze": technicals.get("ttm_squeeze"),
+                            "fo_oi_status": flow_data.get("fo_oi_status"),
+                            "pcr": flow_data.get("pcr"),
+                            "sector_name": sec_rs_data.get("sector_name"),
+                            "sector_rating": sec_rs_data.get("relative_strength_score"),
+                            "event_risk": evt_risk_data,
                             "factor_breakdown": analysis.get("factor_breakdown")
                         },
                         holding_guidance=holding_guidance

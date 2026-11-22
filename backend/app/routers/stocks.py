@@ -157,6 +157,19 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                     "is_high_beta": is_high_beta,
                     "buffered_breakout_level": cached_tactical.get("buffered_breakout_level"),
                     "buffered_breakdown_level": cached_tactical.get("buffered_breakdown_level"),
+                    "camarilla_levels": tech.get("camarilla_pivots"),
+                    "camarilla_open_type": tech.get("camarilla_open_type"),
+                    "camarilla_cluster": tech.get("camarilla_cluster"),
+                    "candlestick_patterns": tech.get("candlestick_patterns"),
+                    "derivatives": {
+                        "is_fo_stock": cached_stock.get("flow_data", {}).get("is_fo_stock", False),
+                        "fo_oi_status": cached_stock.get("flow_data", {}).get("fo_oi_status"),
+                        "pcr": cached_stock.get("flow_data", {}).get("pcr"),
+                        "max_pain": cached_stock.get("flow_data", {}).get("max_pain") or cached_stock.get("flow_data", {}).get("max_pain_strike"),
+                        "vsa_regime": cached_stock.get("flow_data", {}).get("vsa_regime"),
+                    } if cached_stock.get("flow_data") else None,
+                    "sector_rs": cached_stock.get("analysis", {}).get("sector_rs"),
+                    "event_risk": cached_stock.get("analysis", {}).get("event_risk"),
                     "signal": signal,
                     "signal_type": signal_type,
                     "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
@@ -212,10 +225,12 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                             ref_low = l_prev if l_prev is not None else l_val
                             true_range = max(ref_high - ref_low, abs(ref_high - c_prev), abs(ref_low - c_prev)) if (float(p) > 0) else 0.0
 
+                            h5 = round(c_prev + (true_range * 1.1), 2) if (true_range > 0 and c_prev > 0) else None
                             h4 = round(c_prev + (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
                             h3 = round(c_prev + (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
                             l3 = round(c_prev - (true_range * 1.1 / 4.0), 2) if (true_range > 0 and c_prev > 0) else None
                             l4 = round(c_prev - (true_range * 1.1 / 2.0), 2) if (true_range > 0 and c_prev > 0) else None
+                            l5 = round(c_prev - (true_range * 1.1), 2) if (true_range > 0 and c_prev > 0) else None
 
                             cached_stock = market_cache.get_stock(clean_sym) or market_cache.get_stock(sym)
                             target_val = None
@@ -329,6 +344,10 @@ def _fetch_single_stock_quote(sym: str) -> Optional[Dict[str, Any]]:
                                 "is_high_beta": is_high_beta_val,
                                 "buffered_breakout_level": buf_h4_val,
                                 "buffered_breakdown_level": buf_l4_val,
+                                "camarilla_levels": {
+                                    "h5": h5, "h4": h4, "h3": h3,
+                                    "l3": l3, "l4": l4, "l5": l5
+                                } if h4 and l4 else None,
                                 "signal": signal,
                                 "signal_type": signal_type,
                                 "data_source_mode": cached_stock.get("data_source_mode", "DELAYED_EOD_SCRAPE") if cached_stock else "DELAYED_EOD_SCRAPE",
@@ -815,6 +834,38 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
             if tech.get("is_circuit_locked"):
                 q_dict["is_circuit_locked"] = True
                 q_dict["circuit_lock_type"] = tech.get("circuit_lock_type")
+
+            # Enrich with institutional microstructure indicators
+            if tech.get("camarilla_pivots"):
+                q_dict["camarilla_levels"] = tech.get("camarilla_pivots")
+            if tech.get("camarilla_open_type"):
+                q_dict["camarilla_open_type"] = tech.get("camarilla_open_type")
+            if tech.get("camarilla_cluster"):
+                q_dict["camarilla_cluster"] = tech.get("camarilla_cluster")
+            if tech.get("candlestick_patterns"):
+                q_dict["candlestick_patterns"] = tech.get("candlestick_patterns")
+
+            flow = pack.get("flow_data") or {}
+            if flow:
+                q_dict["derivatives"] = {
+                    "is_fo_stock": flow.get("is_fo_stock", False),
+                    "fo_oi_status": flow.get("fo_oi_status"),
+                    "pcr": flow.get("pcr"),
+                    "max_pain": flow.get("max_pain") or flow.get("max_pain_strike"),
+                    "vsa_regime": flow.get("vsa_regime"),
+                }
+            sec_rs = analysis.get("sector_rs")
+            if sec_rs:
+                q_dict["sector_rs"] = sec_rs
+            elif tech.get("sector_rs_regime"):
+                q_dict["sector_rs"] = {
+                    "sector_name": tech.get("sector_name"),
+                    "sector_rs_regime": tech.get("sector_rs_regime"),
+                    "sector_rs_rating": tech.get("sector_rs_rating")
+                }
+            ev_risk = analysis.get("event_risk")
+            if ev_risk and ev_risk.get("has_imminent_event_risk"):
+                q_dict["event_risk"] = ev_risk
 
     return {"quotes": results}
 

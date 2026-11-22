@@ -97,7 +97,14 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
             .where((s) => s.isNotEmpty)
             .toList();
         if (symbolsToSync.isNotEmpty) {
-          SupabaseService().batchAddToWatchlist(symbolsToSync, isAutoSynced: true);
+          await SupabaseService().batchAddToWatchlist(symbolsToSync, isAutoSynced: true);
+        }
+
+        // Option A Lifecycle Reconciliation:
+        // Automatically purge auto-synced watchlists that have been completely sold
+        final deletedCount = await SupabaseService().reconcileAutoSyncedWatchlist(symbolsToSync);
+        if (deletedCount > 0 && mounted) {
+          context.read<WatchlistProvider>().loadWatchlist();
         }
 
         if (mounted) {
@@ -961,6 +968,71 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               );
                                             },
                                           ),
+                                          if (hasRealPrice && (item['candlestick_patterns'] != null || item['derivatives'] != null || item['camarilla_open_type'] != null || (item['event_risk'] != null && item['event_risk']['has_imminent_event_risk'] == true))) ...[
+                                            const SizedBox(height: 4),
+                                            Wrap(
+                                              spacing: 4,
+                                              runSpacing: 4,
+                                              children: [
+                                                if (item['candlestick_patterns'] != null && item['candlestick_patterns']['pattern_label'] != null)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withOpacity(0.04),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                                    ),
+                                                    child: Text(
+                                                      "🕯️ ${item['candlestick_patterns']['pattern_label']}",
+                                                      style: const TextStyle(fontSize: 9, color: AppTheme.cyan, fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ),
+                                                if (item['derivatives'] != null && item['derivatives']['fo_oi_status'] != null && item['derivatives']['fo_oi_status'] != 'CASH_EQUITY')
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: (item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.12),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: (item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.3)),
+                                                    ),
+                                                    child: Text(
+                                                      "📊 ${item['derivatives']['fo_oi_status'].toString().replaceAll('_', ' ')}",
+                                                      style: TextStyle(
+                                                        fontSize: 9,
+                                                        color: item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                                        fontWeight: FontWeight.w900,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                if (item['camarilla_open_type'] != null && item['camarilla_open_type'] != 'DATA_INSUFFICIENT')
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white.withOpacity(0.02),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: Colors.white.withOpacity(0.06)),
+                                                    ),
+                                                    child: Text(
+                                                      "🌅 ${item['camarilla_open_type'].toString().replaceAll('_', ' ')}",
+                                                      style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary, fontWeight: FontWeight.bold),
+                                                    ),
+                                                  ),
+                                                if (item['event_risk'] != null && item['event_risk']['has_imminent_event_risk'] == true)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFF59E0B).withOpacity(0.12),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
+                                                    ),
+                                                    child: Text(
+                                                      "🛡️ Earnings in ${item['event_risk']['days_to_earnings']}d",
+                                                      style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.w900),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ),

@@ -277,8 +277,8 @@ def format_telegram_alert(
         if cmp_val and qty > 0 and avg_p > 0:
             try:
                 pnl_inr = (float(cmp_val) - avg_p) * qty
-                inr_sign = "+" if pnl_inr >= 0 else ""
-                pnl_inr_str = f" ({inr_sign}₹{pnl_inr:,.2f})"
+                inr_sign = "+" if pnl_inr >= 0 else "-"
+                pnl_inr_str = f" ({inr_sign}₹{abs(pnl_inr):,.2f})"
             except (ValueError, TypeError):
                 pass
 
@@ -400,6 +400,43 @@ def format_telegram_alert(
             safe_squeeze = html_lib.escape(str(ttm_squeeze).replace('_', ' '), quote=False)
             snapshot_lines.append(f"• Squeeze: <b>{safe_squeeze}</b>")
 
+        # Volume Multiplier (RVOL)
+        vol_mult = metrics_snapshot.get("volume_multiple")
+        if vol_mult is not None and isinstance(vol_mult, (int, float)) and vol_mult > 0:
+            snapshot_lines.append(f"• RVOL: <b>{float(vol_mult):.1f}x</b> (Session Rolling)")
+
+        # Derivatives OI & PCR
+        fo_oi = metrics_snapshot.get("fo_oi_status")
+        pcr_val = metrics_snapshot.get("pcr")
+        if fo_oi and str(fo_oi).strip() not in ("None", "N/A", "CASH_EQUITY", "FO_ACTIVE_CHAIN_PENDING", ""):
+            safe_oi = html_lib.escape(str(fo_oi).replace('_', ' '), quote=False)
+            pcr_str = f" | PCR: {pcr_val}" if (pcr_val is not None and str(pcr_val).strip() not in ("None", "N/A", "")) else ""
+            snapshot_lines.append(f"• Derivatives OI: <b>{safe_oi}</b>{pcr_str}")
+
+        # Top-Down Sector Relative Strength
+        sec_name = metrics_snapshot.get("sector_name")
+        sec_rating = metrics_snapshot.get("sector_rating")
+        if sec_name and sec_rating is not None and str(sec_rating).strip() not in ("None", "N/A", ""):
+            try:
+                sr_f = float(sec_rating)
+                sr_sign = "+" if sr_f > 0 else ""
+                safe_sec = html_lib.escape(str(sec_name), quote=False)
+                snapshot_lines.append(f"• Sector RS: <b>{sr_sign}{sr_f:.1f}%</b> vs {safe_sec}")
+            except (ValueError, TypeError):
+                pass
+
+        # Forward Corporate Earnings Shield / Calendar
+        event_risk = metrics_snapshot.get("event_risk")
+        if isinstance(event_risk, dict) and event_risk.get("has_imminent_event_risk"):
+            days = event_risk.get("days_to_earnings")
+            evt = html_lib.escape(str(event_risk.get("event_description") or "Quarterly Results"), quote=False)
+            days_str = "Today" if days == 0 else (f"in {days} day(s)" if days else "Imminent")
+            snapshot_lines.append(f"• 🛡️ <b>Earnings Shield:</b> {evt} {days_str} (Lockout Active)")
+        elif isinstance(event_risk, dict) and event_risk.get("days_to_earnings") is not None:
+            days = event_risk.get("days_to_earnings")
+            if days is not None and 0 < int(days) <= 14:
+                snapshot_lines.append(f"• 📅 <b>Upcoming Earnings:</b> In {int(days)} day(s)")
+
         if snapshot_lines:
             html += "📊 <b>Market Snapshot:</b>\n"
             for line in snapshot_lines:
@@ -427,9 +464,12 @@ def build_telegram_inline_keyboard(symbol: str) -> dict:
         f"https://www.nseindia.com/get-quotes/equity?symbol={clean_sym}"
     )
 
-    # Deep link to custom StokVigil Web PWA if configured, otherwise direct exchange chart
-    web_portal_base = (getattr(settings, "WEB_PORTAL_URL", None) or os.getenv("WEB_PORTAL_URL", "")).strip()
-    chart_url = f"{web_portal_base.rstrip('/')}/chart?symbol={clean_sym}&exchange={chart_exchange}"
+    # Deep link strictly to native StokVigil Web PWA interactive chart (Zero external TradingView redirects)
+    web_portal_base = (getattr(settings, "WEB_PORTAL_URL", None) or os.getenv("WEB_PORTAL_URL", "")).strip().rstrip("/")
+    if not web_portal_base or not web_portal_base.startswith("http"):
+        web_portal_base = "http://localhost:3000"
+
+    chart_url = f"{web_portal_base}/chart?symbol={clean_sym}&exchange={chart_exchange}"
 
     return {
         "inline_keyboard": [

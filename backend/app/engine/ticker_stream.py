@@ -509,26 +509,39 @@ class LiveTickerStreamManager:
         except Exception as sym_err:
             logger.debug(f"Note on fetching initial symbols: {sym_err}")
 
-        # Check for active broker credentials
+        # Check for active broker credentials across today's sessions or master settings
         adapter = get_broker("icici")
         self._active_broker_adapter = adapter
         self._active_broker_id = "icici"
 
-        # Check if active session token exists in user_credentials for today
         active_creds = None
         try:
-            from app.db_pool import fetch_one
+            from app.db_pool import fetch_all
             today_str = str(date.today())
-            cred_row = await fetch_one("SELECT * FROM user_credentials WHERE token_date = $1 LIMIT 1", today_str)
-            if cred_row:
+            cred_rows = await fetch_all("SELECT * FROM user_credentials WHERE token_date = $1 ORDER BY updated_at DESC", today_str)
+            if cred_rows:
                 from app.vault import vault
-                raw_tok = cred_row.get("encrypted_session_token")
-                session_tok = vault.decrypt(raw_tok) if raw_tok else ""
-                active_creds = {
-                    "app_key": settings.ICICI_MASTER_APP_KEY,
-                    "secret_key": settings.ICICI_MASTER_SECRET_KEY,
-                    "session_token": session_tok
-                }
+                for crow in cred_rows:
+                    raw_tok = crow.get("encrypted_session_token")
+                    if raw_tok:
+                        session_tok = vault.decrypt(raw_tok)
+                        if session_tok:
+                            b_id = crow.get("broker_id") or "icici"
+                            active_adapter = get_broker(b_id)
+                            raw_app_key = crow.get("encrypted_app_key")
+                            decrypted_app_key = vault.decrypt(raw_app_key) if raw_app_key else ""
+                            active_creds = {
+                                "app_key": decrypted_app_key or settings.ICICI_MASTER_APP_KEY,
+                                "secret_key": settings.ICICI_MASTER_SECRET_KEY,
+                                "session_token": session_tok,
+                                "access_token": session_tok,
+                                "client_id": decrypted_app_key,
+                                "client_code": decrypted_app_key,
+                            }
+                            adapter = active_adapter
+                            self._active_broker_adapter = adapter
+                            self._active_broker_id = b_id
+                            break
         except Exception as cred_err:
             logger.debug(f"Note on fetching active session for WebSocket stream: {cred_err}")
 

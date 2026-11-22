@@ -9,3 +9,4 @@ class BacktestRequest(BaseModel):
     strategy: Optional[str] = "camarilla_breakout"
     capital: Optional[float] = 200000.0
     risk_budget: Optional[float] = 2000.0
+    slippage_bps: Optional[float] = 5.0

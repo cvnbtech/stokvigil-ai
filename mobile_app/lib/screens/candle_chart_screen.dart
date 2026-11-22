@@ -405,6 +405,16 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
       var camarillaLines = [];
       function setupCamarillaLines() {
         if (!candleSeries || !camarilla) return;
+        if (camarilla.h5 > 0) {
+          camarillaLines.push(candleSeries.createPriceLine({
+            price: camarilla.h5,
+            color: '#a855f7',
+            lineWidth: 1,
+            lineStyle: (LC.LineStyle ? LC.LineStyle.Solid : 0),
+            axisLabelVisible: true,
+            title: 'H5 Expansion (₹' + camarilla.h5 + ')',
+          }));
+        }
         if (camarilla.h4 > 0) {
           camarillaLines.push(candleSeries.createPriceLine({
             price: camarilla.h4,
@@ -443,6 +453,16 @@ class _CandleChartScreenState extends State<CandleChartScreen> {
             lineStyle: (LC.LineStyle ? LC.LineStyle.Dashed : 2),
             axisLabelVisible: true,
             title: 'L4 Hard SL (₹' + camarilla.l4 + ')',
+          }));
+        }
+        if (camarilla.l5 > 0) {
+          camarillaLines.push(candleSeries.createPriceLine({
+            price: camarilla.l5,
+            color: '#dc2626',
+            lineWidth: 1,
+            lineStyle: (LC.LineStyle ? LC.LineStyle.Solid : 0),
+            axisLabelVisible: true,
+            title: 'L5 Capitulation (₹' + camarilla.l5 + ')',
           }));
         }
       }

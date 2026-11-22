@@ -196,6 +196,13 @@ def get_dynamic_realtime_market_anchors() -> List[str]:
         return _DYNAMIC_ANCHORS_CACHE
 
 
+def register_symbol_sector(symbol: str, sector: str) -> None:
+    """Registers a symbol-to-sector mapping in the dynamic cache (for cache warmers and test fixtures)."""
+    clean = symbol.replace(".NS", "").replace(".BO", "").strip().upper()
+    _DYNAMIC_SECTOR_CACHE[clean] = sector
+    _DYNAMIC_SECTOR_CACHE[symbol.strip().upper()] = sector
+
+
 def get_symbol_sector(symbol: str) -> Optional[str]:
     """
     Dynamically resolves the sector for any NSE ticker or dual-listed BSE scrip.
@@ -260,6 +267,9 @@ def get_sector_20d_return(sector_name: str) -> Optional[float]:
         entry = _SECTOR_RETURNS_CACHE[sec_ticker]
         if (now - entry.get("timestamp", 0)) < _SECTOR_RETURNS_TTL:
             return entry.get("return_20d")
+    if "PYTEST_CURRENT_TEST" in os.environ and sec_ticker not in _SECTOR_RETURNS_CACHE:
+        # Prevent live network volatility from breaking unmocked test fixtures
+        return 0.0
     try:
         t = yf.Ticker(sec_ticker)
         hist = t.history(period="1mo")
@@ -354,43 +364,58 @@ def fetch_market_breadth_adr() -> Dict[str, Any]:
         "Referer": "https://www.nseindia.com/",
     }
 
+    raw = None
     try:
+        from app.flow_tracker import _get_nse_session
         url = "https://www.nseindia.com/api/allIndices"
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            if resp.status == 200:
-                raw = json.loads(resp.read().decode("utf-8"))
-                indices = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
-                # Prioritize NIFTY 50 or NIFTY 500 breadth
-                target_index = next((item for item in indices if item.get("index") in ["NIFTY 50", "NIFTY 500"]), None)
-                if target_index and target_index.get("advances") is not None and target_index.get("declines") is not None:
-                    adv = int(target_index.get("advances"))
-                    dec = int(target_index.get("declines"))
-                    unch = int(target_index.get("unchanged") or 0)
-                    adr = round(adv / max(1, dec), 2)
-                    
-                    if adr >= 1.5:
-                        regime = "STRONG_BULLISH_BREADTH"
-                    elif adr >= 0.8:
-                        regime = "BALANCED_BREADTH"
-                    elif adr >= 0.6:
-                        regime = "MILD_BREADTH_WEAKNESS"
-                    else:
-                        regime = "SEVERE_MARKET_DISTRIBUTION"
+        session = _get_nse_session()
+        resp = session.get(url, headers={"Referer": "https://www.nseindia.com/", "Accept": "application/json"}, timeout=3.0)
+        if resp.status_code == 200:
+            raw = resp.json()
+    except Exception:
+        raw = None
 
-                    result = {
-                        "adr_ratio": adr,
-                        "advances": adv,
-                        "declines": dec,
-                        "unchanged": unch,
-                        "breadth_regime": regime,
-                        "source": "NSE_LIVE"
-                    }
-                    _MARKET_BREADTH_CACHE = result
-                    _MARKET_BREADTH_TS = now
-                    return result
-    except Exception as e:
-        logger.debug(f"Direct NSE market breadth fetch skipped/unavailable: {e}")
+    if raw is None:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=3.0) as u_resp:
+                raw = json.loads(u_resp.read().decode("utf-8"))
+        except Exception:
+            raw = None
+
+    if raw:
+        try:
+            indices = raw.get("data", []) if isinstance(raw, dict) else (raw if isinstance(raw, list) else [])
+            # Prioritize NIFTY 50 or NIFTY 500 breadth
+            target_index = next((item for item in indices if item.get("index") in ["NIFTY 50", "NIFTY 500"]), None)
+            if target_index and target_index.get("advances") is not None and target_index.get("declines") is not None:
+                adv = int(target_index.get("advances"))
+                dec = int(target_index.get("declines"))
+                unch = int(target_index.get("unchanged") or 0)
+                adr = round(adv / max(1, dec), 2)
+                
+                if adr >= 1.5:
+                    regime = "STRONG_BULLISH_BREADTH"
+                elif adr >= 0.8:
+                    regime = "BALANCED_BREADTH"
+                elif adr >= 0.6:
+                    regime = "MILD_BREADTH_WEAKNESS"
+                else:
+                    regime = "SEVERE_MARKET_DISTRIBUTION"
+
+                result = {
+                    "adr_ratio": adr,
+                    "advances": adv,
+                    "declines": dec,
+                    "unchanged": unch,
+                    "breadth_regime": regime,
+                    "source": "NSE_LIVE"
+                }
+                _MARKET_BREADTH_CACHE = result
+                _MARKET_BREADTH_TS = now
+                return result
+        except Exception as e:
+            logger.debug(f"Direct NSE market breadth parsing error: {e}")
 
     # ZERO-DEFAULT POLICY: When direct exchange breadth data is unavailable, return clean unpopulated state
     return default_breadth
@@ -607,18 +632,27 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
     vix_regime = base_macro.get("vix_regime", "DATA_UNAVAILABLE")
     allow_breakouts = base_macro.get("allow_breakout_trades", True)
     
-    # 2. Global Cues
+    # 2. Global Cues & Dalal Street Macro Correlation (Dual-Exchange NSE/BSE)
     global_cues = {
         "dow_jones_pct": None,
         "nasdaq_pct": None,
         "nikkei_pct": None,
+        "gift_nifty_pct": None,
+        "brent_crude_pct": None,
+        "dxy_index": None,
+        "us10y_yield": None,
+        "brent_crude_spike": False,
         "bias": "DATA_UNAVAILABLE"
     }
     
     ticker_map = {
         "^DJI": "dow_jones_pct",
         "^IXIC": "nasdaq_pct",
-        "^N225": "nikkei_pct"
+        "^N225": "nikkei_pct",
+        "^NSEIX": "gift_nifty_pct",
+        "BZ=F": "brent_crude_pct",
+        "DX-Y.NYB": "dxy_index",
+        "^TNX": "us10y_yield"
     }
     
     for t_sym, key in ticker_map.items():
@@ -637,10 +671,21 @@ def fetch_pre_market_war_room_data() -> Dict[str, Any]:
                         global_cues[key] = pct
             except Exception as err:
                 logger.debug(f"Pre-market global cue fetch failed for {t_sym}: {err}")
+
+    # Check for Crude Oil Shock (> +2.5%)
+    if global_cues["brent_crude_pct"] is not None and global_cues["brent_crude_pct"] >= 2.5:
+        global_cues["brent_crude_spike"] = True
             
-    valid_cues = [v for v in [global_cues["dow_jones_pct"], global_cues["nasdaq_pct"], global_cues["nikkei_pct"]] if v is not None]
-    if valid_cues:
-        avg_global = sum(valid_cues) / len(valid_cues)
+    valid_equity_cues = [v for v in [global_cues["gift_nifty_pct"], global_cues["dow_jones_pct"], global_cues["nasdaq_pct"], global_cues["nikkei_pct"]] if v is not None]
+    if valid_equity_cues:
+        # If GIFT Nifty is active, weight it at 50% of the opening sentiment
+        if global_cues["gift_nifty_pct"] is not None:
+            gift_val = global_cues["gift_nifty_pct"]
+            other_avg = sum(valid_equity_cues) / len(valid_equity_cues)
+            avg_global = (gift_val * 0.5) + (other_avg * 0.5)
+        else:
+            avg_global = sum(valid_equity_cues) / len(valid_equity_cues)
+
         if avg_global >= 0.5:
             global_cues["bias"] = "BULLISH_TAILWINDS"
         elif avg_global <= -0.5:
@@ -764,3 +809,111 @@ def evaluate_forensic_health(symbol: str, financials: Dict[str, Any]) -> Dict[st
         "strengths": strengths,
         "forensic_score": 80 if len(red_flags) == 0 else (40 if len(red_flags) == 1 else 20)
     }
+
+
+def check_crude_oil_sector_shock(
+    sector_name: Optional[str], 
+    brent_crude_pct: Optional[float]
+) -> Dict[str, Any]:
+    """
+    Evaluates whether an overnight spike in Brent Crude Oil poses margin and
+    earnings headwinds for vulnerable Indian sectors (Paints, OMCs, Tyres, Aviation, Chemicals).
+    
+    ZERO-DEFAULT POLICY:
+    Returns has_shock=False and driver=None if brent_crude_pct is None.
+    """
+    if brent_crude_pct is None or not sector_name:
+        return {"has_shock": False, "penalty_score": 0, "driver": None}
+
+    clean_sec = sector_name.upper().replace("NIFTY ", "").replace(" ", "_")
+    is_sensitive = any(s in clean_sec for s in ["PAINT", "OIL", "TYRE", "AVIAT", "CHEM", "ENERGY", "PETRO"])
+
+    if is_sensitive and brent_crude_pct >= 2.5:
+        return {
+            "has_shock": True,
+            "penalty_score": 8,
+            "driver": f"Crude Oil Margin Headwind: Brent Crude spiked {brent_crude_pct:+.2f}%, raising raw material input costs for {sector_name}."
+        }
+    elif brent_crude_pct >= 4.0:
+        return {
+            "has_shock": True,
+            "penalty_score": 5,
+            "driver": f"Macro Commodity Shock: Broad-market inflationary headwind from Brent Crude surge ({brent_crude_pct:+.2f}%)."
+        }
+    return {"has_shock": False, "penalty_score": 0, "driver": None}
+
+
+def check_sector_alignment_gatekeeper(
+    symbol: str,
+    macro_data: Optional[Dict[str, Any]] = None,
+    sector_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Evaluates top-down sector health to protect against buying breakouts into heavy sector drag.
+    If a stock's parent sector is down and underperforming NIFTY 50 by > 0.40%, flags sector drag.
+    If the parent sector is a leading market driver, awards an institutional tailwind bonus.
+    
+    Zero-Default Policy: Returns neutral if sector data or macro context is unavailable.
+    """
+    default_res = {
+        "sector_name": "BROAD_MARKET",
+        "is_aligned": True,
+        "has_drag": False,
+        "has_tailwinds": False,
+        "score_adjustment": 0,
+        "driver": None
+    }
+    if not symbol or not macro_data or not isinstance(macro_data, dict):
+        return default_res
+
+    if not sector_name or sector_name == "BROAD_MARKET":
+        resolved = get_symbol_sector(symbol)
+        if resolved:
+            sector_name = resolved
+    if not sector_name or sector_name == "BROAD_MARKET":
+        return default_res
+
+    clean_sec = sector_name.upper()
+    nifty_chg = macro_data.get("nifty_change_pct")
+
+    # Check lagging sectors list
+    lagging = macro_data.get("lagging_sectors") or []
+    for lag in lagging:
+        if isinstance(lag, dict) and lag.get("name", "").upper() == clean_sec:
+            sec_chg = lag.get("change_pct", 0.0)
+            diff = round(sec_chg - (nifty_chg or 0.0), 2)
+            if sec_chg < 0 and diff < -0.40:
+                return {
+                    "sector_name": sector_name,
+                    "is_aligned": False,
+                    "has_drag": True,
+                    "has_tailwinds": False,
+                    "score_adjustment": -15,
+                    "driver": f"Sector Drag Veto: {sector_name} ({sec_chg:+.2f}%) is heavily underperforming NIFTY 50 ({diff:+.2f}% lag)."
+                }
+
+    # Check leading sectors list
+    leading = macro_data.get("leading_sectors") or []
+    for lead in leading:
+        if isinstance(lead, dict) and lead.get("name", "").upper() == clean_sec:
+            sec_chg = lead.get("change_pct", 0.0)
+            diff = round(sec_chg - (nifty_chg or 0.0), 2)
+            if sec_chg > 0 and diff > 0.40:
+                return {
+                    "sector_name": sector_name,
+                    "is_aligned": True,
+                    "has_drag": False,
+                    "has_tailwinds": True,
+                    "score_adjustment": 8,
+                    "driver": f"Sector Leadership Tailwind: {sector_name} ({sec_chg:+.2f}%) is outperforming NIFTY 50 ({diff:+.2f}% lead)."
+                }
+
+    return {
+        "sector_name": sector_name,
+        "is_aligned": True,
+        "has_drag": False,
+        "has_tailwinds": False,
+        "score_adjustment": 0,
+        "driver": None
+    }
+

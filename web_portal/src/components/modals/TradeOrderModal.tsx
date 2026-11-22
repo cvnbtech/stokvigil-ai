@@ -17,8 +17,8 @@ interface TradeOrderModalProps {
   tradeData: TradeModalData;
   orderQty: number;
   setOrderQty: React.Dispatch<React.SetStateAction<number>>;
-  orderType: "MARKET" | "LIMIT";
-  setOrderType: (t: "MARKET" | "LIMIT") => void;
+  orderType: "LIMIT" | "SL-L" | "MARKET";
+  setOrderType: (t: "LIMIT" | "SL-L" | "MARKET") => void;
   limitPrice: string;
   setLimitPrice: (p: string) => void;
   targetPriceInput: string;
@@ -135,27 +135,65 @@ export default function TradeOrderModal({
             )}
 
             {/* Price & Order Type selector */}
-            <div style={{ display: "flex", gap: 8 }}>
-              {(["MARKET", "LIMIT"] as const).map(t => (
+            <div style={{ display: "flex", gap: 6 }}>
+              {(["LIMIT", "SL-L", "MARKET"] as const).map(t => (
                 <button
                   key={t}
                   onClick={() => setOrderType(t)}
                   style={{
                     flex: 1, padding: "9px 0", borderRadius: 10,
-                    fontSize: 11.5, fontWeight: 800, cursor: "pointer",
-                    background: orderType === t ? "rgba(6,182,212,0.16)" : "#080B16",
-                    color: orderType === t ? C.cyan : C.gray1,
-                    border: `1.5px solid ${orderType === t ? C.cyan : C.border}`,
+                    fontSize: 11, fontWeight: 800, cursor: "pointer",
+                    background: orderType === t ? (t === "SL-L" ? "rgba(245,158,11,0.16)" : "rgba(6,182,212,0.16)") : "#080B16",
+                    color: orderType === t ? (t === "SL-L" ? "#FBBF24" : C.cyan) : C.gray1,
+                    border: `1.5px solid ${orderType === t ? (t === "SL-L" ? "#FBBF24" : C.cyan) : C.border}`,
                     transition: "all 0.2s ease",
                   }}
                 >
-                  {t} ORDER
+                  {t === "SL-L" ? "SL-LIMIT" : `${t} ORDER`}
                 </button>
               ))}
             </div>
 
             {/* Order Type Explanation Cards & Custom Limit Input */}
-            {orderType === "LIMIT" ? (
+            {orderType === "SL-L" ? (
+              <div style={{ background: "#080B16", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 10, color: "#FBBF24", textTransform: "uppercase", fontWeight: 800 }}>🛡️ Trigger Price (Stop-Loss ₹)</span>
+                  <span style={{ fontSize: 10, color: C.gray2, fontWeight: 700 }}>Benchmark: {tradeData.sl || "--"}</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={stopLossPriceInput}
+                  onChange={e => setStopLossPriceInput(e.target.value)}
+                  placeholder={tradeData.sl ? tradeData.sl.replace(/[^0-9.]/g, "") : "Enter trigger price"}
+                  style={{
+                    background: "#04060E", border: "1px solid rgba(245,158,11,0.4)", borderRadius: 10,
+                    padding: "10px 14px", fontSize: 15, fontWeight: 800, color: "#FBBF24", outline: "none",
+                    width: "100%", fontFamily: "Inter, sans-serif"
+                  }}
+                />
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                  <span style={{ fontSize: 10, color: C.cyan, textTransform: "uppercase", fontWeight: 800 }}>Limit Price Cap (₹)</span>
+                  <span style={{ fontSize: 10, color: C.gray2, fontWeight: 700 }}>LTP: {tradeData.price > 0 ? `₹${tradeData.price.toFixed(2)}` : "--"}</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.05"
+                  value={limitPrice}
+                  onChange={e => setLimitPrice(e.target.value)}
+                  placeholder={tradeData.price > 0 ? tradeData.price.toFixed(2) : "Enter limit price"}
+                  style={{
+                    background: "#04060E", border: `1px solid ${C.borderCyan}`, borderRadius: 10,
+                    padding: "10px 14px", fontSize: 15, fontWeight: 800, color: C.cyan, outline: "none",
+                    width: "100%", fontFamily: "Inter, sans-serif"
+                  }}
+                />
+                <div style={{ fontSize: 10, color: "#FCD34D", lineHeight: 1.45, background: "rgba(245,158,11,0.06)", borderRadius: 8, padding: 8, marginTop: 2 }}>
+                  ⚖️ <b>SEBI Mandatory SL-Limit:</b> When market crosses Trigger Price, order activates strictly with Limit Price barrier to eliminate freak-trade execution slippage.
+                </div>
+              </div>
+            ) : orderType === "LIMIT" ? (
               <div style={{ background: "#080B16", border: `1px solid ${C.borderCyan}`, borderRadius: 14, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 10, color: C.cyan, textTransform: "uppercase", fontWeight: 800 }}>Custom Limit Price (₹)</span>

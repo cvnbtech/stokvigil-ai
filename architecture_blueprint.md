@@ -54,7 +54,7 @@ flowchart TD
     classDef exec fill:#2A0A18,stroke:#FB7185,stroke-width:2px,color:#E2E8F0;
 
     subgraph TIER1 ["Tier 1: Presentation & Client Applications"]
-        WEB["Next.js 14 Web Portal<br/>(React 18, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts | Confluence Radar"]:::client
+        WEB["Next.js 16 Web Portal<br/>(React 19, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts (H5-L5) | Confluence Radar"]:::client
         MOBILE["Flutter Mobile App (iOS / Android)<br/>(Dart 3.3+, Provider, Biometrics)<br/>Live Watchlist | Demat Risk Badges | Push Alerts"]:::client
     end
 
@@ -73,8 +73,8 @@ flowchart TD
     end
 
     subgraph TIER4 ["Tier 4: Quantitative Confluence & Sovereign AI"]
-        MATH_CORE["1,417-Line Vectorized Quantitative Engine<br/>Camarilla Pivots (H4/H3/L3/L4) | VWAP ±1σ/±2σ Bands<br/>TTM Squeeze Momentum | Midday-Hardened RVOL (3.0x)"]:::quant
-        VETO_GATE["🛑 6 Hard Institutional Vetoes<br/>Lunch Trap | 200 EMA Gatekeeper | Breadth ADR &lt; 0.60<br/>VWAP +2σ Exhaustion | Wyckoff Supply Shock"]:::quant
+        MATH_CORE["Vectorized Quantitative Technical Engine<br/>Camarilla Pivots (H1-H5 / L1-L5) | VWAP ±1σ/±2σ Bands<br/>Location-Anchored Candlesticks | TTM Squeeze | Midday RVOL (3.0x)"]:::quant
+        VETO_GATE["🛑 Hard Institutional Vetoes<br/>Lunch Trap | 200 EMA | Sector Drag | Earnings Lockout<br/>Crude Shock | Derivatives Short Buildup | Wick Rejection"]:::quant
         DEMAT_GUARDIAN["🛡️ 5-State Demat Portfolio Risk Guardian<br/>CAPITAL_PRESERVATION | DEFENSIVE_TRIM | TRAILING_SL<br/>ACCUMULATE_WATCH | HOLD_STEADY"]:::quant
         GEMINI_AI["Gemini 3.5 Flash Lite Qualitative AI Engine<br/>Mathematical Sovereignty (Zero Math Hallucination)<br/>&lt;untrusted_external_news&gt; Injection Defense | 15 Calls Limit"]:::quant
     end
@@ -129,10 +129,10 @@ flowchart TD
 
 | Full-Stack Tier | Components & Technologies | Protocols & Ports | Latency SLA | Key Architectural Guarantees |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tier 1: Presentation Tier** | **Next.js 14 App Router** (React 18, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts, 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
+| **Tier 1: Presentation Tier** | **Next.js 16 App Router** (React 19, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts (H5-L5), 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
 | **Tier 2: Ingress & Security** | **FastAPI Middleware**, Pydantic v2 Settings, **Fernet AES-256 Vault**, JWT Bearer Auth | HTTPS (443) | &lt; 2 ms overhead | Client-side IDOR validation (`verify_user_access`), memory-bounded token bucket rate limiting, HTTP security headers (HSTS, CSP), and PBKDF2HMAC credential protection. |
 | **Tier 3: App Server & Daemons** | **FastAPI Async Engine**, Uvicorn ASGI, Lifespan Context Manager, **PgBouncer Pool** | HTTP, IPC | &lt; 15 ms internal API | Multi-tenant 5-minute automated scanning loop, 2-second market-hours tick worker (`worker.py`), persistent thread pools, and non-blocking I/O. |
-| **Tier 4: Quantitative Math & AI** | **NumPy & Pandas Engine (1,417 LOC)**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Camarilla pivots ($H_4/L_3$), VWAP $\pm1\sigma/\pm2\sigma$, TTM Squeeze, Wyckoff VSA delivery absorption, 6 Hard Institutional Vetoes, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
+| **Tier 4: Quantitative Math & AI** | **Vectorized NumPy & Pandas Engine**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Expanded Camarilla pivots ($H_1 \dots H_5 / L_1 \dots L_5$), Location-Anchored Candlesticks, 4-Quadrant F&O Derivatives OI, Sector Drag Veto, Earnings 48h Lockout, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
 | **Tier 5: State & Persistence** | **Dual-Tier Cache** (Process RAM + Supabase `UNLOGGED` Table), **Supabase PostgreSQL 15+** | PostgreSQL Wire Protocol (Port 6543) | **&lt; 0.01 ms** (RAM)<br/>**&lt; 0.80 ms** (DB) | Sub-millisecond market state bypassing WAL disk I/O, PgBouncer transaction-mode pooling with `statement_cache_size=0`, Postgres advisory locking (`pg_try_advisory_lock`), and `(SELECT auth.uid())` InitPlan RLS. |
 | **Tier 6: Execution & Dispatch** | **Broker Adapters** (ICICI Breeze, Dhan HQ, Angel One), **Telegram HTTP/2 Client**, FCM | HTTP/2, REST APIs, WebSockets | &lt; 250 ms order dispatch | Mandatory SEBI Stop-Loss Limit (SL-L) orders, dynamic tick snapping (₹0.05 / ₹0.01), pre-trade circuit freeze rejections, dynamic CNC/MIS short detection, and 25 msg/s leaky-bucket Telegram alert dispatch. |
 
@@ -144,7 +144,7 @@ The system executes three synchronized, non-blocking operational dataflow loops:
    > `Broker WebSockets / Yahoo Pool` ➔ **Sub-Second Ticks** ➔ `Tier-1 Process RAM (<0.01ms)` ➔ **worker.py 2.0s Flush** ➔ `Tier-2 UNLOGGED Table (<0.80ms)` ➔ **SSE / Polling** ➔ `Web & Mobile Clients`
 
 2. **5-Minute Quantitative Surveillance & Alerting Trajectory**:
-   > `Cron Trigger / Market Event` ➔ **Deduplicated Scrip Set** ➔ `1,417-LOC Vector Engine` ➔ **4-Pillar Confluence (≥75%)** ➔ `6 Deterministic Vetoes (Passed)` ➔ **Gemini 3.5 AI Rationale** ➔ `Telegram & FCM Lock Screen Push`
+   > `Cron Trigger / Market Event` ➔ **Deduplicated Scrip Set** ➔ **Vectorized Technical Engine** ➔ **4-Pillar Confluence (≥75%)** ➔ `6 Deterministic Vetoes (Passed)` ➔ **Gemini 3.5 AI Rationale** ➔ `Telegram & FCM Lock Screen Push`
 
 3. **1-Click SEBI-Compliant Broker Execution Trajectory**:
    > `User Click` ➔ **Signed JWT + Idempotency Key** ➔ `Pre-Trade Circuit & Dynamic Tick Snap` ➔ **SL-Limit Order Enforcement** ➔ `Multi-Broker Adapter` ➔ `NSE / BSE Clearing & Settlement`
@@ -278,17 +278,42 @@ StokVigil AI eliminates the requirement for paid external Redis instances by com
 
 ## 5. Quantitative Technical Engine (Vectorized Mathematical Formulations)
 
-All calculations in `technical_engine.py` (1,417 lines) are vectorized using NumPy and Pandas in 50-stock chunks.
+All calculations in `technical_engine.py` are vectorized using NumPy and Pandas in 50-stock chunks.
 
 ### 5.1 Camarilla Pivot Equations (Prior-Day True Range)
 Calculated using the completed prior-day (D-1) bar:
 $$\text{Range} = \max(\text{High}_{D-1} - \text{Low}_{D-1}, |\text{High}_{D-1} - \text{Close}_{D-1}|, |\text{Low}_{D-1} - \text{Close}_{D-1}|)$$
+$$H_5 = \text{Close}_{D-1} + (\text{Range} \times 1.1) \quad (\text{Expansion Target})$$
 $$H_4 = \text{Close}_{D-1} + \left(\text{Range} \times \frac{1.1}{2}\right) \quad (\text{Long Breakout Trigger})$$
 $$H_3 = \text{Close}_{D-1} + \left(\text{Range} \times \frac{1.1}{4}\right) \quad (\text{Mean Reversion Short Boundary})$$
 $$L_3 = \text{Close}_{D-1} - \left(\text{Range} \times \frac{1.1}{4}\right) \quad (\text{Mean Reversion Long Boundary})$$
 $$L_4 = \text{Close}_{D-1} - \left(\text{Range} \times \frac{1.1}{2}\right) \quad (\text{Breakdown / Protective Stop Loss})$$
+$$L_5 = \text{Close}_{D-1} - (\text{Range} \times 1.1) \quad (\text{Capitulation Target})$$
 
-### 5.2 Volume-Weighted Average Price (VWAP) & Statistical Bands
+* **Multi-Timeframe (MTF) Pivot Clustering:** Checks whether Daily $H_4/L_4$ levels align within $\pm 0.35\%$ of Weekly $H_3/H_4/L_3/L_4$ levels, indicating an institutional structural barrier.
+* **5-Type Camarilla Opening Engine:** Classifies the morning open into:
+  - `OPEN_INSIDE_VALUE`: Open between $L_3$ and $H_3$ (rangebound mean-reversion).
+  - `OPEN_ABOVE_H4_BREAKOUT`: Bullish momentum breakout drive.
+  - `OPEN_BELOW_L4_BREAKDOWN`: Immediate capitulation / institutional liquidation.
+  - `OPEN_IN_UPPER_TRAP_ZONE`: Open between $H_3$ and $H_4$ (high bull-trap risk).
+  - `OPEN_IN_LOWER_TRAP_ZONE`: Open between $L_4$ and $L_3$ (short-trap zone).
+
+### 5.2 Location-Anchored Candlestick Morphology & Wick Rejection Engine
+* **File:** `backend/app/patterns.py`
+* **Pattern Classifications:** `BULLISH_HAMMER_PINBAR`, `BEARISH_SHOOTING_STAR`, `BULLISH_ENGULFING`, `BEARISH_ENGULFING`, `INSIDE_BAR`, `NR7` (Narrow Range 7 Volatility Compression).
+* **Location Anchoring Requirement:** A bullish pattern is validated (`is_location_valid=True`) ONLY if anchored within $0.65\%$ of an institutional demand zone (VWAP, Camarilla $L_3/L_4$, 200 EMA). Floating candles in mid-air are marked as unanchored churn.
+* **Upper Wick Rejection Veto:** Evaluates $\text{Upper Wick Ratio} = \frac{\text{High} - \max(\text{Open}, \text{Close})}{\text{High} - \text{Low}}$. If $> 0.40$ at resistance, long breakouts are strictly invalidated.
+
+### 5.3 Institutional NSE Derivatives Open Interest (OI) Engine
+* **File:** `backend/app/derivatives_tracker.py`
+* **4-Quadrant Price-OI Dynamics:**
+  - `LONG_BUILDUP` ($\Delta \text{Price} > 0, \Delta \text{OI} > 0$): High institutional accumulation conviction (+10 pts).
+  - `SHORT_COVERING` ($\Delta \text{Price} > 0, \Delta \text{OI} < 0$): Fragile short squeeze (+3 pts, tight trailing stop).
+  - `SHORT_BUILDUP` ($\Delta \text{Price} < 0, \Delta \text{OI} > 0$): Aggressive short positioning (-12 pts, hard BUY veto).
+  - `LONG_UNWINDING` ($\Delta \text{Price} < 0, \Delta \text{OI} < 0$): Panic liquidation (-10 pts, Demat defense alert).
+* **Option Chain Analytics:** Evaluates Put-Call Ratio (PCR), Max Pain strikes, and major call/put resistance and support strike walls.
+
+### 5.4 Volume-Weighted Average Price (VWAP) & Statistical Bands
 $$\text{Typical Price } (TP_t) = \frac{\text{High}_t + \text{Low}_t + \text{Close}_t}{3}$$
 $$\text{VWAP} = \frac{\sum (TP_t \times V_t)}{\sum V_t}$$
 $$\sigma_{\text{VWAP}} = \sqrt{\frac{\sum V_t \times (TP_t - \text{VWAP})^2}{\sum V_t}}$$
@@ -329,15 +354,25 @@ The confluence engine calculates a weighted composite score (0.0 to 10.0) based 
 | **Fundamentals & Forensics** | 15% | 20% | 15% |
 | **Catalysts & Sentiment** | 20% | 15% | 20% |
 
-### 6.1 The 6 Hard Institutional Vetoes (Zero Override Allowed)
+### 6.1 The Hard Institutional Vetoes (Zero Override Allowed)
 1. **Lunch-Hour Trap Blocker (11:30–13:30 IST):** Prohibits breakout buys unless volume exceeds 3.0x RVOL.
 2. **Market Breadth Veto:** Rejects all long setups if cash market Advance-Decline Ratio (ADR) $< 0.60$.
 3. **Macro 200 EMA Trend Veto:** Vetoes long positions on stocks trading below their daily 200 EMA during weak market regimes.
 4. **Anchored VWAP $+2\sigma$ Mean-Reversion Exhaustion Trap:** Vetoes late long entries when price exceeds $+2\sigma$ without base consolidation.
 5. **Camarilla Gap-Up Fade Veto:** Vetoes opening gaps far above $H_4$ that fail to retest and hold the level.
 6. **Wyckoff Supply Shock Override:** Immediately downgrades bias if delivery bhavcopy reveals heavy volume with $CLQ < 0.25$.
+7. **Top-Down Sector Gatekeeper Veto:** Vetoes long breakouts if parent sector index (e.g. NIFTY IT, NIFTY BANK) is in heavy drag ($< -0.40\%$ vs Nifty).
+8. **Forward Corporate Earnings 48-Hour Lockout Shield:** Vetoes new breakout entries within 48 hours of quarterly financial results to eliminate binary overnight gap risk.
+9. **Brent Crude Oil Commodity Shock Veto:** Detects overnight crude oil surges ($\ge 3\%$), automatically vetoing long trades on margin-sensitive sectors (Paints, Auto, OMCs, Aviation).
+10. **Derivatives Short Buildup Veto:** Heavy futures open interest expansion with falling price strictly forbids long trades.
+11. **Upper Wick Seller Rejection Veto:** Breakout attempts leaving $> 40\%$ upper shadow at resistance are vetoed.
 
-### 6.2 5-State Demat Portfolio Risk Lifecycle
+### 6.2 Dynamic Market Regime Switcher
+The engine automatically shifts execution profiles based on market volatility:
+* **Range-Bound Regimes ($\text{ADX} < 20, \text{VIX} < 14.5$):** Vetoes breakout chasing ($RVOL < 2.2$) and activates **Camarilla $L_3$ Mean-Reversion Floor Bounce** setups.
+* **Trending Regimes ($\text{ADX} \ge 25$):** Unlocks full Camarilla $H_4$ breakouts with target extensions projecting to $H_5$.
+
+### 6.3 5-State Demat Portfolio Risk Lifecycle
 * 🔴 **`CAPITAL_PRESERVATION_EXIT`:** Triggered when LTP breaks $L_4$ or drops $>8\%$ below average buy price.
 * 🟡 **`DEFENSIVE_TRIM_ALERT`:** Recommends booking 50% profit at Target 1 ($H_4$) and moving stop-loss to cost basis.
 * 🟢 **`TRAILING_SL_ALERT`:** Chandelier ATR trailing stop ratchets upward as profit expands.

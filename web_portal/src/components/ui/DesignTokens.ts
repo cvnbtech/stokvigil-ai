@@ -55,4 +55,50 @@ export interface HoldingItem {
   signalType: "strong_buy" | "buy" | "sell" | "hold" | "neutral" | "monitoring" | string;
   target?: string | null;
   sl?: string | null;
+  trailing_sl?: string | null;
+  confluence_score?: number | null;
+  camarilla_levels?: {
+    h5?: number | null;
+    h4?: number | null;
+    h3?: number | null;
+    l3?: number | null;
+    l4?: number | null;
+    l5?: number | null;
+  } | null;
+  camarilla_open_type?: string | null;
+  camarilla_cluster?: {
+    is_pivot_cluster?: boolean;
+    cluster_type?: string;
+    description?: string;
+  } | null;
+  candlestick_patterns?: {
+    primary_pattern?: string;
+    pattern_label?: string;
+    is_location_valid?: boolean;
+    anchored_level?: string;
+    upper_wick_ratio?: number;
+    lower_wick_ratio?: number;
+    is_upper_wick_rejection?: boolean;
+    is_lower_wick_rejection?: boolean;
+    is_inside_bar?: boolean;
+    is_nr7?: boolean;
+    is_unanchored_churn?: boolean;
+  } | null;
+  derivatives?: {
+    is_fo_stock?: boolean;
+    fo_oi_status?: string;
+    pcr?: number | null;
+    max_pain?: number | null;
+    vsa_regime?: string;
+  } | null;
+  sector_rs?: {
+    sector_name?: string;
+    sector_rs_regime?: string;
+    sector_rs_rating?: number;
+  } | null;
+  event_risk?: {
+    has_imminent_event_risk?: boolean;
+    days_to_earnings?: number;
+    event_description?: string;
+  } | null;
 }

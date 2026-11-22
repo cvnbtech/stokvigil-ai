@@ -3,21 +3,23 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional, Tuple, List
 
-from app.macro_filter import calculate_sector_relative_strength
+from app.macro_filter import calculate_sector_relative_strength, check_sector_alignment_gatekeeper, get_symbol_sector
+from app.derivatives_tracker import evaluate_derivatives_microstructure
 
 logger = logging.getLogger("stokvigil.engine.deterministic")
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def get_adaptive_weights(macro_data: Dict[str, Any], adx_regime: Optional[str] = None) -> Tuple[Dict[str, float], str]:
+def get_adaptive_weights(macro_data: Optional[Dict[str, Any]], adx_regime: Optional[str] = None) -> Tuple[Dict[str, float], str]:
     """
     Dynamically allocates confluence weights across the 4 pillars based on macro market regime.
     Prioritizes forensic health and flow during distribution/volatility, and technical momentum during strong trends.
     Returns (weights_dict, regime_name).
     """
-    vix_val = macro_data.get("india_vix") or macro_data.get("vix_value")
+    macro = macro_data or {}
+    vix_val = macro.get("india_vix") or macro.get("vix_value")
     vix = float(vix_val) if vix_val is not None else None
-    adr_val = macro_data.get("market_breadth_adr") or macro_data.get("adr_ratio")
+    adr_val = macro.get("market_breadth_adr") or macro.get("adr_ratio")
     adr = float(adr_val) if adr_val is not None else None
     
     # Regime 1: High Volatility, Market Distribution, or Data Unavailable (Defensive posture)
@@ -40,6 +42,8 @@ def compute_tactical_levels(
     h4: Optional[float] = None,
     l3: Optional[float] = None,
     l4: Optional[float] = None,
+    h5: Optional[float] = None,
+    l5: Optional[float] = None,
     vwap_val: Optional[float] = None,
     vwap_upper_1s: Optional[float] = None,
     action_bias: str = "HOLD_NEUTRAL",
@@ -133,7 +137,7 @@ def compute_tactical_levels(
 
         if l3 and l4 and float(l3) > 0 and float(l4) > 0 and float(l3) < price:
             target_1 = round(min(price - (1.5 * atr), float(l3)), 2)
-            target_2 = round(min(price - (2.5 * atr), float(l4)), 2)
+            target_2 = round(min(price - (2.5 * atr), float(l5 or l4)), 2)
             stop_loss = round(max(price + (1.0 * atr), float(h3 or (price * 1.02))), 2)
         else:
             target_1 = round(price - (1.5 * atr), 2)
@@ -204,7 +208,7 @@ def compute_tactical_levels(
         stop_loss = round(price - (1.0 * atr), 2)
     elif h3 and l3 and float(h3) > 0 and float(l3) > 0:
         target_1 = round(max(price + (1.5 * atr), float(h3)), 2)
-        target_2 = round(max(price + (2.5 * atr), float(h4 or h3)), 2)
+        target_2 = round(max(price + (2.5 * atr), float(h5 or h4 or h3)), 2)
         stop_loss = round(min(price - (1.0 * atr), float(l4 or l3)), 2)
     else:
         target_1 = round(price + (1.5 * atr), 2)
@@ -278,6 +282,12 @@ def compute_deterministic_confluence(
     """
     clean_sym = symbol.replace(".BO", "").replace(".NS", "").strip().upper()
     is_bse = symbol.endswith(".BO") or (clean_sym.isdigit() and len(clean_sym) == 6)
+
+    technicals = technicals or {}
+    flow_data = flow_data or {}
+    macro_data = macro_data or {}
+    forensics = forensics or {}
+    financials = financials or {}
 
     price_candidate = (
         technicals.get("current_price") or 
@@ -377,7 +387,7 @@ def compute_deterministic_confluence(
         confluence_drivers.append("Wyckoff VSA Warning: Speculative Operator Churn (Low Delivery %)")
         flow_score_val = max(20, flow_score_val - 10)
 
-    sector_name = forensics.get("sector_name", "BROAD_MARKET") if forensics else "BROAD_MARKET"
+    sector_name = (forensics.get("sector_name") if forensics else None) or get_symbol_sector(symbol) or "BROAD_MARKET"
     if sector_name != "BROAD_MARKET":
         confluence_drivers.append(f"Sector Alignment: {sector_name}")
 
@@ -471,7 +481,28 @@ def compute_deterministic_confluence(
         confluence_drivers.append("TTM Squeeze Coiling: Bollinger Bands compressed inside Keltner Channels (High breakout potential).")
         confluence_score = min(95, confluence_score + 2)
 
-    # 6. Triple-Timeframe Fractal Harmony
+    # 6. Morphological Candlestick Pattern Confluence (Dual-Exchange NSE & BSE)
+    candlestick_dict = technicals.get("candlestick_patterns") or {}
+    detected_pats = candlestick_dict.get("detected_patterns", [])
+    for p in detected_pats:
+        if p == "BULLISH_HAMMER_PINBAR":
+            confluence_drivers.append("Price Action: Bullish Hammer / Pinbar demand absorption detected.")
+            confluence_score = min(98, confluence_score + 6)
+        elif p == "BULLISH_ENGULFING":
+            confluence_drivers.append("Price Action: Bullish Engulfing candle confirms institutional buying dominance.")
+            confluence_score = min(98, confluence_score + 7)
+        elif p == "BULLISH_MORNING_STAR":
+            confluence_drivers.append("Price Action: Morning Star 3-bar reversal pattern confirmed.")
+            confluence_score = min(98, confluence_score + 8)
+        elif p in ["INSIDE_BAR", "NR7_COMPRESSION"]:
+            p_label = p.replace("_", " ")
+            confluence_drivers.append(f"Volatility Compression: {p_label} coiling for explosive directional expansion.")
+            confluence_score = min(98, confluence_score + 3)
+        elif p == "BEARISH_ENGULFING":
+            confluence_drivers.append("Price Action Warning: Bearish Engulfing pattern indicates supply dominance.")
+            confluence_score = max(20, confluence_score - 7)
+
+    # 7. Triple-Timeframe Fractal Harmony
     daily_rsi = technicals.get("rsi_daily")
     daily_bullish = (current_price >= (technicals.get("ema_50") or current_price)) and (daily_rsi is not None and daily_rsi >= 48)
     m15_bullish = ((technicals.get("price_vs_vwap_pct") or 0.0) >= -0.2) and (technicals.get("rsi_divergence") != "BEARISH_REGULAR_DIVERGENCE")
@@ -710,6 +741,24 @@ def compute_deterministic_confluence(
             action_bias = "SELL_WATCH"
             has_actionable_signal = True
 
+        # Camarilla L3 Institutional Floor Bounce (Mean-Reversion Setup for Range Regimes)
+        adx_val = technicals.get("adx_14")
+        l3_val = technicals.get("camarilla_pivots", {}).get("l3")
+        l4_val = technicals.get("camarilla_pivots", {}).get("l4")
+        is_range_regime = bool(
+            (adx_val is not None and float(adx_val) < 22.0) or
+            (technicals.get("camarilla_open_type") == "OPEN_INSIDE_VALUE")
+        )
+        if action_bias in ["HOLD_NEUTRAL", "BUY_WATCH"] and is_range_regime and l3_val is not None and l4_val is not None and has_real_price:
+            if current_price >= float(l4_val) and current_price <= float(l3_val) * 1.008:
+                if (c5_chg is not None and c5_chg > 0) or technicals.get("is_lower_wick_rejection") or technicals.get("candlestick_patterns", {}).get("primary_pattern") == "BULLISH_HAMMER_PINBAR":
+                    action_bias = "BUY_WATCH"
+                    has_actionable_signal = True
+                    catalyst_category = "CAMARILLA_L3_BOUNCE"
+                    alert_title = f"{symbol}: Camarilla L3 Support Floor Bounce (Mean Reversion)"
+                    confluence_score = max(70, confluence_score + 10)
+                    confluence_drivers.insert(0, f"Mean-Reversion Setup: Price defending Camarilla L3 floor (₹{l3_val:,.2f}) with support bounce.")
+
     # Multi-Timeframe, Macro & Sector Veto Guardrails
     ema_200_val = technicals.get("ema_200")
     is_macro_downtrend = bool(ema_200_val and current_price < ema_200_val)
@@ -785,6 +834,117 @@ def compute_deterministic_confluence(
                 f"failed to sustain momentum and is fading towards VWAP. Counter-trend breakout blocked."
             )
 
+    # Dynamic Market Regime Switcher: Range-Bound Breakout Veto
+    if action_bias == "BUY_WATCH" and catalyst_category != "CAMARILLA_L3_BOUNCE":
+        is_choppy_regime = bool(adx_val is not None and float(adx_val) < 20.0 and (vix_val is not None and float(vix_val) < 14.5))
+        if is_choppy_regime:
+            vol_mult = technicals.get("volume_multiple")
+            if vol_mult is None or float(vol_mult) < 2.2:
+                logger.info(f"Regime Switcher Veto for {symbol}: Breakout disqualified in choppy range regime (ADX {adx_val} < 20, RVOL {vol_mult}).")
+                action_bias = "HOLD_NEUTRAL"
+                has_actionable_signal = False
+                confluence_score = min(56, confluence_score - 8)
+                confluence_drivers.append(
+                    f"Market Regime Veto: Low-trend range regime (ADX: {adx_val} < 20). "
+                    f"Breakout disqualified in favor of mean reversion."
+                )
+
+    # Candlestick Upper Wick Rejection / Shooting Star Veto (The "Wick Trap" Blocker)
+    # If price pushed toward resistance but closed low leaving a long upper shadow:
+    upper_wick_ratio = technicals.get("upper_wick_ratio") or candlestick_dict.get("upper_wick_ratio")
+    is_upper_wick_trap = bool(
+        technicals.get("is_upper_wick_rejection") or
+        candlestick_dict.get("is_upper_wick_rejection") or
+        "BEARISH_SHOOTING_STAR" in detected_pats or
+        (upper_wick_ratio is not None and float(upper_wick_ratio) >= 0.40 and (clq is not None and clq <= 0.45))
+    )
+    if action_bias == "BUY_WATCH" and is_upper_wick_trap:
+        logger.info(f"Wick Trap Veto for {symbol}: Shooting star / upper shadow rejection detected at resistance.")
+        action_bias = "HOLD_NEUTRAL"
+        has_actionable_signal = False
+        confluence_score = min(56, confluence_score - 8)
+        confluence_drivers.append(
+            "Wick Rejection Veto: Long upper shadow / Shooting Star rejection at resistance. "
+            "Breakout invalidated by aggressive institutional selling overhead."
+        )
+
+    # Forward Corporate Earnings Lockout Veto (48-Hour Binary Event Risk Shield)
+    event_risk = {"has_imminent_event_risk": False, "days_to_earnings": None, "event_description": None}
+    try:
+        from app.corporate_calendar import check_corporate_event_risk
+        event_risk = check_corporate_event_risk(symbol)
+        if action_bias == "BUY_WATCH" and event_risk.get("has_imminent_event_risk"):
+            days_left = event_risk.get("days_to_earnings", 0)
+            evt_desc = event_risk.get("event_description", "Quarterly Results")
+            logger.info(f"Earnings Lockout Veto for {symbol}: {evt_desc} scheduled in {days_left} day(s).")
+            action_bias = "HOLD_NEUTRAL"
+            has_actionable_signal = False
+            confluence_score = min(55, confluence_score - 6)
+            confluence_drivers.append(
+                f"Binary Event Risk Veto: {evt_desc} scheduled in {days_left} day(s). "
+                f"New entries locked to eliminate binary overnight gap risk."
+            )
+    except Exception as e:
+        logger.debug(f"Corporate calendar check skipped: {e}")
+
+    # Brent Crude Oil Commodity Shock Veto
+    try:
+        from app.macro_filter import check_crude_oil_sector_shock
+        global_cues_data = macro_data.get("global_cues", {}) if macro_data else {}
+        brent_pct = global_cues_data.get("brent_crude_pct")
+        sec_shock = check_crude_oil_sector_shock(sector_name, brent_pct)
+        if sec_shock.get("has_shock"):
+            confluence_score = max(20, confluence_score - sec_shock.get("penalty_score", 0))
+            if sec_shock.get("driver"):
+                confluence_drivers.append(sec_shock["driver"])
+            if action_bias == "BUY_WATCH" and brent_pct is not None and brent_pct >= 3.0:
+                action_bias = "HOLD_NEUTRAL"
+                has_actionable_signal = False
+                confluence_drivers.append(f"Crude Shock Veto: Brent Crude surge ({brent_pct:+.2f}%) poses direct sector margin risk. Long entry blocked.")
+    except Exception as e:
+        logger.debug(f"Crude shock check skipped: {e}")
+
+    # Top-Down Sector Relative Strength Gatekeeper
+    try:
+        sec_gate = check_sector_alignment_gatekeeper(symbol, macro_data, sector_name=sector_name)
+        if sec_gate.get("has_drag"):
+            confluence_score = max(20, confluence_score + sec_gate.get("score_adjustment", -15))
+            if sec_gate.get("driver"):
+                confluence_drivers.append(sec_gate["driver"])
+            if action_bias == "BUY_WATCH":
+                logger.info(f"Sector Gatekeeper Veto for {symbol}: Parent sector {sec_gate.get('sector_name')} is in heavy drag.")
+                action_bias = "HOLD_NEUTRAL"
+                has_actionable_signal = False
+                confluence_drivers.append(f"Sector Gatekeeper Veto: Long breakout blocked due to severe sector drag ({sec_gate.get('sector_name')}).")
+        elif sec_gate.get("has_tailwinds"):
+            confluence_score = min(98, confluence_score + sec_gate.get("score_adjustment", 8))
+            if sec_gate.get("driver"):
+                confluence_drivers.append(sec_gate["driver"])
+    except Exception as e:
+        logger.debug(f"Sector gatekeeper check skipped: {e}")
+
+    # NSE Derivatives Open Interest (OI) Microstructure Engine
+    try:
+        derivatives_info = evaluate_derivatives_microstructure(symbol)
+        if derivatives_info.get("is_fno_eligible"):
+            oi_regime = derivatives_info.get("oi_regime")
+            oi_score = derivatives_info.get("conviction_score", 0)
+            confluence_score = max(15, min(98, confluence_score + oi_score))
+            confluence_drivers.append(derivatives_info["description"])
+
+            if oi_regime == "SHORT_BUILDUP" and action_bias == "BUY_WATCH":
+                logger.info(f"Derivatives Veto for {symbol}: Aggressive institutional short buildup detected.")
+                action_bias = "HOLD_NEUTRAL"
+                has_actionable_signal = False
+                confluence_drivers.append("Derivatives Microstructure Veto: Aggressive institutional Short Build-up invalidates long breakout.")
+            elif oi_regime == "LONG_UNWINDING" and demat_context.get("is_in_portfolio"):
+                if action_bias not in ["CAPITAL_PRESERVATION_EXIT", "STOP_LOSS_EXIT"]:
+                    action_bias = "DEFENSIVE_TRIM_ALERT"
+                    has_actionable_signal = True
+                    confluence_drivers.append("Derivatives Liquidation Warning: Institutional Long Unwinding detected. Trim position.")
+    except Exception as e:
+        logger.debug(f"Derivatives microstructure check skipped: {e}")
+
     # Time-of-Day Asymmetric Regime Filter (The "Lunch-Hour Trap" Blocker - NSE & BSE)
     # Between 11:30 AM and 01:30 PM IST, institutional liquidity drops 40-65% (DIIs step away for lunch, Euro opens).
     # Over 75% of breakouts during this lull are false bull-traps that reverse into stop-losses.
@@ -847,9 +1007,9 @@ def compute_deterministic_confluence(
         if pnl <= -3.5 or is_severe_breakdown:
             action_bias = "CAPITAL_PRESERVATION_EXIT"
             has_actionable_signal = True
-            catalyst_category = "TRAILING_STOP_TRIGGER"
-            alert_title = f"🚨 {symbol}: Capital Preservation Exit Trigger (P&L: {pnl:+.1f}%)"
-            confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach.")
+            catalyst_category = "BLOCK_DEAL" if is_block_dump else "TRAILING_STOP_TRIGGER"
+            alert_title = f"🚨 {symbol}: Institutional Block Dump / Exit Defense" if is_block_dump else f"🚨 {symbol}: Capital Preservation Exit Trigger (P&L: {pnl:+.1f}%)"
+            confluence_drivers.insert(0, f"CRITICAL RISK DEFENSE: Position down {pnl:+.1f}%. Protective stop-loss breach." if not is_block_dump else "CRITICAL DEFENSE: Institutional block dump detected on the tape. Exit immediately to protect principal.")
             confluence_score = min(20, confluence_score)
 
         # 2. DEFENSIVE TRIM ALERT: Early warning - VWAP breakdown or Institutional Block dump or multi-day breakdown
@@ -905,10 +1065,12 @@ def compute_deterministic_confluence(
 
     # Camarilla Equation & VWAP Bands Tactical Execution Levels
     camarilla = technicals.get("camarilla_pivots", {})
+    h5 = camarilla.get("h5")
     h4 = camarilla.get("h4")
     h3 = camarilla.get("h3")
     l3 = camarilla.get("l3")
     l4 = camarilla.get("l4")
+    l5 = camarilla.get("l5")
     vwap_upper_1s = technicals.get("vwap_upper_1s")
 
     if has_real_price and current_price > 0:
@@ -922,6 +1084,8 @@ def compute_deterministic_confluence(
             h4=h4,
             l3=l3,
             l4=l4,
+            h5=h5,
+            l5=l5,
             vwap_val=vwap_val,
             vwap_upper_1s=vwap_upper_1s,
             action_bias=action_bias,
@@ -946,7 +1110,7 @@ def compute_deterministic_confluence(
             elif action_bias == "TARGET_1_TRAIL_ALERT":
                 holding_guidance = f"TACTICAL TARGET 1 HIT: Lock in 50% profit immediately; trail stop-loss to entry cost ₹{avg_buy:,.2f} (Free Trade)."
             elif action_bias == "ACCUMULATE_WATCH":
-                holding_guidance = f"INSTITUTIONAL PYRAMIDING: Confirmed breakout on winning position (+{pnl:+.1f}%). Safe to add 25-30% allocation above ₹{current_price:,.2f} with trailing SL at breakeven."
+                holding_guidance = f"INSTITUTIONAL PYRAMIDING: Confirmed breakout on winning position (+{pnl:+.1f}%). Safe to add 25-30% allocation above ₹{current_price:,.2f} with Chandelier Trailing SL at breakeven."
             else:
                 holding_guidance = f"Chandelier Trailing SL active at {tactical_dict.get('protective_stop_loss', 'cost')} (Protecting cost basis ₹{avg_buy:,.2f}). Position healthy."
         else:
@@ -957,13 +1121,13 @@ def compute_deterministic_confluence(
 
     return {
         "symbol": symbol,
-        "has_actionable_signal": has_actionable_signal,
-        "action_bias": action_bias,
-        "is_block_dump": is_block_dump,
-        "confluence_score": confluence_score,
-        "alert_title": alert_title,
+        "has_actionable_signal": has_actionable_signal if has_real_price else False,
+        "action_bias": action_bias if has_real_price else "HOLD_NEUTRAL",
+        "is_block_dump": is_block_dump if has_real_price else False,
+        "confluence_score": confluence_score if (has_real_price and (len(active_factors) > 0 or is_block_dump or is_severe_breakdown)) else None,
+        "alert_title": alert_title if has_real_price else f"{symbol}: Awaiting Real-Time Price Data",
         "catalyst_category": catalyst_category,
-        "confluence_drivers": confluence_drivers,
+        "confluence_drivers": confluence_drivers if has_real_price else ["Real-time market price data unavailable."],
         "tactical_levels": tactical_dict,
         "holding_guidance": holding_guidance,
         "growth_outlook_summary": (
@@ -989,6 +1153,14 @@ def compute_deterministic_confluence(
             "breadth_regime": macro_data.get("breadth_regime") if macro_data else None,
             "advances": macro_data.get("advances") if macro_data else None,
             "declines": macro_data.get("declines") if macro_data else None
+        },
+        "sector_rs": {
+            "sector_name": sector_rs_dict.get("sector_name") or sector_name,
+            "sector_rs_regime": sec_regime,
+            "sector_rs_rating": sec_rating,
+        },
+        "event_risk": event_risk if ('event_risk' in locals() and event_risk) else {
+            "has_imminent_event_risk": False, "days_to_earnings": None, "event_description": None
         }
     }
 

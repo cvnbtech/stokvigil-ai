@@ -407,6 +407,61 @@ export default function WatchlistTab({
                 })()}
               </div>
 
+              {/* Institutional Microstructure Badges */}
+              {item.price > 0 && (item.candlestick_patterns?.pattern_label || (item.derivatives?.fo_oi_status && item.derivatives.fo_oi_status !== "CASH_EQUITY") || (item.camarilla_open_type && item.camarilla_open_type !== "DATA_INSUFFICIENT") || item.event_risk?.has_imminent_event_risk || item.sector_rs?.sector_rs_regime === "SECTOR_LEADER") && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4, marginBottom: 4 }}>
+                  {item.candlestick_patterns?.pattern_label && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      color: item.candlestick_patterns.primary_pattern?.includes("BULLISH") || item.candlestick_patterns.primary_pattern?.includes("HAMMER") ? C.emerald : item.candlestick_patterns.primary_pattern?.includes("BEARISH") || item.candlestick_patterns.primary_pattern?.includes("SHOOTING") ? C.rose : C.cyan,
+                      background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      🕯️ {item.candlestick_patterns.pattern_label}
+                    </span>
+                  )}
+                  {item.derivatives?.fo_oi_status && item.derivatives.fo_oi_status !== "CASH_EQUITY" && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800,
+                      color: item.derivatives.fo_oi_status === "LONG_BUILDUP" ? C.emerald : item.derivatives.fo_oi_status === "SHORT_BUILDUP" ? C.rose : C.cyan,
+                      background: item.derivatives.fo_oi_status === "LONG_BUILDUP" ? "rgba(16,185,129,0.1)" : item.derivatives.fo_oi_status === "SHORT_BUILDUP" ? "rgba(244,63,94,0.1)" : "rgba(6,182,212,0.1)",
+                      border: `1px solid ${item.derivatives.fo_oi_status === "LONG_BUILDUP" ? "rgba(16,185,129,0.25)" : item.derivatives.fo_oi_status === "SHORT_BUILDUP" ? "rgba(244,63,94,0.25)" : "rgba(6,182,212,0.25)"}`,
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      📊 {item.derivatives.fo_oi_status.replace(/_/g, " ")}
+                    </span>
+                  )}
+                  {item.camarilla_open_type && item.camarilla_open_type !== "DATA_INSUFFICIENT" && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 700,
+                      color: item.camarilla_open_type.includes("ABOVE_H4") ? "#a855f7" : item.camarilla_open_type.includes("BELOW_L4") ? C.rose : C.gray1,
+                      background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      🌅 {item.camarilla_open_type.replace(/_/g, " ")}
+                    </span>
+                  )}
+                  {item.event_risk?.has_imminent_event_risk && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, color: C.amber,
+                      background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      🛡️ Earnings in {item.event_risk.days_to_earnings}d
+                    </span>
+                  )}
+                  {item.sector_rs?.sector_rs_regime === "SECTOR_LEADER" && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, color: C.cyan,
+                      background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      🚀 Leader
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Bottom Action & Signal Ribbon */}
               <div style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",

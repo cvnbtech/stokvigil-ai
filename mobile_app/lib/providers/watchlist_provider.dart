@@ -136,6 +136,13 @@ class WatchlistProvider extends ChangeNotifier {
           merged['trailing_sl'] = existing['trailing_sl'];
           merged['is_high_beta'] = existing['is_high_beta'];
           merged['volatility_regime'] = existing['volatility_regime'];
+          merged['camarilla_levels'] = existing['camarilla_levels'];
+          merged['camarilla_open_type'] = existing['camarilla_open_type'];
+          merged['camarilla_cluster'] = existing['camarilla_cluster'];
+          merged['candlestick_patterns'] = existing['candlestick_patterns'];
+          merged['derivatives'] = existing['derivatives'];
+          merged['sector_rs'] = existing['sector_rs'];
+          merged['event_risk'] = existing['event_risk'];
           merged['name'] = existing['name'] ?? merged['name'];
           merged['exchange'] = existing['exchange'] ?? merged['exchange'];
         } else if (cached != null && (cached['price'] as num? ?? 0) > 0) {
@@ -253,6 +260,13 @@ class WatchlistProvider extends ChangeNotifier {
     item['volatility_regime'] = q['volatility_regime'];
     item['is_circuit_locked'] = q['is_circuit_locked'] == true;
     item['circuit_lock_type'] = q['circuit_lock_type'];
+    item['camarilla_levels'] = q['camarilla_levels'];
+    item['camarilla_open_type'] = q['camarilla_open_type'];
+    item['camarilla_cluster'] = q['camarilla_cluster'];
+    item['candlestick_patterns'] = q['candlestick_patterns'];
+    item['derivatives'] = q['derivatives'];
+    item['sector_rs'] = q['sector_rs'];
+    item['event_risk'] = q['event_risk'];
   }
 
   Future<bool> addStock(

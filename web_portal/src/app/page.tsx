@@ -42,7 +42,7 @@ export default function App() {
   const [showTradeModal, setShowTradeModal] = useState(false);
   const [tradeData, setTradeData] = useState<{ symbol: string; price: number; type: "BUY" | "SELL"; target: string; sl: string; isCircuitLocked?: boolean; circuitLockType?: string | null } | null>(null);
   const [orderQty, setOrderQty] = useState(10);
-  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [orderType, setOrderType] = useState<"LIMIT" | "SL-L" | "MARKET">("LIMIT");
   const [orderSent, setOrderSent] = useState(false);
   const [orderSending, setOrderSending] = useState(false);
   const [limitPrice, setLimitPrice] = useState<string>("");
@@ -136,7 +136,8 @@ export default function App() {
             action: tradeData.type,
             order_type: orderType,
             quantity: orderQty,
-            price: orderType === "LIMIT" ? parseFloat(limitPrice) || 0.0 : 0.0,
+            price: (orderType === "LIMIT" || orderType === "SL-L") ? parseFloat(limitPrice) || 0.0 : 0.0,
+            trigger_price: orderType === "SL-L" ? parseFloat(stopLossPriceInput) || 0.0 : undefined,
             idempotency_key: idempotencyKey
           })
         });

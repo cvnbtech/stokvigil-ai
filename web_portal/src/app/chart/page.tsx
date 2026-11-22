@@ -34,7 +34,6 @@ function ChartContent() {
   const exchange = searchParams.get("exchange") || "NSE";
   const cleanSymbol = rawSymbol.replace(".NS", "").replace(".BO", "").trim().toUpperCase();
 
-  const tradingViewUrl = `https://in.tradingview.com/chart/?symbol=${exchange}:${cleanSymbol}`;
   const exchangeUrl =
     exchange === "BSE"
       ? `https://www.bseindia.com/stock-share-price/${cleanSymbol}/`
@@ -109,23 +108,6 @@ function ChartContent() {
 
           {/* Quick Action Outlinks */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <a
-              href={tradingViewUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                padding: "6px 12px",
-                borderRadius: 8,
-                background: "rgba(59, 130, 246, 0.15)",
-                border: "1px solid rgba(59, 130, 246, 0.4)",
-                color: "#60a5fa",
-                textDecoration: "none",
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              ↗ TradingView
-            </a>
             <a
               href={exchangeUrl}
               target="_blank"

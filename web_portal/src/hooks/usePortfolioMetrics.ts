@@ -90,6 +90,9 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
           // Auto-sync Demat holdings into user_watchlists table (Universal Canonical Suffix Rule + ISIN)
           if (supabase && uid) {
             try {
+              const activeSymbols = new Set<string>();
+              const activeIsins = new Set<string>();
+
               for (const h of data.holdings) {
                 const rawSym = (h.symbol || h.clean_symbol || "").trim().toUpperCase();
                 if (!rawSym) continue;
@@ -102,6 +105,11 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
                   cleanS = `${cleanS}.BO`;
                 }
                 if (cleanS) {
+                  activeSymbols.add(cleanS.toUpperCase());
+                  activeSymbols.add(rawSym.toUpperCase());
+                  activeSymbols.add(cleanS.replace(/\.(BO|NS)$/i, "").toUpperCase());
+                  if (h.isin) activeIsins.add(String(h.isin).trim().toUpperCase());
+
                   const payload: any = {
                     user_id: uid,
                     symbol: cleanS,
@@ -120,6 +128,33 @@ export function usePortfolioMetrics({ getAuthHeaders, userId, onDematSynced }: U
                   }
                 }
               }
+
+              // Option A Lifecycle Reconciliation:
+              // Purge auto-synced holdings that have been completely sold (quantity reaches 0 or omitted by broker).
+              // Preserves manually added watchlist items (is_auto_synced: false).
+              const { data: existingAutoRows } = await supabase
+                .from('user_watchlists')
+                .select('id, symbol, isin')
+                .eq('user_id', uid)
+                .eq('is_auto_synced', true);
+
+              if (existingAutoRows && existingAutoRows.length > 0) {
+                const staleIds = existingAutoRows
+                  .filter((r: any) => {
+                    const sym = String(r.symbol || "").trim().toUpperCase();
+                    const baseSym = sym.replace(/\.(BO|NS)$/i, "");
+                    const isin = String(r.isin || "").trim().toUpperCase();
+                    const isActive = activeSymbols.has(sym) || activeSymbols.has(baseSym) || (isin && activeIsins.has(isin));
+                    return !isActive;
+                  })
+                  .map((r: any) => r.id);
+
+                if (staleIds.length > 0) {
+                  await supabase.from('user_watchlists').delete().in('id', staleIds);
+                  console.info(`Auto-deleted ${staleIds.length} completely sold holdings from watchlist.`);
+                }
+              }
+
               if (onDematSynced) {
                 onDematSynced(uid);
               }

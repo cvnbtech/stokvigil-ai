@@ -79,8 +79,16 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
                 signalType,
                 target,
                 sl,
+                trailing_sl: (hasActiveSignal && q.trailing_sl) ? q.trailing_sl : null,
                 isCircuitLocked: Boolean(q.is_circuit_locked),
-                circuitLockType: q.circuit_lock_type || null
+                circuitLockType: q.circuit_lock_type || null,
+                camarilla_levels: q.camarilla_levels || null,
+                camarilla_open_type: q.camarilla_open_type || null,
+                camarilla_cluster: q.camarilla_cluster || null,
+                candlestick_patterns: q.candlestick_patterns || null,
+                derivatives: q.derivatives || null,
+                sector_rs: q.sector_rs || null,
+                event_risk: q.event_risk || null,
               };
             });
           };
@@ -330,8 +338,16 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
             signalType,
             target,
             sl,
+            trailing_sl: (hasActiveSignal && q.trailing_sl) ? q.trailing_sl : item.trailing_sl,
             isCircuitLocked: q.is_circuit_locked !== undefined ? Boolean(q.is_circuit_locked) : item.isCircuitLocked,
-            circuitLockType: q.circuit_lock_type !== undefined ? q.circuit_lock_type : item.circuitLockType
+            circuitLockType: q.circuit_lock_type !== undefined ? q.circuit_lock_type : item.circuitLockType,
+            camarilla_levels: q.camarilla_levels !== undefined ? q.camarilla_levels : item.camarilla_levels,
+            camarilla_open_type: q.camarilla_open_type !== undefined ? q.camarilla_open_type : item.camarilla_open_type,
+            camarilla_cluster: q.camarilla_cluster !== undefined ? q.camarilla_cluster : item.camarilla_cluster,
+            candlestick_patterns: q.candlestick_patterns !== undefined ? q.candlestick_patterns : item.candlestick_patterns,
+            derivatives: q.derivatives !== undefined ? q.derivatives : item.derivatives,
+            sector_rs: q.sector_rs !== undefined ? q.sector_rs : item.sector_rs,
+            event_risk: q.event_risk !== undefined ? q.event_risk : item.event_risk,
           };
         }));
 

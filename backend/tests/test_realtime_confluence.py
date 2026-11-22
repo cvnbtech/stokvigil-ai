@@ -225,6 +225,54 @@ class TestRealtimeConfluenceEngine(unittest.TestCase):
         self.assertAlmostEqual(res["max_gain_pct"], 1.4, places=1)
         self.assertEqual(res["verified_by"], "REAL_CANDLE_VERIFICATION")
 
+    def test_zero_default_policy_when_price_or_technicals_missing(self):
+        """
+        STRICT ZERO-DEFAULT POLICY MANDATE:
+        Verify that if price is missing or non-positive, or if technical_score is missing,
+        the confluence engine returns confluence_score=None, tactical_levels=None,
+        and has_actionable_signal=False (never a default 50 or fabricated score).
+        """
+        # Case 1: Missing price completely
+        res_no_price = compute_deterministic_confluence(
+            symbol="UNKNOWN",
+            technicals={"current_price": None, "technical_score": None},
+            financials={},
+            flow_data=None,
+            forensics=None,
+            news_items=None,
+            macro_data=None,
+        )
+        self.assertIsNone(res_no_price["confluence_score"], "confluence_score must be None when price is missing")
+        self.assertIsNone(res_no_price["tactical_levels"], "tactical_levels must be None when price is missing")
+        self.assertFalse(res_no_price["has_actionable_signal"])
+        self.assertEqual(res_no_price["action_bias"], "HOLD_NEUTRAL")
+
+        # Case 2: Zero or negative price
+        res_zero_price = compute_deterministic_confluence(
+            symbol="UNKNOWN",
+            technicals={"current_price": 0.0, "technical_score": 85},
+            financials={"price": 0.0},
+            flow_data=None,
+            forensics=None,
+            news_items=None,
+            macro_data=None,
+        )
+        self.assertIsNone(res_zero_price["confluence_score"], "confluence_score must be None when price <= 0")
+        self.assertIsNone(res_zero_price["tactical_levels"])
+        self.assertFalse(res_zero_price["has_actionable_signal"])
+
+        # Case 3: Price present but technical score is None
+        res_no_tech = compute_deterministic_confluence(
+            symbol="INFY",
+            technicals={"current_price": 1850.0, "technical_score": None},
+            financials={"price": 1850.0},
+            flow_data=None,
+            forensics=None,
+            news_items=None,
+            macro_data=None,
+        )
+        self.assertIsNone(res_no_tech["confluence_score"], "confluence_score must be None when technical_score is None")
+
 
 if __name__ == "__main__":
     unittest.main()

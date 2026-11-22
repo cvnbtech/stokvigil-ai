@@ -4,6 +4,7 @@ Tests dual-tier storage: Tier-1 (Local RAM) and Tier-2 (Supabase UNLOGGED Table 
 """
 
 import time
+from datetime import datetime, timezone
 import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock
@@ -84,6 +85,7 @@ def test_market_cache_live_tick_update():
 @pytest.mark.asyncio
 async def test_market_cache_tier2_db_fallback():
     """Validates asynchronous cold-start fallback to Supabase UNLOGGED table."""
+    now_iso = datetime.now(timezone.utc).isoformat()
     db_mock_row = {
         "key": "HDFCBANK",
         "value": {
@@ -91,7 +93,7 @@ async def test_market_cache_tier2_db_fallback():
             "current_price": 1680.0,
             "confluence_score": 75
         },
-        "updated_at": "2026-11-07T10:00:00+00:00"
+        "updated_at": now_iso
     }
 
     with patch("app.db_pool.fetch_one", new_callable=AsyncMock) as mock_fetch_one:
@@ -115,9 +117,10 @@ async def test_market_cache_tier2_db_fallback():
 async def test_market_cache_bulk_hydration_and_flush():
     """Validates bulk cold-start preloading and batch RAM flush."""
     # 1. Bulk Hydration from DB
+    now_iso = datetime.now(timezone.utc).isoformat()
     mock_rows = [
-        {"key": "SBIN", "value": {"symbol": "SBIN", "current_price": 820.0}, "updated_at": "2026-11-07T10:00:00+00:00"},
-        {"key": "ITC", "value": {"symbol": "ITC", "current_price": 490.0}, "updated_at": "2026-11-07T10:00:00+00:00"}
+        {"key": "SBIN", "value": {"symbol": "SBIN", "current_price": 820.0}, "updated_at": now_iso},
+        {"key": "ITC", "value": {"symbol": "ITC", "current_price": 490.0}, "updated_at": now_iso}
     ]
 
     with patch("app.db_pool.fetch_all", new_callable=AsyncMock) as mock_fetch_all:

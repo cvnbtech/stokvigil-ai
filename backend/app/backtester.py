@@ -59,6 +59,72 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.rolling(window=period, min_periods=1).mean()
 
 
+def calculate_indian_market_friction(
+    entry_price: float,
+    exit_price: float,
+    quantity: int,
+    slippage_bps: float = 5.0,
+    is_delivery: bool = True
+) -> Dict[str, float]:
+    """
+    Computes statutory Indian regulatory taxes, exchange charges, and execution slippage
+    for cash equity trades (NSE / BSE).
+    
+    Breakdown:
+    - Slippage: 0.05% (5 bps default) bid-ask friction applied on both entry and exit legs.
+    - Brokerage: Standard discount broker flat fee of ₹20 per executed leg (₹40 round-trip).
+    - STT (Securities Transaction Tax):
+        - Delivery: 0.1% on buy turnover + 0.1% on sell turnover.
+        - Intraday: 0.025% on sell turnover only.
+    - Exchange Turnover Fee: 0.00345% of total turnover (NSE cash market standard).
+    - GST: 18% on (Brokerage + Exchange Turnover Fee).
+    - SEBI Turnover Fee: 0.0001% of total turnover (₹10 / crore).
+    - Stamp Duty: 0.015% on buy turnover (standard state average).
+    """
+    buy_turnover = entry_price * quantity
+    sell_turnover = exit_price * quantity
+    total_turnover = buy_turnover + sell_turnover
+
+    # Slippage (bps per side)
+    slippage_cost = round((buy_turnover + sell_turnover) * (slippage_bps / 10000.0), 2)
+
+    # Brokerage: Flat ₹20 per leg
+    brokerage = 40.0
+
+    # Securities Transaction Tax (STT)
+    if is_delivery:
+        stt = round((0.001 * buy_turnover) + (0.001 * sell_turnover), 2)
+    else:
+        stt = round(0.00025 * sell_turnover, 2)
+
+    # Exchange transaction charge (0.00345%)
+    exchange_charges = round(total_turnover * 0.0000345, 2)
+
+    # GST: 18% on (brokerage + exchange charges)
+    gst = round((brokerage + exchange_charges) * 0.18, 2)
+
+    # SEBI turnover charge: 0.0001%
+    sebi_charges = round(total_turnover * 0.000001, 2)
+
+    # Stamp duty: 0.015% on buy turnover
+    stamp_duty = round(buy_turnover * 0.00015, 2)
+
+    total_statutory = round(brokerage + stt + exchange_charges + gst + sebi_charges + stamp_duty, 2)
+    total_friction = round(total_statutory + slippage_cost, 2)
+
+    return {
+        "brokerage": brokerage,
+        "stt": stt,
+        "exchange_charges": exchange_charges,
+        "gst": gst,
+        "sebi_charges": sebi_charges,
+        "stamp_duty": stamp_duty,
+        "slippage_cost": slippage_cost,
+        "total_statutory_charges": total_statutory,
+        "total_friction": total_friction
+    }
+
+
 def run_vectorized_strategy_backtest(
     symbol: str,
     period: str = "1y",
@@ -66,7 +132,8 @@ def run_vectorized_strategy_backtest(
     strategy: str = "camarilla_breakout",
     initial_capital: float = 200000.0,
     risk_budget: float = 2000.0,
-    max_holding_bars: int = 15
+    max_holding_bars: int = 15,
+    slippage_bps: float = 5.0
 ) -> Dict[str, Any]:
     """
     Executes an in-memory historical backtest for a stock symbol over specified timeframe.
@@ -209,9 +276,21 @@ def run_vectorized_strategy_backtest(
                 exit_triggered = True
 
             if exit_triggered:
-                trade_pnl = round((exit_price - entry_price) * position_qty, 2)
-                trade_ret_pct = round(((exit_price - entry_price) / entry_price) * 100.0, 2)
-                capital = round(capital + trade_pnl, 2)
+                gross_pnl = round((exit_price - entry_price) * position_qty, 2)
+                gross_ret_pct = round(((exit_price - entry_price) / entry_price) * 100.0, 2)
+
+                friction = calculate_indian_market_friction(
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    quantity=position_qty,
+                    slippage_bps=slippage_bps,
+                    is_delivery=True
+                )
+                total_charges = friction["total_friction"]
+                net_pnl = round(gross_pnl - total_charges, 2)
+                net_ret_pct = round((net_pnl / (entry_price * position_qty)) * 100.0, 2) if (entry_price * position_qty) > 0 else 0.0
+
+                capital = round(capital + net_pnl, 2)
 
                 trades.append({
                     "entry_date": entry_date,
@@ -219,10 +298,14 @@ def run_vectorized_strategy_backtest(
                     "entry_price": round(entry_price, 2),
                     "exit_price": round(exit_price, 2),
                     "quantity": position_qty,
-                    "pnl": trade_pnl,
-                    "return_pct": trade_ret_pct,
+                    "gross_pnl": gross_pnl,
+                    "charges": total_charges,
+                    "pnl": net_pnl,
+                    "return_pct": net_ret_pct,
+                    "gross_return_pct": gross_ret_pct,
                     "exit_reason": exit_reason,
-                    "bars_held": bars_held
+                    "bars_held": bars_held,
+                    "friction_breakdown": friction
                 })
 
                 in_position = False
@@ -279,19 +362,35 @@ def run_vectorized_strategy_backtest(
     if in_position:
         last_close = float(df["Close"].iloc[-1])
         last_date = str(dates[-1].strftime("%Y-%m-%d") if hasattr(dates[-1], "strftime") else str(dates[-1]))[:10]
-        trade_pnl = round((last_close - entry_price) * position_qty, 2)
-        trade_ret_pct = round(((last_close - entry_price) / entry_price) * 100.0, 2)
-        capital = round(capital + trade_pnl, 2)
+        gross_pnl = round((last_close - entry_price) * position_qty, 2)
+        gross_ret_pct = round(((last_close - entry_price) / entry_price) * 100.0, 2)
+
+        friction = calculate_indian_market_friction(
+            entry_price=entry_price,
+            exit_price=last_close,
+            quantity=position_qty,
+            slippage_bps=slippage_bps,
+            is_delivery=True
+        )
+        total_charges = friction["total_friction"]
+        net_pnl = round(gross_pnl - total_charges, 2)
+        net_ret_pct = round((net_pnl / (entry_price * position_qty)) * 100.0, 2) if (entry_price * position_qty) > 0 else 0.0
+
+        capital = round(capital + net_pnl, 2)
         trades.append({
             "entry_date": entry_date,
             "exit_date": last_date,
             "entry_price": round(entry_price, 2),
             "exit_price": round(last_close, 2),
             "quantity": position_qty,
-            "pnl": trade_pnl,
-            "return_pct": trade_ret_pct,
+            "gross_pnl": gross_pnl,
+            "charges": total_charges,
+            "pnl": net_pnl,
+            "return_pct": net_ret_pct,
+            "gross_return_pct": gross_ret_pct,
             "exit_reason": "OPEN_MARKED_TO_MARKET",
-            "bars_held": len(df) - 1 - entry_idx
+            "bars_held": len(df) - 1 - entry_idx,
+            "friction_breakdown": friction
         })
 
     # Calculate Performance Statistics
@@ -306,8 +405,11 @@ def run_vectorized_strategy_backtest(
     gross_loss = abs(sum(t["pnl"] for t in losing_trades))
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_profit > 0 else 1.0)
 
+    gross_pnl_total = round(sum(t.get("gross_pnl", t["pnl"]) for t in trades), 2)
+    total_tax_and_friction = round(sum(t.get("charges", 0.0) for t in trades), 2)
     total_pnl = round(capital - initial_capital, 2)
     total_return_pct = round((total_pnl / initial_capital) * 100.0, 2)
+    gross_return_pct = round((gross_pnl_total / initial_capital) * 100.0, 2) if initial_capital > 0 else 0.0
 
     # Max Drawdown Calculation
     eq_values = [pt["equity"] for pt in equity_curve]
@@ -343,8 +445,14 @@ def run_vectorized_strategy_backtest(
         "strategy": strategy,
         "initial_capital": initial_capital,
         "final_capital": capital,
+        "gross_pnl": gross_pnl_total,
+        "total_tax_and_friction": total_tax_and_friction,
         "total_pnl": total_pnl,
+        "net_pnl": total_pnl,
+        "gross_return_pct": gross_return_pct,
         "total_return_pct": total_return_pct,
+        "slippage_bps": slippage_bps,
+        "statutory_friction_applied": True,
         "total_trades": total_trades,
         "winning_trades": num_wins,
         "losing_trades": num_losses,
@@ -357,5 +465,5 @@ def run_vectorized_strategy_backtest(
         "average_holding_period_bars": avg_bars_held,
         "recent_trades": trades[-10:],
         "equity_curve": equity_curve[::max(1, len(equity_curve) // 30)],  # Sample ~30 points for fast UI render
-        "disclaimer": "Backtested using mathematical simulation on historical exchange OHLCV bars. Past performance is not indicative of future returns."
+        "disclaimer": "Backtested using mathematical simulation on historical exchange OHLCV bars. Net PnL accounts for Indian statutory charges (STT, Exchange turnover fee, GST, SEBI fee, Stamp duty, Brokerage) and execution slippage. Past performance is not indicative of future returns."
     }

@@ -7,7 +7,7 @@
 
 [![Architecture](https://img.shields.io/badge/Architecture-4--Pillar%20Confluence-00E5FF?style=for-the-badge&logo=diagramsdotnet&logoColor=white)](#-full-stack-system-architecture)
 [![Backend](https://img.shields.io/badge/FastAPI-Python%203.11+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](#-tech-stack)
-[![Web](https://img.shields.io/badge/Next.js%2014-App%20Router-black?style=for-the-badge&logo=next.js&logoColor=white)](#-tech-stack)
+[![Web](https://img.shields.io/badge/Next.js%2016-App%20Router-black?style=for-the-badge&logo=next.js&logoColor=white)](#-tech-stack)
 [![Mobile](https://img.shields.io/badge/Flutter-Dart%203.3+-02569B?style=for-the-badge&logo=flutter&logoColor=white)](#-tech-stack)
 [![Database](https://img.shields.io/badge/Supabase-PostgreSQL%2015+-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](#-tech-stack)
 [![Compliance](https://img.shields.io/badge/SEBI-Non--Advisory%20Mandate-2E7D32?style=for-the-badge&logo=checkmarx&logoColor=white)](#-regulatory-disclaimer)
@@ -44,13 +44,30 @@ The retail market is plagued by three fatal pitfalls:
 ## 🌟 Key Features
 
 ### 1. 📐 Mathematical Surveillance Engine
-* **Classic Camarilla Breakout Boundaries:** Mathematical intraday volatility benchmarks derived from prior-day True Range ($H_4$ breakout, $H_3$ resistance, $L_3$ support, $L_4$ protective stop).
+* **Full Camarilla Equation Expansion ($H1 \dots H5$ & $L1 \dots L5$):** Mathematical volatility boundaries derived from prior completed True Range. Features $H5$ Expansion (`#A855F7`), $H4$ Breakout (`#EC4899`), $H3$ Mean Reversion, $L3$ Floor, $L4$ Hard Stop, and $L5$ Capitulation (`#DC2626`).
+* **Multi-Timeframe (MTF) Pivot Clustering:** Mathematically checks alignment between Daily and Weekly pivots within $\pm 0.35\%$ to unlock high-conviction institutional breakouts.
+* **5-Type Camarilla Opening Engine:** Classifies opening dynamics into `OPEN_INSIDE_VALUE`, `OPEN_ABOVE_H4_BREAKOUT`, `OPEN_BELOW_L4_BREAKDOWN`, `OPEN_IN_UPPER_TRAP_ZONE`, or `OPEN_IN_LOWER_TRAP_ZONE`.
+* **Location-Anchored Candlestick Morphology & Wick Rejection:** Detects Hammers, Inverted Hammers, Engulfing, Inside Bars, and NR7 volatility compression. Strictly validates that patterns anchor to institutional zones (VWAP, $L3/L4$, 200 EMA) and vetoes breakout traps showing $> 40\%$ upper wick rejection.
 * **VWAP Statistical Dispersion Bands:** Identifies overbought exhaustion ($+2\sigma$) and deep value value zones ($-2\sigma$) dynamically anchored to volume.
 * **John Carter's TTM Squeeze:** Captures explosive directional thrusts by tracking Bollinger Band (20, 2.0) compression inside Keltner Channels (20, 1.5 ATR).
-* **Midday-Hardened RVOL Engine:** Automatically detects liquidity troughs between 11:45 and 13:15 IST, rejecting false breakouts lacking 3.0x volume confirmation.
+* **Midday-Hardened RVOL Engine:** Automatically detects liquidity troughs between 11:30 and 13:30 IST, rejecting false breakouts lacking 3.0x volume confirmation.
 * **Wyckoff Volume Spread Analysis (VSA):** Compares Close Location Quotient ($CLQ = \frac{Close - Low}{High - Low}$) against delivery bhavcopy percentages to separate genuine smart-money accumulation from operator churn.
 
-### 2. 💼 5-State Demat Portfolio Risk Lifecycle
+### 2. 📊 Institutional Derivatives & Microstructure Engine
+* **4-Quadrant Open Interest (OI) Dynamics:** Classifies underlying stock futures flow:
+  - `LONG_BUILDUP` ($\Delta \text{Price} > 0, \Delta \text{OI} > 0$): High institutional accumulation conviction (+10 pts).
+  - `SHORT_COVERING` ($\Delta \text{Price} > 0, \Delta \text{OI} < 0$): Fragile short squeeze (+3 pts, tight trailing stop).
+  - `SHORT_BUILDUP` ($\Delta \text{Price} < 0, \Delta \text{OI} > 0$): Aggressive short positioning (-12 pts, hard BUY veto).
+  - `LONG_UNWINDING` ($\Delta \text{Price} < 0, \Delta \text{OI} < 0$): Panic liquidation (-10 pts, Demat defense alert).
+* **Real-Time Option Chain Analytics:** Evaluates Put-Call Ratio (PCR), Max Pain strikes, and major call/put resistance and support strike walls.
+
+### 3. 🌐 Macro Gatekeeper & Event Risk Shields
+* **Top-Down Sector Gatekeeper:** Inspects parent sectoral index alignment (e.g. NIFTY IT, NIFTY BANK). If the sector is in severe drag ($< -0.40\%$ vs Nifty), individual stock breakouts are strictly vetoed.
+* **Forward Corporate Earnings 48-Hour Lockout Shield:** Cross-references quarterly financial result calendars, enforcing an automatic trade veto within 48 hours of earnings to eliminate binary overnight gap risk.
+* **Brent Crude Oil Commodity Shock Veto:** Detects overnight crude oil surges ($\ge 3\%$), automatically vetoing long trades on margin-sensitive sectors (Paints, Auto, OMCs, Aviation).
+* **Adaptive Market Regime Switcher:** Automatically switches between **Breakout Hunting Mode** (expanding trend, $\text{ADX} \ge 25$) and **Mean-Reversion Mode** ($L3$ bounce / $H3$ fade, $\text{ADX} < 20, \text{VIX} < 14.5$).
+
+### 4. 💼 5-State Demat Portfolio Risk Lifecycle
 Your connected Demat holdings (ICICI Direct, Dhan, Angel One) are continuously guarded by an asymmetric risk manager:
 * 🔴 **`CAPITAL_PRESERVATION_EXIT`:** Immediate alert when price breaches $L_4$ breakdown or drops $>8\%$ below your average buy price.
 * 🟡 **`DEFENSIVE_TRIM_ALERT`:** Recommends banking 50% profit at Target 1 ($H_4$) and moving your protective stop-loss to cost basis.
@@ -58,14 +75,14 @@ Your connected Demat holdings (ICICI Direct, Dhan, Angel One) are continuously g
 * 🔵 **`ACCUMULATE_WATCH`:** Permits pyramiding strictly on winning positions displaying institutional delivery absorption.
 * ⚪ **`HOLD_STEADY`:** Healthy trend progression within normal volatility bounds.
 
-### 3. ⚖️ SEBI-Compliant Execution Guardrails
+### 5. ⚖️ SEBI-Compliant Execution Guardrails
 * **Mandatory Stop-Loss Limit (SL-L) Routing:** In accordance with SEBI risk circulars, Stop-Loss Market (SL-M) orders are completely barred to eliminate freak-trade execution slippage.
 * **Dynamic Exchange Tick Snapping:** Automatically rounds prices and trigger limits to exchange rules (₹0.05 for stocks $\ge ₹250$; ₹0.01 for stocks $< ₹250$).
 * **Pre-Trade Circuit Freeze Rejections:** Halts BUY orders on Upper Circuit freeze and SELL orders on Lower Circuit freeze before broker routing.
 * **Dynamic CNC vs. MIS Short Detection:** If you sell a stock not present in your Demat holdings, StokVigil routes the order as Intraday Margin (MIS) and issues a statutory warning regarding 03:15 PM IST square-off and potential 20% auction penalty risks.
 * **Financial-Grade Idempotency Debouncing:** Bounded in-memory lock prevents accidental double-tap orders via custom `X-Idempotency-Key` or automatic request fingerprinting.
 
-### 4. 📜 100% Transparent Audited Accuracy Ledger
+### 6. 📜 100% Transparent Audited Accuracy Ledger
 Unlike platforms that delete bad calls, StokVigil AI permanently writes every emitted signal to an immutable ledger (`/api/market/accuracy-ledger`). Subsequent market candles are evaluated to independently measure Target 1 hit rates, trailing stop exits, and overnight gap slippage.
 
 ---
@@ -104,7 +121,7 @@ flowchart TD
     classDef exec fill:#2A0A18,stroke:#FB7185,stroke-width:2px,color:#E2E8F0;
 
     subgraph TIER1 ["Tier 1: Presentation & Client Applications"]
-        WEB["Next.js 14 Web Portal<br/>(React 18, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts | Confluence Radar"]:::client
+        WEB["Next.js 16 Web Portal<br/>(React 19, Tailwind CSS, TypeScript)<br/>TradingView Lightweight Charts (H5-L5) | Confluence Radar"]:::client
         MOBILE["Flutter Mobile App (iOS / Android)<br/>(Dart 3.3+, Provider, Biometrics)<br/>Live Watchlist | Demat Risk Badges | Push Alerts"]:::client
     end
 
@@ -123,10 +140,10 @@ flowchart TD
     end
 
     subgraph TIER4 ["Tier 4: Quantitative Confluence & Sovereign AI"]
-        MATH_CORE["1,417-Line Vectorized Quantitative Engine<br/>Camarilla Pivots (H4/H3/L3/L4) | VWAP ±1σ/±2σ Bands<br/>TTM Squeeze Momentum | Midday-Hardened RVOL (3.0x)"]:::quant
-        VETO_GATE["🛑 6 Hard Institutional Vetoes<br/>Lunch Trap | 200 EMA Gatekeeper | Breadth ADR &lt; 0.60<br/>VWAP +2σ Exhaustion | Wyckoff Supply Shock"]:::quant
+        MATH_CORE["Vectorized Quantitative Technical Engine<br/>Camarilla Pivots (H1-H5 / L1-L5) | VWAP ±1σ/±2σ Bands<br/>Location-Anchored Candlesticks | TTM Squeeze | Midday RVOL (3.0x)"]:::quant
+        VETO_GATE["🛑 Hard Institutional Vetoes<br/>Lunch Trap | 200 EMA | Sector Drag | Earnings Lockout<br/>Crude Shock | Derivatives Short Buildup | Wick Rejection"]:::quant
         DEMAT_GUARDIAN["🛡️ 5-State Demat Portfolio Risk Guardian<br/>CAPITAL_PRESERVATION | DEFENSIVE_TRIM | TRAILING_SL<br/>ACCUMULATE_WATCH | HOLD_STEADY"]:::quant
-        GEMINI_AI["Gemini 3.5 Flash Lite Qualitative AI Engine<br/>Mathematical Sovereignty (Zero Math Hallucination)<br/>&lt;untrusted_external_news&gt; Injection Defense | 15 Calls Limit"]:::quant
+        GEMINI_AI["Gemini 3.5 Flash Lite Qualitative AI Engine<br/>Strict Mathematical Sovereignty (Numbers 100% Locked by Python)<br/>&lt;untrusted_external_news&gt; Injection Defense | 15 Calls Limit"]:::quant
     end
 
     subgraph TIER5 ["Tier 5: Ultra-Low Latency State & Persistence"]
@@ -181,10 +198,10 @@ flowchart TD
 
 | Full-Stack Tier | Components & Technologies | Protocols & Ports | Latency SLA | Key Architectural Guarantees |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tier 1: Presentation Tier** | **Next.js 14 App Router** (React 18, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts, 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
+| **Tier 1: Presentation Tier** | **Next.js 16 App Router** (React 19, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts (H5-L5), 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
 | **Tier 2: Ingress & Security** | **FastAPI Middleware**, Pydantic v2 Settings, **Fernet AES-256 Vault**, JWT Bearer Auth | HTTPS (443) | &lt; 2 ms overhead | Client-side IDOR validation (`verify_user_access`), memory-bounded token bucket rate limiting, HTTP security headers (HSTS, CSP), and PBKDF2HMAC credential protection. |
 | **Tier 3: App Server & Daemons** | **FastAPI Async Engine**, Uvicorn ASGI, Lifespan Context Manager, **PgBouncer Pool** | HTTP, IPC | &lt; 15 ms internal API | Multi-tenant 5-minute automated scanning loop, 2-second market-hours tick worker (`worker.py`), persistent thread pools, and non-blocking I/O. |
-| **Tier 4: Quantitative Math & AI** | **NumPy & Pandas Engine (1,417 LOC)**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Camarilla pivots ($H_4/L_3$), VWAP $\pm1\sigma/\pm2\sigma$, TTM Squeeze, Wyckoff VSA delivery absorption, 6 Hard Institutional Vetoes, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
+| **Tier 4: Quantitative Math & AI** | **Vectorized NumPy & Pandas Engine**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Expanded Camarilla pivots ($H_1 \dots H_5 / L_1 \dots L_5$), Location-Anchored Candlesticks, 4-Quadrant F&O Derivatives OI, Sector Drag Veto, Earnings 48h Lockout, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
 | **Tier 5: State & Persistence** | **Dual-Tier Cache** (Process RAM + Supabase `UNLOGGED` Table), **Supabase PostgreSQL 15+** | PostgreSQL Wire Protocol (Port 6543) | **&lt; 0.01 ms** (RAM)<br/>**&lt; 0.80 ms** (DB) | Sub-millisecond market state bypassing WAL disk I/O, PgBouncer transaction-mode pooling with `statement_cache_size=0`, Postgres advisory locking (`pg_try_advisory_lock`), and `(SELECT auth.uid())` InitPlan RLS. |
 | **Tier 6: Execution & Dispatch** | **Broker Adapters** (ICICI Breeze, Dhan HQ, Angel One), **Telegram HTTP/2 Client**, FCM | HTTP/2, REST APIs, WebSockets | &lt; 250 ms order dispatch | Mandatory SEBI Stop-Loss Limit (SL-L) orders, dynamic tick snapping (₹0.05 / ₹0.01), pre-trade circuit freeze rejections, dynamic CNC/MIS short detection, and 25 msg/s leaky-bucket Telegram alert dispatch. |
 
@@ -283,7 +300,7 @@ sequenceDiagram
 | **Quantitative Math** | **NumPy, Pandas, SciPy** | Vectorized financial indicator calculations across multi-timeframe OHLCV data. |
 | **AI Tier** | **Google Gemini 3.5 Flash Lite** | Official modern `google-genai` SDK with fallback chain and quota limiting (Qualitative Rationale only). |
 | **Notification Engine** | **Telegram Bot API (HTTP/2) & FCM** | Persistent connection with a 25 msg/s leaky bucket rate limiter and Firebase Cloud Messaging. |
-| **Web Portal** | **Next.js 14 (App Router), Tailwind CSS** | TradingView Lightweight Charts, Confluence Radar, interactive backtester, and Demat sync dashboard. |
+| **Web Portal** | **Next.js 16 (App Router), Tailwind CSS** | TradingView Lightweight Charts (H5-L5), Confluence Radar, interactive backtester, and Demat sync dashboard. |
 | **Mobile Application** | **Flutter SDK 3.19+ (Dart 3.3+)** | Cross-platform (Android & iOS) app featuring a terminal dark palette, biometric access, and live charts. |
 | **Broker Gateways** | **Breeze Connect, Dhan v2, SmartAPI** | Unified Broker Adapter abstraction pattern supporting automated Demat order execution. |
 
@@ -303,7 +320,7 @@ stokvigil-ai/
 │   │   │   ├── dependencies.py             # Database injection, market hour checkers
 │   │   │   └── rate_limiter.py             # Memory-bounded token bucket rate limiter
 │   │   ├── engine/                         # Quantitative Strategy & Data Engines
-│   │   │   ├── deterministic.py            # 4-Pillar Confluence & Hard Veto Gatekeepers
+│   │   │   ├── deterministic.py            # 4-Pillar Confluence, Regime Switcher & Hard Vetoes
 │   │   │   ├── gemini_ai.py                # Gemini SDK pipeline with quota management
 │   │   │   ├── portfolio_sync.py           # Demat holding & cost-basis synchronizer
 │   │   │   ├── security_master.py          # O(1) RAM ISIN & Scrip Code Resolver
@@ -313,7 +330,7 @@ stokvigil-ai/
 │   │   │   ├── cron.py                     # Scheduled scanning & briefing pipelines
 │   │   │   ├── market.py                   # Backtesting, FII/DII, accuracy ledger
 │   │   │   ├── orders.py                   # Idempotent broker trade routing
-│   │   │   └── stocks.py                   # Quotes, searches, candle history
+│   │   │   └── stocks.py                   # Quotes, searches, candle history (H5-L5)
 │   │   ├── schemas/                        # Pydantic v2 Models & Tick Snapping
 │   │   ├── accuracy_verifier.py            # Historical OHLCV alert performance verifier
 │   │   ├── agent_runner.py                 # Multi-tenant 5-minute scanning engine
@@ -321,21 +338,24 @@ stokvigil-ai/
 │   │   ├── auth.py                         # JWT verification & IDOR security guards
 │   │   ├── backtester.py                   # Vectorized historical backtest engine
 │   │   ├── config.py                       # Pydantic BaseSettings environment loader
+│   │   ├── corporate_calendar.py           # Forward Corporate Earnings 48-Hour Lockout Shield
 │   │   ├── db_pool.py                      # PgBouncer async connection pool manager
+│   │   ├── derivatives_tracker.py          # NSE Derivatives 4-Quadrant Open Interest (OI) Engine
 │   │   ├── fii_dii_tracker.py              # NSE FII/DII cash turnover scraper
 │   │   ├── flow_tracker.py                 # NSE delivery bhavcopy & option chain parser
-│   │   ├── macro_filter.py                 # Advance-Decline breadth & pre-market briefing
+│   │   ├── macro_filter.py                 # Top-Down Sector Gatekeeper, Crude Shock & Gift Nifty
 │   │   ├── market_cache.py                 # Dual-Tier RAM / UNLOGGED Table Manager
 │   │   ├── notifications.py                # Telegram HTTP/2 (25 msg/s) & FCM Notifier
-│   │   ├── technical_engine.py             # 1,417-line vectorized indicator engine
+│   │   ├── patterns.py                     # Location-Anchored Candlesticks & Wick Rejection Engine
+│   │   ├── technical_engine.py             # 1,672-line vectorized indicator engine (H1-H5 / L1-L5)
 │   │   ├── vault.py                        # Fernet AES-256 cryptographic vault
 │   │   └── worker.py                       # Standalone 2-second market hours tick worker
-│   ├── tests/                              # Comprehensive Pytest Suite (20+ test files)
+│   ├── tests/                              # Comprehensive Pytest Suite (39 test files, 294 tests)
 │   ├── requirements.txt                    # Python runtime dependencies
 │   └── Dockerfile                          # Cloud Run container definition
 ├── supabase/                               # Database Schemas & Migrations
 │   └── migrations/                         # SQL migration history (August - November 2026)
-├── web_portal/                             # Next.js 14 Web Portal
+├── web_portal/                             # Next.js 16 Web Portal
 │   ├── src/
 │   │   ├── app/                            # App Router (Pages, Transparency Ledger)
 │   │   ├── components/                     # TradingView Charts, Confluence Radar, Modals
