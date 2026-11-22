@@ -90,6 +90,14 @@ class WatchlistProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadWatchlist([String? userId]) async {
+    final uid = userId ?? _currentUserId ?? SupabaseService().client.auth.currentUser?.id;
+    if (uid != null && uid.isNotEmpty) {
+      _currentUserId = uid;
+      await _loadInitialData(uid);
+    }
+  }
+
   Future<void> _loadInitialData(String userId) async {
     _isLoading = true;
     notifyListeners();
