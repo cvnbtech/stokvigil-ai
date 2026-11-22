@@ -985,6 +985,47 @@ def compute_deterministic_confluence(
                     f"confirms authentic institutional sponsorship during lunch lull."
                 )
 
+    # Veto Filter #6: Bid-Ask Spread & Illiquidity Gatekeeper
+    # Illiquid equities and wide spreads trap retail traders with severe exit slippage.
+    # THRESHOLDS: Daily turnover < ₹5.0 Cr on NSE or < ₹2.0 Cr on BSE, or bid-ask spread > 0.25%
+    raw_vol = technicals.get("live_volume") or technicals.get("volume")
+    raw_turnover = technicals.get("turnover_cr") or technicals.get("daily_turnover_cr")
+    if raw_turnover is None and raw_vol is not None and current_price and current_price > 0:
+        try:
+            raw_turnover = round((float(current_price) * float(raw_vol)) / 10000000.0, 2)
+        except (ValueError, TypeError):
+            raw_turnover = None
+
+    spread_pct = technicals.get("bid_ask_spread_pct")
+    min_turnover_thresh = 2.0 if is_bse else 5.0
+
+    is_illiquid = False
+    illiquid_reason = None
+    if raw_turnover is not None and raw_turnover < min_turnover_thresh and (raw_vol is not None and float(raw_vol) > 0):
+        is_illiquid = True
+        illiquid_reason = f"Daily turnover ₹{raw_turnover:.2f} Cr is below minimum ₹{min_turnover_thresh:.1f} Cr threshold"
+    elif spread_pct is not None and float(spread_pct) > (0.40 if is_bse else 0.25):
+        is_illiquid = True
+        illiquid_reason = f"Wide bid-ask spread ({float(spread_pct):.2f}% > threshold)"
+
+    if action_bias == "BUY_WATCH" and is_illiquid:
+        logger.info(f"Illiquidity Veto for {symbol} ({'BSE' if is_bse else 'NSE'}): {illiquid_reason}. Downgrading to HOLD_NEUTRAL.")
+        action_bias = "HOLD_NEUTRAL"
+        has_actionable_signal = False
+        confluence_score = min(56, confluence_score - 8)
+        confluence_drivers.append(
+            f"Illiquidity & Slippage Veto: {illiquid_reason}. "
+            f"Breakout disqualified to prevent illiquid exit trap."
+        )
+
+    liquidity_info = {
+        "turnover_cr": raw_turnover,
+        "is_illiquid": is_illiquid,
+        "min_turnover_threshold_cr": min_turnover_thresh,
+        "bid_ask_spread_pct": spread_pct,
+        "illiquid_reason": illiquid_reason
+    }
+
     if is_macro_uptrend and action_bias in ["SELL_WATCH", "INTRADAY_MIS_SHORT", "CAPITAL_PRESERVATION_EXIT"]:
         is_market_dist = bool(adr_val is not None and float(adr_val) < 0.80) or is_high_vix or bool(macro_data.get("nifty_change_pct") is not None and float(macro_data.get("nifty_change_pct")) <= -0.50)
         if is_severe_breakdown or is_multiday_breakdown or is_block_dump or (directional_score is not None and directional_score <= 40) or is_market_dist:
@@ -1119,6 +1160,39 @@ def compute_deterministic_confluence(
         holding_guidance = None
         tactical_dict = None
 
+    # Overnight Value-at-Risk (VaR) Calculation for Demat Holdings
+    stock_beta = financials.get("beta_volatility") or financials.get("beta") or 1.0
+    try:
+        stock_beta_flt = max(0.5, min(3.0, float(stock_beta)))
+    except (ValueError, TypeError):
+        stock_beta_flt = 1.0
+
+    vix_val = macro_data.get("india_vix") if macro_data else None
+    try:
+        vix_flt = float(vix_val) if vix_val is not None else 14.5
+    except (ValueError, TypeError):
+        vix_flt = 14.5
+
+    # Parametric 1-Day 95% Confidence Overnight Gap VaR % (1.65 * Beta * (VIX / sqrt(252)))
+    # sqrt(252) ≈ 15.87
+    gap_var_pct = round(1.65 * stock_beta_flt * (vix_flt / 15.87), 2)
+    has_elevated_gap_risk = bool(vix_flt >= 17.5 or gap_var_pct >= 2.5)
+
+    overnight_risk_dict = {
+        "has_gap_risk": has_elevated_gap_risk if demat_context.get("is_in_portfolio") else False,
+        "estimated_var_pct": gap_var_pct if demat_context.get("is_in_portfolio") else None,
+        "india_vix": vix_flt,
+        "stock_beta": stock_beta_flt,
+        "guidance": (
+            f"High overnight gap risk (Est. VaR: -{gap_var_pct}%). Protect gains with put collar or reduced beta."
+            if (demat_context.get("is_in_portfolio") and has_elevated_gap_risk)
+            else "Normal overnight gap risk regime."
+        )
+    }
+
+    if tactical_dict and overnight_risk_dict.get("has_gap_risk"):
+        tactical_dict["overnight_gap_risk"] = overnight_risk_dict
+
     return {
         "symbol": symbol,
         "has_actionable_signal": has_actionable_signal if has_real_price else False,
@@ -1161,6 +1235,10 @@ def compute_deterministic_confluence(
         },
         "event_risk": event_risk if ('event_risk' in locals() and event_risk) else {
             "has_imminent_event_risk": False, "days_to_earnings": None, "event_description": None
+        },
+        "overnight_risk": overnight_risk_dict,
+        "liquidity_info": liquidity_info if ('liquidity_info' in locals() and liquidity_info) else {
+            "turnover_cr": None, "is_illiquid": False, "min_turnover_threshold_cr": 5.0, "bid_ask_spread_pct": None, "illiquid_reason": None
         }
     }
 

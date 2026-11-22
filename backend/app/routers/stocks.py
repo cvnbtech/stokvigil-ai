@@ -792,6 +792,8 @@ async def stream_stock_ticks(
                             "confluence_score": pack.get("confluence_score"),
                             "is_circuit_locked": tech.get("is_circuit_locked", False),
                             "circuit_lock_type": tech.get("circuit_lock_type"),
+                            "overnight_risk": pack.get("overnight_risk") or (pack.get("analysis", {}) or {}).get("overnight_risk"),
+                            "liquidity_info": pack.get("liquidity_info") or (pack.get("analysis", {}) or {}).get("liquidity_info"),
                             "timestamp": time.time()
                         }
                 if not cached_data:
@@ -1026,6 +1028,14 @@ def get_batch_stock_quotes(symbols: str = Query(..., description="Comma-separate
             if ev_risk and ev_risk.get("has_imminent_event_risk"):
                 q_dict["event_risk"] = ev_risk
 
+            liq_info = analysis.get("liquidity_info") or pack.get("liquidity_info")
+            if liq_info:
+                q_dict["liquidity_info"] = liq_info
+
+            ovn_risk = analysis.get("overnight_risk") or pack.get("overnight_risk")
+            if ovn_risk:
+                q_dict["overnight_risk"] = ovn_risk
+
     return {"quotes": results}
 
 
@@ -1053,7 +1063,9 @@ async def get_single_stock_analysis(
         "forensics": pack.get("forensics"),
         "analysis": pack.get("analysis"),
         "data_source_mode": pack.get("data_source_mode", "DELAYED_EOD_SCRAPE"),
-        "is_realtime": bool(pack.get("is_realtime", False))
+        "is_realtime": bool(pack.get("is_realtime", False)),
+        "liquidity_info": pack.get("liquidity_info") or (pack.get("analysis", {}) or {}).get("liquidity_info"),
+        "overnight_risk": pack.get("overnight_risk") or (pack.get("analysis", {}) or {}).get("overnight_risk")
     }
 
 

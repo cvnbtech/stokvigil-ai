@@ -364,7 +364,9 @@ async def evaluate_single_symbol_full(
         "current_price": technicals.get("current_price", 0.0),
         "confluence_score": analysis.get("confluence_score"),
         "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL"),
-        "tactical_levels": analysis.get("tactical_levels", {})
+        "tactical_levels": analysis.get("tactical_levels", {}),
+        "liquidity_info": analysis.get("liquidity_info", {}),
+        "overnight_risk": analysis.get("overnight_risk", {})
     }
 
     market_cache.set_stock(symbol, pack, ttl_seconds=900)
@@ -476,6 +478,8 @@ def precompute_symbol_market_state(
         "confluence_score": analysis.get("confluence_score") if current_price > 0 else None,
         "action_bias": analysis.get("action_bias", "HOLD_NEUTRAL") if current_price > 0 else "DATA_UNAVAILABLE",
         "tactical_levels": analysis.get("tactical_levels", {}) if current_price > 0 else {},
+        "liquidity_info": analysis.get("liquidity_info", {}),
+        "overnight_risk": analysis.get("overnight_risk", {}),
         "data_source_mode": data_source_mode,
         "is_realtime": is_live
     }

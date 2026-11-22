@@ -101,4 +101,18 @@ export interface HoldingItem {
     days_to_earnings?: number;
     event_description?: string;
   } | null;
+  liquidity_info?: {
+    turnover_cr?: number | null;
+    is_illiquid?: boolean;
+    min_turnover_threshold_cr?: number;
+    bid_ask_spread_pct?: number | null;
+    illiquid_reason?: string | null;
+  } | null;
+  overnight_risk?: {
+    has_gap_risk?: boolean;
+    estimated_var_pct?: number | null;
+    india_vix?: number | null;
+    stock_beta?: number | null;
+    guidance?: string | null;
+  } | null;
 }

@@ -33,10 +33,44 @@ export default function WatchlistTab({
   onOpenTradeModal,
   flashMap,
 }: WatchlistTabProps) {
+  const [viewMode, setViewMode] = React.useState<"institutional" | "simplified">("simplified");
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("stokvigil_watchlist_view_mode");
+      if (saved === "institutional" || saved === "simplified") {
+        setViewMode(saved);
+      }
+    }
+  }, []);
+
+  const handleModeChange = (mode: "institutional" | "simplified") => {
+    setViewMode(mode);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("stokvigil_watchlist_view_mode", mode);
+    }
+  };
+
+  const getDisplaySignal = (rawSignal?: string): string => {
+    if (!rawSignal || rawSignal === "--" || rawSignal === "HOLD" || rawSignal === "MONITORING" || rawSignal === "HOLD_NEUTRAL") {
+      return viewMode === "simplified" ? "⏸️ Hold & Monitor" : (rawSignal || "--");
+    }
+    if (viewMode === "institutional") return rawSignal;
+    const s = rawSignal.toUpperCase();
+    if (s.includes("STRONG BUY") || s.includes("STRONG_BUY")) return "🚀 Strong Breakout";
+    if (s.includes("BUY")) return "🎯 Dip Buy Zone";
+    if (s.includes("CAPITAL PRESERVATION") || s.includes("CAPITAL_PRESERVATION") || s.includes("STOP LOSS") || s.includes("STOP_LOSS") || s.includes("CUT RISK")) {
+      return "🚨 Cut Risk & Exit";
+    }
+    if (s.includes("DEFENSIVE TRIM") || s.includes("DEFENSIVE_TRIM") || s.includes("TRIM")) return "⚠️ Take Partial Profit";
+    if (s.includes("SELL")) return "🔻 Institutional Sell";
+    return rawSignal;
+  };
+
   return (
     <div className="anim-fadeup" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Header Info */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 900, color: C.white, display: "flex", alignItems: "center", gap: 8 }}>
             <span>Watchlist</span>
@@ -51,26 +85,76 @@ export default function WatchlistTab({
             Real-time market feed • Auto-synced with ICICI Demat
           </div>
         </div>
-        {(() => {
-          const isMarketOpen = isIndianMarketOpen();
-          return (
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              background: isMarketOpen ? "rgba(16,185,129,0.08)" : "rgba(245,158,11,0.08)",
-              border: `1px solid ${isMarketOpen ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"}`,
-              borderRadius: 20, padding: "4px 10px", fontSize: 10, fontWeight: 800,
-              color: isMarketOpen ? C.emerald : C.amber
-            }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: "50%",
-                backgroundColor: isMarketOpen ? C.emerald : C.amber,
-                boxShadow: `0 0 8px ${isMarketOpen ? C.emerald : C.amber}`,
-                display: "inline-block"
-              }} />
-              <span>{isMarketOpen ? "LIVE 30s TICK" : "MARKET CLOSED (EOD)"}</span>
-            </div>
-          );
-        })()}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* Dual View Mode Toggle */}
+          <div style={{
+            display: "inline-flex",
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${C.border}`,
+            borderRadius: 10,
+            padding: 2,
+            gap: 2
+          }}>
+            <button
+              onClick={() => handleModeChange("simplified")}
+              style={{
+                background: viewMode === "simplified" ? "rgba(6,182,212,0.2)" : "transparent",
+                border: viewMode === "simplified" ? `1px solid ${C.borderCyan}` : "1px solid transparent",
+                color: viewMode === "simplified" ? C.cyan : C.gray2,
+                borderRadius: 8,
+                padding: "3px 9px",
+                fontSize: 10.5,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}
+              title="Beginner mode: plain English guidance cards, clear goals, safety exits"
+            >
+              🔰 Beginner
+            </button>
+            <button
+              onClick={() => handleModeChange("institutional")}
+              style={{
+                background: viewMode === "institutional" ? "rgba(168,85,247,0.2)" : "transparent",
+                border: viewMode === "institutional" ? `1px solid rgba(168,85,247,0.4)` : "1px solid transparent",
+                color: viewMode === "institutional" ? "#c084fc" : C.gray2,
+                borderRadius: 8,
+                padding: "3px 9px",
+                fontSize: 10.5,
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 4
+              }}
+              title="Prop Desk mode: quantitative microstructure, Camarilla H5-L5 pivots, Long Buildups"
+            >
+              ⚡ Prop Desk
+            </button>
+          </div>
+          {(() => {
+            const isMarketOpen = isIndianMarketOpen();
+            return (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                background: isMarketOpen ? "rgba(16,185,129,0.08)" : "rgba(245,158,11,0.08)",
+                border: `1px solid ${isMarketOpen ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"}`,
+                borderRadius: 20, padding: "4px 10px", fontSize: 10, fontWeight: 800,
+                color: isMarketOpen ? C.emerald : C.amber
+              }}>
+                <span style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  backgroundColor: isMarketOpen ? C.emerald : C.amber,
+                  boxShadow: `0 0 8px ${isMarketOpen ? C.emerald : C.amber}`,
+                  display: "inline-block"
+                }} />
+                <span>{isMarketOpen ? "LIVE 30s TICK" : "MARKET CLOSED (EOD)"}</span>
+              </div>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Enhanced Ticker Search & Add Bar */}
@@ -265,7 +349,15 @@ export default function WatchlistTab({
               signal: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "MONITORING" && h.signal !== "HOLD") ? h.signal : "--",
               signalType: (h.price && h.price > 0 && h.signalType && h.signal !== "HOLD" && h.signal !== "MONITORING") ? h.signalType : "none",
               target: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "HOLD" && h.signal !== "MONITORING" && h.target && h.target !== "--") ? h.target : "--",
-              sl: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "HOLD" && h.signal !== "MONITORING" && h.sl && h.sl !== "--") ? h.sl : "--"
+              sl: (h.price && h.price > 0 && h.signal && h.signal !== "--" && h.signal !== "HOLD" && h.signal !== "MONITORING" && h.sl && h.sl !== "--") ? h.sl : "--",
+              trailing_sl: h.trailing_sl || null,
+              candlestick_patterns: h.candlestick_patterns || null,
+              derivatives: h.derivatives || null,
+              camarilla_open_type: h.camarilla_open_type || null,
+              event_risk: h.event_risk || null,
+              sector_rs: h.sector_rs || null,
+              liquidity_info: h.liquidity_info || null,
+              overnight_risk: h.overnight_risk || null,
             };
           });
 
@@ -407,8 +499,8 @@ export default function WatchlistTab({
                 })()}
               </div>
 
-              {/* Institutional Microstructure Badges */}
-              {item.price > 0 && (item.candlestick_patterns?.pattern_label || (item.derivatives?.fo_oi_status && item.derivatives.fo_oi_status !== "CASH_EQUITY") || (item.camarilla_open_type && item.camarilla_open_type !== "DATA_INSUFFICIENT") || item.event_risk?.has_imminent_event_risk || item.sector_rs?.sector_rs_regime === "SECTOR_LEADER") && (
+              {/* Institutional & Beginner Microstructure Badges */}
+              {item.price > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4, marginBottom: 4 }}>
                   {item.candlestick_patterns?.pattern_label && (
                     <span style={{
@@ -417,7 +509,13 @@ export default function WatchlistTab({
                       background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
                       borderRadius: 4, padding: "1px 5px"
                     }}>
-                      🕯️ {item.candlestick_patterns.pattern_label}
+                      {viewMode === "simplified"
+                        ? (item.candlestick_patterns.primary_pattern?.includes("BULLISH") || item.candlestick_patterns.primary_pattern?.includes("HAMMER")
+                            ? "🟢 Buyers Stepping In"
+                            : item.candlestick_patterns.primary_pattern?.includes("BEARISH") || item.candlestick_patterns.primary_pattern?.includes("SHOOTING")
+                              ? "🔴 Sellers Pushing Down"
+                              : `🕯️ ${item.candlestick_patterns.pattern_label}`)
+                        : `🕯️ ${item.candlestick_patterns.pattern_label}`}
                     </span>
                   )}
                   {item.derivatives?.fo_oi_status && item.derivatives.fo_oi_status !== "CASH_EQUITY" && (
@@ -428,7 +526,13 @@ export default function WatchlistTab({
                       border: `1px solid ${item.derivatives.fo_oi_status === "LONG_BUILDUP" ? "rgba(16,185,129,0.25)" : item.derivatives.fo_oi_status === "SHORT_BUILDUP" ? "rgba(244,63,94,0.25)" : "rgba(6,182,212,0.25)"}`,
                       borderRadius: 4, padding: "1px 5px"
                     }}>
-                      📊 {item.derivatives.fo_oi_status.replace(/_/g, " ")}
+                      {viewMode === "simplified"
+                        ? (item.derivatives.fo_oi_status === "LONG_BUILDUP" ? "🌊 Big Institutional Inflow" :
+                           item.derivatives.fo_oi_status === "SHORT_BUILDUP" ? "🔻 Institutional Selling" :
+                           item.derivatives.fo_oi_status === "SHORT_COVERING" ? "💨 Short Covering Surge" :
+                           item.derivatives.fo_oi_status === "LONG_UNWINDING" ? "📉 Long Unwinding" :
+                           `📊 ${item.derivatives.fo_oi_status.replace(/_/g, " ")}`)
+                        : `📊 ${item.derivatives.fo_oi_status.replace(/_/g, " ")}`}
                     </span>
                   )}
                   {item.camarilla_open_type && item.camarilla_open_type !== "DATA_INSUFFICIENT" && (
@@ -438,7 +542,11 @@ export default function WatchlistTab({
                       background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
                       borderRadius: 4, padding: "1px 5px"
                     }}>
-                      🌅 {item.camarilla_open_type.replace(/_/g, " ")}
+                      {viewMode === "simplified"
+                        ? (item.camarilla_open_type.includes("ABOVE_H4") ? "⚡ Opening Breakout Push" :
+                           item.camarilla_open_type.includes("BELOW_L4") ? "⚠️ Opening Breakdown Risk" :
+                           `🌅 ${item.camarilla_open_type.replace(/_/g, " ")}`)
+                        : `🌅 ${item.camarilla_open_type.replace(/_/g, " ")}`}
                     </span>
                   )}
                   {item.event_risk?.has_imminent_event_risk && (
@@ -447,7 +555,9 @@ export default function WatchlistTab({
                       background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)",
                       borderRadius: 4, padding: "1px 5px"
                     }}>
-                      🛡️ Earnings in {item.event_risk.days_to_earnings}d
+                      {viewMode === "simplified"
+                        ? `🛡️ Earnings in ${item.event_risk.days_to_earnings}d (High Volatility)`
+                        : `🛡️ Earnings in ${item.event_risk.days_to_earnings}d`}
                     </span>
                   )}
                   {item.sector_rs?.sector_rs_regime === "SECTOR_LEADER" && (
@@ -456,7 +566,27 @@ export default function WatchlistTab({
                       background: "rgba(6,182,212,0.1)", border: "1px solid rgba(6,182,212,0.25)",
                       borderRadius: 4, padding: "1px 5px"
                     }}>
-                      🚀 Leader
+                      {viewMode === "simplified" ? "👑 Top Sector Leader" : "🚀 Leader"}
+                    </span>
+                  )}
+                  {item.overnight_risk?.has_gap_risk && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, color: C.rose,
+                      background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.35)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      ⚠️ {viewMode === "simplified"
+                        ? `High Gap Risk (Est. -${item.overnight_risk.estimated_var_pct || 2.5}%)`
+                        : `Overnight VaR (95%): -${item.overnight_risk.estimated_var_pct || 2.5}%`}
+                    </span>
+                  )}
+                  {item.liquidity_info?.is_illiquid && (
+                    <span style={{
+                      fontSize: 9.5, fontWeight: 800, color: C.amber,
+                      background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)",
+                      borderRadius: 4, padding: "1px 5px"
+                    }}>
+                      💧 {viewMode === "simplified" ? "Thin Volume / Slippage Risk" : `Illiquid (₹${item.liquidity_info.turnover_cr || '<2'} Cr)`}
                     </span>
                   )}
                 </div>
@@ -468,16 +598,23 @@ export default function WatchlistTab({
                 paddingTop: 8, borderTop: `1px solid ${C.border}`, marginTop: 2
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                  <SignalBadge signal={item.signal || "--"} type={item.signalType || "none"} />
+                  <SignalBadge signal={getDisplaySignal(item.signal)} type={item.signalType || "none"} />
                   <span style={{ fontSize: 10, color: C.gray2 }}>
-                    Target: <b style={{ color: item.target && item.target !== "--" ? (item.target === "CUT RISK" ? C.rose : C.emerald) : C.gray2 }}>{item.target || "--"}</b>
+                    {viewMode === "simplified" ? "Profit Goal: " : "Target: "}
+                    <b style={{ color: item.target && item.target !== "--" ? (item.target === "CUT RISK" ? C.rose : C.emerald) : C.gray2 }}>
+                      {item.target || "--"}
+                    </b>
                   </span>
                   <span style={{ fontSize: 10, color: C.gray2 }}>
-                    SL: <b style={{ color: item.sl && item.sl !== "--" ? C.rose : C.gray2 }}>{item.sl || "--"}</b>
+                    {viewMode === "simplified" ? "Safety Exit: " : "SL: "}
+                    <b style={{ color: item.sl && item.sl !== "--" ? C.rose : C.gray2 }}>
+                      {item.sl || "--"}
+                    </b>
                   </span>
                   {item.price > 0 && item.signal && item.signal !== "--" && item.trailing_sl && item.target !== "CUT RISK" && !item.signal?.includes("STOP LOSS") && (
                     <span style={{ fontSize: 10, color: C.gray2 }}>
-                      Trail: <b style={{ color: C.cyan }}>{item.trailing_sl}</b>
+                      {viewMode === "simplified" ? "Profit Lock: " : "Trail: "}
+                      <b style={{ color: C.cyan }}>{item.trailing_sl}</b>
                     </span>
                   )}
                 </div>
@@ -508,7 +645,7 @@ export default function WatchlistTab({
                           cursor: isDisabled ? "not-allowed" : "pointer"
                         }}
                       >
-                        ⚡ {isExitOrSell ? (item.signal?.includes("TRIM") ? "Trim Order" : "Exit Order") : "Trade Order"}
+                        ⚡ {isExitOrSell ? (item.signal?.includes("TRIM") ? (viewMode === "simplified" ? "Take Profit" : "Trim Order") : (viewMode === "simplified" ? "Safety Exit" : "Exit Order")) : (viewMode === "simplified" ? "Buy Stock" : "Trade Order")}
                       </button>
                     );
                   })()}
@@ -536,20 +673,25 @@ export default function WatchlistTab({
       })()}
       </div>
 
-      {/* SEBI Compliance Footnote */}
+      {/* SEBI Mandatory Regulatory Compliance Banner */}
       <div style={{
         display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        padding: "10px 14px",
-        background: "rgba(255,255,255,0.02)",
-        border: `1px solid ${C.border}`,
-        borderRadius: 12,
-        marginTop: 4
+        flexDirection: "column",
+        gap: 6,
+        padding: "14px 16px",
+        background: "rgba(245,158,11,0.03)",
+        border: "1px solid rgba(245,158,11,0.22)",
+        borderRadius: 14,
+        marginTop: 6
       }}>
-        <span style={{ fontSize: 12, color: C.gray2, lineHeight: 1 }}>ℹ️</span>
-        <div style={{ fontSize: 10.5, color: C.gray2, lineHeight: 1.4 }}>
-          All targets &amp; stop-losses are algorithmic volatility benchmarks (1.5x ATR / Camarilla Pivots) for surveillance. Not an investment advisory or price guarantee.
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 14 }}>⚠️</span>
+          <span style={{ fontSize: 11, fontWeight: 900, color: C.amber, letterSpacing: "0.4px" }}>
+            SEBI MANDATORY REGULATORY DISCLOSURE &amp; RISK WARNING
+          </span>
+        </div>
+        <div style={{ fontSize: 10.2, color: C.gray2, lineHeight: 1.55 }}>
+          StokVigil AI provides automated algorithmic decision-support tools and mathematical volatility analytics (Camarilla pivots, 1.5x ATR bands, derivatives open-interest metrics) solely for real-time portfolio surveillance. StokVigil AI is <b>NOT</b> a SEBI-registered Investment Adviser (IA) or Research Analyst (RA). These algorithmic markers, price targets, and stop-loss levels are mathematical simulations and do <b>NOT</b> constitute investment advice, financial planning, or a guarantee of returns. Trading in equities, derivatives (F&amp;O), and high-beta assets carries substantial risk of capital loss. Users must consult a certified SEBI-registered financial adviser before executing trades. Past performance is not indicative of future results.
         </div>
       </div>
     </div>

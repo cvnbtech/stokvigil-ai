@@ -19,6 +19,9 @@ StokVigil AI is an institutional-grade, multi-tenant quantitative equity surveil
 3. **Pure Master App Publisher Model:** Retail users never register developer consoles, configure callback URLs, or manage cloud credentials. All master API secrets reside securely in backend environment variables. The user authenticates solely through daily session tokens / TOTP via their broker's official OAuth flow.
 4. **Zero-Cost RAM-Speed Infrastructure:** By combining in-process Python memory caches with Supabase PostgreSQL `UNLOGGED` tables (bypassing Write-Ahead Logging / WAL), the system achieves sub-millisecond multi-container shared state without provisioning paid external Redis clusters.
 5. **Capital Preservation First:** The engine treats risk management as asymmetric. A portfolio position is protected by a 5-state lifecycle (`CAPITAL_PRESERVATION_EXIT`, `DEFENSIVE_TRIM_ALERT`, `TRAILING_SL_ALERT`, `ACCUMULATE_WATCH`, and `HOLD_STEADY`), enforcing defensive trims and strict trailing stop ratchets.
+6. **Real-Time Native Event-Driven Delivery (<50ms):** Direct tick delivery via native FastAPI Server-Sent Events (SSE `/api/stocks/stream`) and WebSockets (`/ws/quotes`) powered by an asynchronous in-memory `TickerBroadcaster`, avoiding paid third-party real-time pubsub infrastructure.
+7. **Microstructure & Overnight Capital Defense:** Enforces strict execution safety via Veto Filter #6 (Bid-Ask Spread & Illiquidity Gatekeeper for turnover < ₹5 Cr NSE / < ₹2 Cr BSE) and a 1-Day 95% Parametric Overnight Value-at-Risk (VaR) Engine ($1.65 \times \beta \times \frac{\text{VIX}}{\sqrt{252}}$) when India VIX $\ge 17.50$.
+8. **Beginner Parity & Transparency:** Empowers retail investors by bridging the institutional knowledge gap through a Dual View Mode (`[⚡ Prop Desk | 🔰 Beginner]`) with plain-English translation cards and mandatory SEBI regulatory compliance disclosures.
 
 ---
 
@@ -129,10 +132,10 @@ flowchart TD
 
 | Full-Stack Tier | Components & Technologies | Protocols & Ports | Latency SLA | Key Architectural Guarantees |
 | :--- | :--- | :--- | :--- | :--- |
-| **Tier 1: Presentation Tier** | **Next.js 16 App Router** (React 19, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 100 ms UI render | Interactive TradingView Lightweight charts (H5-L5), 4-pillar radars, 1-click SL-L order dialogs, and instant push alert rendering. |
+| **Tier 1: Presentation Tier** | **Next.js 16 App Router** (React 19, Tailwind CSS, TypeScript)<br/>**Flutter SDK 3.19+** (Dart 3.3+, Provider, Biometrics) | HTTPS (443), WSS | &lt; 50 ms SSE render | Interactive TradingView Lightweight charts (H5-L5), **[⚡ Prop Desk | 🔰 Beginner]** Dual View Mode, 4-pillar radars, native SSE streaming client, 1-click SL-L order dialogs, and instant push alert rendering. |
 | **Tier 2: Ingress & Security** | **FastAPI Middleware**, Pydantic v2 Settings, **Fernet AES-256 Vault**, JWT Bearer Auth | HTTPS (443) | &lt; 2 ms overhead | Client-side IDOR validation (`verify_user_access`), memory-bounded token bucket rate limiting, HTTP security headers (HSTS, CSP), and PBKDF2HMAC credential protection. |
-| **Tier 3: App Server & Daemons** | **FastAPI Async Engine**, Uvicorn ASGI, Lifespan Context Manager, **PgBouncer Pool** | HTTP, IPC | &lt; 15 ms internal API | Multi-tenant 5-minute automated scanning loop, 2-second market-hours tick worker (`worker.py`), persistent thread pools, and non-blocking I/O. |
-| **Tier 4: Quantitative Math & AI** | **Vectorized NumPy & Pandas Engine**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Expanded Camarilla pivots ($H_1 \dots H_5 / L_1 \dots L_5$), Location-Anchored Candlesticks, 4-Quadrant F&O Derivatives OI, Sector Drag Veto, Earnings 48h Lockout, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
+| **Tier 3: App Server & Daemons** | **FastAPI Async Engine**, Uvicorn ASGI, Lifespan Context Manager, **PgBouncer Pool** | HTTP, IPC, SSE | &lt; 15 ms internal API / &lt; 50 ms SSE | High-throughput in-memory **TickerBroadcaster** (FastAPI SSE `/api/stocks/stream` & WebSocket `/ws/quotes`), multi-tenant 5-minute automated scanning loop, 2-second market-hours tick worker (`worker.py`), persistent thread pools, and non-blocking I/O. |
+| **Tier 4: Quantitative Math & AI** | **Vectorized NumPy & Pandas Engine**, SciPy, **Gemini 3.5 Flash Lite** (`google-genai` SDK) | In-Memory / Vectorized, HTTPS | &lt; 5 ms math / &lt; 1.2s AI | Expanded Camarilla pivots ($H_1 \dots H_5 / L_1 \dots L_5$), Location-Anchored Candlesticks, 4-Quadrant F&O Derivatives OI, **Veto Filter #6 (Illiquidity & Bid-Ask Gatekeeper)**, **1-Day 95% Parametric Overnight VaR Engine**, **Demat Sold Stock Auto-Reconciliation**, and Gemini AI qualitative synthesis under strict mathematical sovereignty. |
 | **Tier 5: State & Persistence** | **Dual-Tier Cache** (Process RAM + Supabase `UNLOGGED` Table), **Supabase PostgreSQL 15+** | PostgreSQL Wire Protocol (Port 6543) | **&lt; 0.01 ms** (RAM)<br/>**&lt; 0.80 ms** (DB) | Sub-millisecond market state bypassing WAL disk I/O, PgBouncer transaction-mode pooling with `statement_cache_size=0`, Postgres advisory locking (`pg_try_advisory_lock`), and `(SELECT auth.uid())` InitPlan RLS. |
 | **Tier 6: Execution & Dispatch** | **Broker Adapters** (ICICI Breeze, Dhan HQ, Angel One), **Telegram HTTP/2 Client**, FCM | HTTP/2, REST APIs, WebSockets | &lt; 250 ms order dispatch | Mandatory SEBI Stop-Loss Limit (SL-L) orders, dynamic tick snapping (₹0.05 / ₹0.01), pre-trade circuit freeze rejections, dynamic CNC/MIS short detection, and 25 msg/s leaky-bucket Telegram alert dispatch. |
 
@@ -140,11 +143,11 @@ flowchart TD
 
 The system executes three synchronized, non-blocking operational dataflow loops:
 
-1. **Real-Time Market Data Synchronization (Sub-Second Loop)**:
-   > `Broker WebSockets / Yahoo Pool` ➔ **Sub-Second Ticks** ➔ `Tier-1 Process RAM (<0.01ms)` ➔ **worker.py 2.0s Flush** ➔ `Tier-2 UNLOGGED Table (<0.80ms)` ➔ **SSE / Polling** ➔ `Web & Mobile Clients`
+1. **Real-Time Native Streaming & Tick Broadcasting (<50ms Loop)**:
+   > `Broker WebSockets / Yahoo Pool` ➔ **Live Ticks** ➔ `TickerBroadcaster (Process RAM <0.01ms)` ➔ **FastAPI Native SSE (/api/stocks/stream) & WebSocket (/ws/quotes)** ➔ `Next.js Edge Proxy & Flutter Subscribers (<50ms)` ➔ **Tier-2 UNLOGGED DB Flush (2.0s)**
 
 2. **5-Minute Quantitative Surveillance & Alerting Trajectory**:
-   > `Cron Trigger / Market Event` ➔ **Deduplicated Scrip Set** ➔ **Vectorized Technical Engine** ➔ **4-Pillar Confluence (≥75%)** ➔ `6 Deterministic Vetoes (Passed)` ➔ **Gemini 3.5 AI Rationale** ➔ `Telegram & FCM Lock Screen Push`
+   > `Cron Trigger / Market Event` ➔ **Deduplicated Scrip Set** ➔ **Vectorized Technical Engine** ➔ **4-Pillar Confluence (≥75%)** ➔ `6 Hard Institutional Vetoes (incl. Illiquidity/Spread Gatekeeper)` + `1-Day 95% Overnight VaR` ➔ **Gemini 3.5 AI Rationale** ➔ `Telegram & FCM Lock Screen Push`
 
 3. **1-Click SEBI-Compliant Broker Execution Trajectory**:
    > `User Click` ➔ **Signed JWT + Idempotency Key** ➔ `Pre-Trade Circuit & Dynamic Tick Snap` ➔ **SL-Limit Order Enforcement** ➔ `Multi-Broker Adapter` ➔ `NSE / BSE Clearing & Settlement`
@@ -274,6 +277,13 @@ StokVigil AI eliminates the requirement for paid external Redis instances by com
 * **Active Market Hours (Mon–Fri 09:15–15:30 IST):** 20.0 seconds.
 * **Off-Market Hours & Weekends:** 300.0 seconds (5 minutes).
 
+### 4.2 Native Real-Time Streaming Architecture (<50ms Latency)
+To deliver sub-second tick synchronization without incurring recurring cloud costs for external pub/sub services (such as Pusher, PubNub, or Redis Enterprise), StokVigil incorporates a native async `TickerBroadcaster` (`ticker_stream.py`):
+* **FastAPI Server-Sent Events (SSE):** Exposed at `GET /api/stocks/stream`. Sends an initial JSON snapshot of watched symbols, followed by live SSE packets (`event: tick`) whenever new prices or indicators arrive.
+* **WebSocket Streaming:** Bi-directional real-time feed at `/ws/quotes` supporting dynamic symbol subscriptions.
+* **Non-Blocking Queue Fanout:** Employs asyncio bounded queues per connected client (`asyncio.Queue(maxsize=100)`) with automatic lagging client eviction to guarantee zero memory bloat.
+* **Next.js & Flutter Integration:** Next.js proxies SSE via an Edge stream route (`/api/stream`), while Flutter consumes the stream via streaming HTTP. Both maintain SWR/REST fallback on network drops.
+
 ---
 
 ## 5. Quantitative Technical Engine (Vectorized Mathematical Formulations)
@@ -366,6 +376,10 @@ The confluence engine calculates a weighted composite score (0.0 to 10.0) based 
 9. **Brent Crude Oil Commodity Shock Veto:** Detects overnight crude oil surges ($\ge 3\%$), automatically vetoing long trades on margin-sensitive sectors (Paints, Auto, OMCs, Aviation).
 10. **Derivatives Short Buildup Veto:** Heavy futures open interest expansion with falling price strictly forbids long trades.
 11. **Upper Wick Seller Rejection Veto:** Breakout attempts leaving $> 40\%$ upper shadow at resistance are vetoed.
+12. **Bid-Ask Spread & Illiquidity Gatekeeper (Veto Filter #6):** Checks exchange turnover and bid-ask spread before confirming any `BUY_WATCH` signal:
+    * NSE Minimum Turnover: **₹5.00 Cr**; Maximum Bid-Ask Spread: **0.25%**.
+    * BSE Minimum Turnover: **₹2.00 Cr**; Maximum Bid-Ask Spread: **0.40%**.
+    * If turnover is thin or spread exceeds thresholds, long setups are hard-vetoed to `HOLD_NEUTRAL` to prevent devastating execution slippage.
 
 ### 6.2 Dynamic Market Regime Switcher
 The engine automatically shifts execution profiles based on market volatility:
@@ -378,6 +392,19 @@ The engine automatically shifts execution profiles based on market volatility:
 * 🟢 **`TRAILING_SL_ALERT`:** Chandelier ATR trailing stop ratchets upward as profit expands.
 * 🔵 **`ACCUMULATE_WATCH`:** Pyramiding permitted ONLY on winning positions displaying institutional delivery absorption.
 * ⚪ **`HOLD_STEADY`:** Normal trend progression within tolerance bands.
+
+### 6.4 1-Day 95% Parametric Overnight Value-at-Risk (VaR) Engine
+Triggered automatically when market volatility crosses the elevated threshold (**India VIX $\ge 17.50$**). For all active Demat holdings, the engine computes:
+$$\text{Overnight VaR (₹)} = \text{Position Value} \times 1.65 \times \beta \times \frac{\text{VIX}}{\sqrt{252}}$$
+* $1.65$: One-tailed 95% normal distribution confidence factor.
+* $\beta$: Stock beta vs NIFTY 50 (bounded between $0.5$ and $2.5$; defaults to $1.0$ under zero-default safety).
+* $\frac{\text{VIX}}{\sqrt{252}}$: Daily implied volatility scale.
+* Payloads expose `overnight_risk` (`var_1d_pct`, `var_1d_inr`, `is_high_risk`, `vix`, `beta`) alerting users to high-gap risk.
+
+### 6.5 Demat Sold Stock Auto-Reconciliation & Lifecycle Management
+* Integrated into `portfolio_sync.py`: When broker Demat tradebooks sync, any symbol previously in `user_watchlists` with `is_auto_synced = TRUE` whose shares reach 0 (or are absent from broker response) is automatically purged.
+* Preserves user-curated discretionary watchlist symbols (`is_auto_synced = FALSE`).
+* Eliminates ghost notifications and risk calculations for exited holdings.
 
 ---
 
@@ -405,6 +432,18 @@ The broker subsystem implements an extensible Adapter Pattern:
 3. **Pre-Trade Circuit Freeze Rejections:** Halts BUY market orders during Upper Circuit and SELL market orders during Lower Circuit before broker API submission.
 4. **Dynamic CNC vs MIS Detection:** If unheld shares are sold, the order routes as Margin Intraday Square-off (MIS) with an explicit SEBI warning regarding mandatory 03:15 PM IST square-off and potential 20% auction penalty risks.
 5. **Financial-Grade Idempotency Debouncing:** Bounded in-memory idempotency cache (`_ORDER_IDEMPOTENCY_CACHE`) prevents duplicate order placement via `X-Idempotency-Key` or automatic hash fingerprinting (`auto:{user}:{sym}:{action}:{type}:{qty}:{price}`).
+
+### 7.2 Beginner Parity Layer & Mandatory Regulatory Disclosures
+To eliminate retail cognitive overload while upholding strict regulatory transparency, the client presentation layer incorporates:
+* **Dual View Mode (`[⚡ Prop Desk | 🔰 Beginner]`):** Persistent segmented toggle across Web Portal and Mobile App.
+  - **⚡ Prop Desk Mode:** Displays institutional Camarilla pivots ($H_4/H_5/L_3/L_4$), VWAP bands ($\pm 2\sigma$), Wyckoff CLQ, RVOL, Chandelier ATR trailing stop, and 1-Day 95% Parametric VaR.
+  - **🔰 Beginner Mode (Plain English):** Translates quantitative terminology into intuitive action cards:
+    - `Target 1 (H4 Breakout)` &rarr; `Profit Goal (Target 1 Reached - Consider booking gains)`
+    - `Capital Preservation Exit (L4 Breakdown)` &rarr; `Safety Exit (Cut Loss Immediately)`
+    - `Hold Steady` &rarr; `Hold (Stable Trend)`
+    - `Target:` &rarr; `Profit Goal:`, `Stop Loss:` &rarr; `Safety Exit:`, `Trailing SL:` &rarr; `Profit Lock:`
+    - Highlights illiquidity warnings (`⚠️ Hard to Sell (Thin Liquidity)`) and overnight volatility alerts (`⚠️ High Overnight Risk: ~X% gap potential`).
+* **Statutory SEBI Regulatory Compliance Banner:** Direct in-app footer container confirming non-advisory compliance under SEBI (Research Analysts) Regulations, 2014 & SEBI (Investment Advisers) Regulations, 2013, certifying that all signals are mathematical volatility benchmarks.
 
 ---
 
@@ -489,8 +528,10 @@ Every emitted alert is written to `stok_alerts` with a complete JSON snapshot of
 | `GET` | `/api/health` | None | Service health check and version status. |
 | `GET` | `/api/stocks/search` | Rate Limited | Real-time security search supporting NSE/BSE symbols and company names. |
 | `GET` | `/api/stocks/validate` | Rate Limited | Validates symbols against the universal depository ISIN Security Master. |
-| `GET` | `/api/stocks/quotes` | Rate Limited | Batch multi-stock quote fetcher returning Camarilla levels and VWAP bands. |
-| `GET` | `/api/stocks/{symbol}/analysis` | Rate Limited | Full multi-timeframe 4-pillar technical and flow breakdown for a specific stock. |
+| `GET` | `/api/stocks/quotes` | Rate Limited | Batch quote fetcher returning Camarilla levels, VWAP bands, `liquidity_info`, and `overnight_risk`. |
+| `GET` | `/api/stocks/stream` | None / Web & Mobile | Native FastAPI Server-Sent Events (SSE) live tick streaming (<50ms latency). |
+| `WS`  | `/ws/quotes` | None / Web & Mobile | High-throughput bi-directional WebSocket ticker stream with dynamic subscriptions. |
+| `GET` | `/api/stocks/{symbol}/analysis` | Rate Limited | Full multi-timeframe 4-pillar technical and flow breakdown with `liquidity_info` and `overnight_risk`. |
 | `GET` | `/api/stocks/candles` | Rate Limited | OHLCV historical candlestick data for TradingView chart rendering. |
 | `POST`| `/api/v1/orders/place` | Bearer JWT | Idempotent broker trade order execution with SEBI SL-M and circuit checks. |
 | `GET` | `/api/user/profile` | Bearer JWT | User preferences, execution mode, and notification settings. |

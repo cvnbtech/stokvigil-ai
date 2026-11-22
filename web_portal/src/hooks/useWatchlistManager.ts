@@ -92,6 +92,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
                 derivatives: q.derivatives || null,
                 sector_rs: q.sector_rs || null,
                 event_risk: q.event_risk || null,
+                liquidity_info: q.liquidity_info || null,
+                overnight_risk: q.overnight_risk || null,
               };
             });
           };
@@ -351,6 +353,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
             derivatives: q.derivatives !== undefined ? q.derivatives : item.derivatives,
             sector_rs: q.sector_rs !== undefined ? q.sector_rs : item.sector_rs,
             event_risk: q.event_risk !== undefined ? q.event_risk : item.event_risk,
+            liquidity_info: q.liquidity_info !== undefined ? q.liquidity_info : item.liquidity_info,
+            overnight_risk: q.overnight_risk !== undefined ? q.overnight_risk : item.overnight_risk,
           };
         }));
 
@@ -455,6 +459,8 @@ export function useWatchlistManager({ userId }: UseWatchlistManagerProps) {
           day_low: tick.day_low ?? item.day_low,
           isCircuitLocked: tick.is_circuit_locked !== undefined ? Boolean(tick.is_circuit_locked) : item.isCircuitLocked,
           circuitLockType: tick.circuit_lock_type !== undefined ? tick.circuit_lock_type : item.circuitLockType,
+          liquidity_info: tick.liquidity_info !== undefined ? tick.liquidity_info : item.liquidity_info,
+          overnight_risk: tick.overnight_risk !== undefined ? tick.overnight_risk : item.overnight_risk,
         };
       }));
     };

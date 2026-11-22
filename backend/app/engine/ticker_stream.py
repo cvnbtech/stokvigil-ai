@@ -212,6 +212,8 @@ class LiveTickerStreamManager:
                         "action_bias": cached_pack.get("action_bias") if isinstance(cached_pack, dict) else None,
                         "is_circuit_locked": tech.get("is_circuit_locked", False),
                         "circuit_lock_type": tech.get("circuit_lock_type"),
+                        "overnight_risk": cached_pack.get("overnight_risk") or (cached_pack.get("analysis", {}) or {}).get("overnight_risk") if isinstance(cached_pack, dict) else None,
+                        "liquidity_info": cached_pack.get("liquidity_info") or (cached_pack.get("analysis", {}) or {}).get("liquidity_info") if isinstance(cached_pack, dict) else None,
                     }
                 )
 

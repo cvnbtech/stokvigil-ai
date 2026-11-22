@@ -168,6 +168,8 @@ class WatchlistProvider extends ChangeNotifier {
           merged['derivatives'] = existing['derivatives'];
           merged['sector_rs'] = existing['sector_rs'];
           merged['event_risk'] = existing['event_risk'];
+          merged['liquidity_info'] = existing['liquidity_info'];
+          merged['overnight_risk'] = existing['overnight_risk'];
           merged['name'] = existing['name'] ?? merged['name'];
           merged['exchange'] = existing['exchange'] ?? merged['exchange'];
         } else if (cached != null && (cached['price'] as num? ?? 0) > 0) {
@@ -295,6 +297,8 @@ class WatchlistProvider extends ChangeNotifier {
     item['derivatives'] = q['derivatives'];
     item['sector_rs'] = q['sector_rs'];
     item['event_risk'] = q['event_risk'];
+    item['liquidity_info'] = q['liquidity_info'];
+    item['overnight_risk'] = q['overnight_risk'];
   }
 
   Future<bool> addStock(

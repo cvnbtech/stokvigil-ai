@@ -22,6 +22,21 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
   List<Map<String, dynamic>> _suggestions = [];
   Timer? _searchDebounce;
   List<Map<String, dynamic>> _dematHoldings = [];
+  bool _isBeginnerMode = true;
+
+  String _getDisplaySignal(String rawSig) {
+    if (rawSig == '--' || rawSig == 'HOLD' || rawSig == 'MONITORING' || rawSig == 'HOLD_NEUTRAL') {
+      return _isBeginnerMode ? "⏸️ Hold & Monitor" : rawSig;
+    }
+    if (!_isBeginnerMode) return rawSig;
+    final s = rawSig.toUpperCase();
+    if (s.contains("STRONG BUY") || s.contains("STRONG_BUY")) return "🚀 Strong Breakout";
+    if (s.contains("BUY")) return "🎯 Dip Buy Zone";
+    if (s.contains("CAPITAL PRESERVATION") || s.contains("STOP LOSS") || s.contains("CUT RISK")) return "🚨 Cut Risk & Exit";
+    if (s.contains("DEFENSIVE TRIM") || s.contains("TRIM")) return "⚠️ Take Partial Profit";
+    if (s.contains("SELL")) return "🔻 Institutional Sell";
+    return rawSig;
+  }
 
   @override
   void initState() {
@@ -553,7 +568,82 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
+
+          // ─────────────────────────────────────────────
+          // PRO DESK / BEGINNER MODE TOGGLE BAR
+          // ─────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 2.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      if (!_isBeginnerMode) setState(() => _isBeginnerMode = true);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _isBeginnerMode ? AppTheme.cyan.withOpacity(0.18) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _isBeginnerMode ? AppTheme.borderCyan : AppTheme.cardBorder,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text("🔰 ", style: TextStyle(fontSize: 12)),
+                          Text(
+                            "Beginner Mode",
+                            style: TextStyle(
+                              color: _isBeginnerMode ? AppTheme.cyan : AppTheme.textMuted,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      if (_isBeginnerMode) setState(() => _isBeginnerMode = false);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 7),
+                      decoration: BoxDecoration(
+                        color: !_isBeginnerMode ? const Color(0xFFA855F7).withOpacity(0.18) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: !_isBeginnerMode ? const Color(0xFFA855F7).withOpacity(0.5) : AppTheme.cardBorder,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text("⚡ ", style: TextStyle(fontSize: 12)),
+                          Text(
+                            "Prop Desk Mode",
+                            style: TextStyle(
+                              color: !_isBeginnerMode ? const Color(0xFFC084FC) : AppTheme.textMuted,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 11.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
 
           // ─────────────────────────────────────────────
           // WATCHLIST CARDS LIST
@@ -594,21 +684,39 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                               itemCount: displayedList.length + 1,
                               itemBuilder: (context, index) {
                               if (index == displayedList.length) {
-                                return Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
-                                  child: Row(
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF59E0B).withOpacity(0.04),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.25)),
+                                  ),
+                                  child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Icon(Icons.info_outline, size: 13, color: AppTheme.textSecondary.withOpacity(0.6)),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          "All targets & stop-losses are algorithmic volatility benchmarks (1.5x ATR / Camarilla Pivots) for surveillance. Not an investment advisory or price guarantee.",
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: AppTheme.textSecondary.withOpacity(0.6),
-                                            height: 1.3,
+                                      Row(
+                                        children: const [
+                                          Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFF59E0B)),
+                                          SizedBox(width: 6),
+                                          Text(
+                                            "SEBI MANDATORY REGULATORY DISCLOSURE",
+                                            style: TextStyle(
+                                              color: Color(0xFFF59E0B),
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.4,
+                                            ),
                                           ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        "StokVigil AI provides automated algorithmic decision-support tools and mathematical volatility analytics (Camarilla pivots, 1.5x ATR bands, derivatives open-interest metrics) solely for real-time portfolio surveillance. StokVigil AI is NOT a SEBI-registered Investment Adviser (IA) or Research Analyst (RA). These algorithmic markers, price targets, and stop-loss levels are mathematical simulations and do NOT constitute investment advice, financial planning, or a guarantee of returns. Trading in equities, derivatives (F&O), and high-beta assets carries substantial risk of capital loss. Users must consult a certified SEBI-registered financial adviser before executing trades. Past performance is not indicative of future results.",
+                                        style: TextStyle(
+                                          fontSize: 9.5,
+                                          color: AppTheme.textSecondary.withOpacity(0.85),
+                                          height: 1.4,
                                         ),
                                       ),
                                     ],
@@ -915,7 +1023,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                   ),
                                                   const SizedBox(width: 5),
                                                   Text(
-                                                    signal,
+                                                    _getDisplaySignal(signal),
                                                     style: TextStyle(
                                                       color: signalColor,
                                                       fontSize: 10,
@@ -937,7 +1045,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                 text: TextSpan(
                                                   style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600),
                                                   children: [
-                                                    const TextSpan(text: "Target: "),
+                                                    TextSpan(text: _isBeginnerMode ? "Profit Goal: " : "Target: "),
                                                     TextSpan(
                                                       text: targetText,
                                                       style: TextStyle(
@@ -945,7 +1053,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                         fontWeight: FontWeight.w900,
                                                       ),
                                                     ),
-                                                    const TextSpan(text: "  •  SL: "),
+                                                    TextSpan(text: _isBeginnerMode ? "  •  Safety Exit: " : "  •  SL: "),
                                                     TextSpan(
                                                       text: slText,
                                                       style: TextStyle(
@@ -954,7 +1062,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                       ),
                                                     ),
                                                      if (hasRealPrice && item['trailing_sl'] != null && !isCutRisk && !signal.contains('STOP LOSS') && signal != '--') ...[
-                                                       const TextSpan(text: "  •  Trail: "),
+                                                       TextSpan(text: _isBeginnerMode ? "  •  Profit Lock: " : "  •  Trail: "),
                                                        TextSpan(
                                                          text: item['trailing_sl'].toString(),
                                                          style: const TextStyle(
@@ -968,54 +1076,88 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                               );
                                             },
                                           ),
-                                          if (hasRealPrice && (item['candlestick_patterns'] != null || item['derivatives'] != null || item['camarilla_open_type'] != null || (item['event_risk'] != null && item['event_risk']['has_imminent_event_risk'] == true))) ...[
+                                          if (hasRealPrice) ...[
                                             const SizedBox(height: 4),
                                             Wrap(
                                               spacing: 4,
                                               runSpacing: 4,
                                               children: [
                                                 if (item['candlestick_patterns'] != null && item['candlestick_patterns']['pattern_label'] != null)
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white.withOpacity(0.04),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(color: Colors.white.withOpacity(0.08)),
-                                                    ),
-                                                    child: Text(
-                                                      "🕯️ ${item['candlestick_patterns']['pattern_label']}",
-                                                      style: const TextStyle(fontSize: 9, color: AppTheme.cyan, fontWeight: FontWeight.bold),
-                                                    ),
+                                                  Builder(
+                                                    builder: (context) {
+                                                      final patLabel = item['candlestick_patterns']['pattern_label']?.toString() ?? '';
+                                                      final patPrim = item['candlestick_patterns']['primary_pattern']?.toString() ?? '';
+                                                      final isBullish = patPrim.contains('BULLISH') || patPrim.contains('HAMMER');
+                                                      final isBearish = patPrim.contains('BEARISH') || patPrim.contains('SHOOTING');
+                                                      final candleDisplay = _isBeginnerMode
+                                                          ? (isBullish ? "🟢 Buyers Stepping In" : (isBearish ? "🔴 Sellers Pushing Down" : "🕯️ $patLabel"))
+                                                          : "🕯️ $patLabel";
+                                                      return Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white.withOpacity(0.04),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: Colors.white.withOpacity(0.08)),
+                                                        ),
+                                                        child: Text(
+                                                          candleDisplay,
+                                                          style: const TextStyle(fontSize: 9, color: AppTheme.cyan, fontWeight: FontWeight.bold),
+                                                        ),
+                                                      );
+                                                    },
                                                   ),
                                                 if (item['derivatives'] != null && item['derivatives']['fo_oi_status'] != null && item['derivatives']['fo_oi_status'] != 'CASH_EQUITY')
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                                    decoration: BoxDecoration(
-                                                      color: (item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.12),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(color: (item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.3)),
-                                                    ),
-                                                    child: Text(
-                                                      "📊 ${item['derivatives']['fo_oi_status'].toString().replaceAll('_', ' ')}",
-                                                      style: TextStyle(
-                                                        fontSize: 9,
-                                                        color: item['derivatives']['fo_oi_status'] == 'LONG_BUILDUP' ? AppTheme.primaryEmerald : AppTheme.dangerRose,
-                                                        fontWeight: FontWeight.w900,
-                                                      ),
-                                                    ),
+                                                  Builder(
+                                                    builder: (context) {
+                                                      final foStatus = item['derivatives']['fo_oi_status']?.toString() ?? '';
+                                                      final foDisplay = _isBeginnerMode
+                                                          ? (foStatus == 'LONG_BUILDUP' ? "🌊 Big Institutional Inflow" :
+                                                             foStatus == 'SHORT_BUILDUP' ? "🔻 Institutional Selling" :
+                                                             foStatus == 'SHORT_COVERING' ? "💨 Short Covering Surge" :
+                                                             foStatus == 'LONG_UNWINDING' ? "📉 Long Unwinding" :
+                                                             "📊 ${foStatus.replaceAll('_', ' ')}")
+                                                          : "📊 ${foStatus.replaceAll('_', ' ')}";
+                                                      final isGreen = foStatus == 'LONG_BUILDUP' || foStatus == 'SHORT_COVERING';
+                                                      return Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                        decoration: BoxDecoration(
+                                                          color: (isGreen ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.12),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: (isGreen ? AppTheme.primaryEmerald : AppTheme.dangerRose).withOpacity(0.3)),
+                                                        ),
+                                                        child: Text(
+                                                          foDisplay,
+                                                          style: TextStyle(
+                                                            fontSize: 9,
+                                                            color: isGreen ? AppTheme.primaryEmerald : AppTheme.dangerRose,
+                                                            fontWeight: FontWeight.w900,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
                                                   ),
                                                 if (item['camarilla_open_type'] != null && item['camarilla_open_type'] != 'DATA_INSUFFICIENT')
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white.withOpacity(0.02),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(color: Colors.white.withOpacity(0.06)),
-                                                    ),
-                                                    child: Text(
-                                                      "🌅 ${item['camarilla_open_type'].toString().replaceAll('_', ' ')}",
-                                                      style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary, fontWeight: FontWeight.bold),
-                                                    ),
+                                                  Builder(
+                                                    builder: (context) {
+                                                      final camOpen = item['camarilla_open_type']?.toString() ?? '';
+                                                      final camDisplay = _isBeginnerMode
+                                                          ? (camOpen.contains('ABOVE_H4') ? "⚡ Opening Breakout Push" :
+                                                             camOpen.contains('BELOW_L4') ? "⚠️ Opening Breakdown Risk" :
+                                                             "🌅 ${camOpen.replaceAll('_', ' ')}")
+                                                          : "🌅 ${camOpen.replaceAll('_', ' ')}";
+                                                      return Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                        decoration: BoxDecoration(
+                                                          color: Colors.white.withOpacity(0.02),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(color: Colors.white.withOpacity(0.06)),
+                                                        ),
+                                                        child: Text(
+                                                          camDisplay,
+                                                          style: const TextStyle(fontSize: 9, color: AppTheme.textSecondary, fontWeight: FontWeight.bold),
+                                                        ),
+                                                      );
+                                                    },
                                                   ),
                                                 if (item['event_risk'] != null && item['event_risk']['has_imminent_event_risk'] == true)
                                                   Container(
@@ -1026,11 +1168,58 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                       border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.3)),
                                                     ),
                                                     child: Text(
-                                                      "🛡️ Earnings in ${item['event_risk']['days_to_earnings']}d",
+                                                      _isBeginnerMode
+                                                          ? "🛡️ Earnings in ${item['event_risk']['days_to_earnings']}d (High Volatility)"
+                                                          : "🛡️ Earnings in ${item['event_risk']['days_to_earnings']}d",
+                                                      style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.w900),
+                                                    ),
+                                                  ),
+                                                if (item['sector_rs'] != null && item['sector_rs']['sector_rs_regime'] == 'SECTOR_LEADER')
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: AppTheme.cyan.withOpacity(0.12),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: AppTheme.borderCyan.withOpacity(0.3)),
+                                                    ),
+                                                    child: Text(
+                                                      _isBeginnerMode ? "👑 Top Sector Leader" : "🚀 Leader",
+                                                      style: const TextStyle(fontSize: 9, color: AppTheme.cyan, fontWeight: FontWeight.w900),
+                                                    ),
+                                                  ),
+                                                if (item['overnight_risk'] != null && item['overnight_risk']['has_gap_risk'] == true)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: AppTheme.dangerRose.withOpacity(0.12),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: AppTheme.dangerRose.withOpacity(0.4)),
+                                                    ),
+                                                    child: Text(
+                                                      _isBeginnerMode
+                                                          ? "⚠️ High Gap Risk (Est. -${item['overnight_risk']['estimated_var_pct'] ?? 2.5}%)"
+                                                          : "⚠️ Overnight VaR (95%): -${item['overnight_risk']['estimated_var_pct'] ?? 2.5}%",
+                                                      style: const TextStyle(fontSize: 9, color: AppTheme.dangerRose, fontWeight: FontWeight.w900),
+                                                    ),
+                                                  ),
+                                                if (item['liquidity_info'] != null && item['liquidity_info']['is_illiquid'] == true)
+                                                  Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                    decoration: BoxDecoration(
+                                                      color: const Color(0xFFF59E0B).withOpacity(0.12),
+                                                      borderRadius: BorderRadius.circular(4),
+                                                      border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4)),
+                                                    ),
+                                                    child: Text(
+                                                      _isBeginnerMode
+                                                          ? "💧 Thin Volume / Slippage Risk"
+                                                          : "💧 Illiquid (₹${item['liquidity_info']['turnover_cr'] ?? '<2'} Cr)",
                                                       style: const TextStyle(fontSize: 9, color: Color(0xFFF59E0B), fontWeight: FontWeight.w900),
                                                     ),
                                                   ),
                                               ],
+                                            ),
+                                          ],
                                             ),
                                           ],
                                         ],
@@ -1116,7 +1305,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                                      Icon(Icons.bolt, color: btnColor, size: 14),
                                                      const SizedBox(width: 3),
                                                      Text(
-                                                       isExitOrSell ? (signal.contains("TRIM") ? "Trim Order" : "Exit Order") : "Trade Order",
+                                                       isExitOrSell ? (signal.contains("TRIM") ? (_isBeginnerMode ? "Take Profit" : "Trim Order") : (_isBeginnerMode ? "Safety Exit" : "Exit Order")) : (_isBeginnerMode ? "Buy Stock" : "Trade Order"),
                                                        style: TextStyle(color: btnColor, fontWeight: FontWeight.w900, fontSize: 11),
                                                      ),
                                                    ],
