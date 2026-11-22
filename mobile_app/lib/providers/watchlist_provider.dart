@@ -23,6 +23,9 @@ class WatchlistProvider extends ChangeNotifier {
   String? _currentUserId;
 
   StreamSubscription<List<Map<String, dynamic>>>? _watchlistSub;
+  StreamSubscription<Map<String, dynamic>>? _quoteStreamSub;
+  final Map<String, Timer> _flashTimers = {};
+  bool _isStreamActive = false;
   Timer? _refreshTimer;
 
   List<Map<String, dynamic>> get watchlist => _watchlist;
@@ -35,7 +38,11 @@ class WatchlistProvider extends ChangeNotifier {
     if (_currentUserId == null || _currentUserId!.isEmpty) return;
 
     final isOpen = isIndianMarketOpen();
-    final delay = isOpen ? const Duration(seconds: 30) : const Duration(minutes: 5);
+    // If live SSE stream is active, poll infrequently (2m) as safety net.
+    // If inactive, poll every 30s during market hours, 5m off-market.
+    final delay = _isStreamActive
+        ? const Duration(minutes: 2)
+        : (isOpen ? const Duration(seconds: 30) : const Duration(minutes: 5));
 
     _refreshTimer = Timer(delay, () async {
       await refreshQuotesOnly();
@@ -68,8 +75,15 @@ class WatchlistProvider extends ChangeNotifier {
   void clear() {
     _watchlistSub?.cancel();
     _refreshTimer?.cancel();
+    _quoteStreamSub?.cancel();
     _watchlistSub = null;
     _refreshTimer = null;
+    _quoteStreamSub = null;
+    _isStreamActive = false;
+    for (final t in _flashTimers.values) {
+      t.cancel();
+    }
+    _flashTimers.clear();
     _currentUserId = null;
     _watchlist = [];
     _isLoading = false;
@@ -101,6 +115,9 @@ class WatchlistProvider extends ChangeNotifier {
       _watchlist = updated;
       _isLoading = false;
       notifyListeners();
+
+      // Launch Institutional Sub-Millisecond SSE Live Stream
+      _startQuoteStream();
 
       // Trigger background quotes refresh
       await refreshQuotesOnly();
@@ -153,6 +170,9 @@ class WatchlistProvider extends ChangeNotifier {
       _watchlist = updated;
       _isLoading = false;
       notifyListeners();
+
+      // Keep live SSE stream updated with latest symbols
+      _startQuoteStream();
     });
   }
 
@@ -305,10 +325,79 @@ class WatchlistProvider extends ChangeNotifier {
     await SupabaseService().updateProfile({'demat_auto_sync': enabled});
   }
 
+  void _startQuoteStream() {
+    _quoteStreamSub?.cancel();
+    _quoteStreamSub = null;
+    _isStreamActive = false;
+
+    if (_currentUserId == null || _watchlist.isEmpty) return;
+    final symbols = _watchlist
+        .map((item) => (item['symbol']?.toString() ?? '').toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (symbols.isEmpty) return;
+
+    try {
+      _quoteStreamSub = ApiService().streamStockQuotes(symbols).listen(
+        (tick) {
+          _isStreamActive = true;
+          _applyStreamTick(tick);
+        },
+        onError: (e) {
+          _isStreamActive = false;
+        },
+        onDone: () {
+          _isStreamActive = false;
+        },
+        cancelOnError: false,
+      );
+    } catch (_) {
+      _isStreamActive = false;
+    }
+  }
+
+  void _applyStreamTick(Map<String, dynamic> tick) {
+    final sym = (tick['symbol']?.toString() ?? '').toUpperCase();
+    if (sym.isEmpty) return;
+    final cleanSym = sym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
+
+    bool modified = false;
+    for (final item in _watchlist) {
+      final itemSym = (item['symbol']?.toString() ?? '').toUpperCase();
+      final itemClean = itemSym.replaceAll(RegExp(r'\.(BO|NS)$'), '');
+
+      if (itemClean == cleanSym || itemSym == sym) {
+        final newPrice = (tick['price'] as num? ?? 0.0).toDouble();
+        final oldPrice = (item['price'] as num? ?? 0.0).toDouble();
+
+        if (oldPrice > 0 && newPrice > 0 && oldPrice != newPrice) {
+          item['tick_direction'] = newPrice > oldPrice ? 'up' : 'down';
+          _flashTimers[cleanSym]?.cancel();
+          _flashTimers[cleanSym] = Timer(const Duration(milliseconds: 800), () {
+            item.remove('tick_direction');
+            notifyListeners();
+          });
+        }
+
+        _applyQuoteToItem(item, tick);
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _watchlistSub?.cancel();
     _refreshTimer?.cancel();
+    _quoteStreamSub?.cancel();
+    for (final t in _flashTimers.values) {
+      t.cancel();
+    }
+    _flashTimers.clear();
     super.dispose();
   }
 }

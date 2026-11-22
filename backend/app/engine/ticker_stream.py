@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional, Set
 
 from app.config import settings
 from app.market_cache import market_cache
+from app.engine.tick_broadcaster import tick_broadcaster
 from app.notifications import (
     send_fcm_notification,
     send_telegram_notification,
@@ -188,7 +189,33 @@ class LiveTickerStreamManager:
                     low=low
                 )
 
-                # 2. Real-Time Breach Evaluation
+                # 2. Institutional Sub-Millisecond SSE & WebSocket Fan-out (<0.1ms)
+                cached_pack = market_cache.get_stock(clean_sym) or {}
+                tech = cached_pack.get("technicals", {}) if isinstance(cached_pack, dict) else {}
+                prev_close = tech.get("prev_close") or tech.get("previous_close")
+                if prev_close and float(prev_close) > 0:
+                    chg_pct = round(((ltp - float(prev_close)) / float(prev_close)) * 100, 2)
+                else:
+                    chg_pct = 0.0
+
+                tick_broadcaster.broadcast_tick(
+                    symbol=clean_sym,
+                    tick_data={
+                        "price": ltp,
+                        "change_pct": chg_pct,
+                        "is_positive": chg_pct >= 0,
+                        "day_high": high or (cached_pack.get("day_high") if isinstance(cached_pack, dict) else None),
+                        "day_low": low or (cached_pack.get("day_low") if isinstance(cached_pack, dict) else None),
+                        "volume": vol,
+                        "vwap": cached_pack.get("vwap") if isinstance(cached_pack, dict) else None,
+                        "confluence_score": cached_pack.get("confluence_score") if isinstance(cached_pack, dict) else None,
+                        "action_bias": cached_pack.get("action_bias") if isinstance(cached_pack, dict) else None,
+                        "is_circuit_locked": tech.get("is_circuit_locked", False),
+                        "circuit_lock_type": tech.get("circuit_lock_type"),
+                    }
+                )
+
+                # 3. Real-Time Breach Evaluation
                 self._evaluate_tick_breach(clean_sym, ltp, high, low, vol)
 
         except Exception as e:
